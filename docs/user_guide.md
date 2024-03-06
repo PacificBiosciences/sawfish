@@ -1,0 +1,207 @@
+# Sawfish User Guide
+
+## Table of Contents
+
+* [Overview](#overview)
+* [Getting Started](#getting-started)
+* [Outputs](#outputs)
+* [Usage Details](#usage-details)
+
+## Overview
+
+Sawfish calls structural variants from mapped HiFi sequencing reads. It discovers germline variants from local sequence assembly and jointly genotypes variants across multiple samples.
+
+Key features:
+- High SV discovery and genotyping accuracy
+  - All variants are modeled and genotyped as local haplotypes, yielding substantial accuracy gains on modern SV truth sets such as the GIAB HG002 T2T SVs. 
+- High resolution
+  - All structural variants are assembled to basepair resolution and reported with breakpoint homology and insertion details.
+- Integrated depth assessment
+  - Integrated depth estimation with GC-bias correction is used to classify large deletion and duplication calls for higher precision.
+- Simple multi-threaded workflow
+  - A single command-line is used for each of the discover and joint-genotyping steps
+
+All SVs are modeled internally as breakpoints, but will be reported as deletions, insertions, duplications and inversions when supported by the corresponding breakpoint and depth pattern, otherwise the breakpoint itself is reported. The minimum variant size is 35 bases (configurable). A maximum size is only applied to inversions (100kb).
+
+## Accuracy Evaluation
+
+Recommended methods for SV accuracy assessment and benchmarking results are separately described in [accuracy](accuracy.md).
+
+## Getting Started
+
+### Download binary
+
+To use `sawfish` download the latest release tarball compiled for 64-bit linux platforms on the 
+[github release channel](https://github.com/PacificBiosciences/sawfish/releases/latest), then unpack the tar file.
+As an example, the v0.10.0 release can be obtained as follows:
+
+    wget https://github.com/PacificBiosciences/sawfish/releases/download/v0.10.0/sawfish-v0.10.0-x86_64-unknown-linux-gnu.tar.gz
+    tar -xzf sawfish-v0.10.0-x86_64-unknown-linux-gnu.tar.gz
+
+    # Run help option to test binary and see latest usage details:
+    sawfish-v0.10.0-x86_64-unknown-linux-gnu/bin/sawfish --help
+
+### Analysis Steps
+
+Sawfish analyzes samples in 2 steps:
+
+1. `discover`: The discover step identifies candidate structural variant (SV) regions and assembles each local SV haplotype.
+2. `joint-call`: The joint call step takes the output of the sawfish 'discover' step for one to many samples and provides jointly genotyped SV calls over the sample set. Joint calling includes the following operations:
+    - Merge duplicate SV haplotypes
+    - Associate deduplicated SV haplotypes with samples
+    - Evaluate SV read support in each sample
+    - Genotype quality assessment and VCF output
+
+### Calling SVs on one sample
+
+To call SVs in one sample, run `discover` on the the mapped sample bam, and then run joint call on the output directory of the discover step.
+
+The following example shows how this is done for a mapped sample bam named `HG002.GRCh38.bam`, using 16 threads for both the `discover` and the `joint-call` steps.
+
+    sawfish discover --threads 16 --ref GRCh38.fa --bam HG002.GRCh38.bam --output-dir HG002_discover_dir
+    sawfish joint-call --threads 16 --sample HG002_discover_dir --output-dir HG002_joint_call_dir
+
+The final joint calling output can be found in `HG002_joint_call_dir/genotyped.sv.vcf.gz`. See the [outputs](#outputs) section below for discussion of the VCF contents.
+
+Note that the reference fasta and sample bam specified in the `discover` step are still used in the subsequent `joint-call` step, they simply don't need to be specified on the command-line.
+
+### Joint Calling SVs across a set of samples
+
+To call SVs one a set of samples, run `discover` separately on each mapped sample bam, and then run joint call on all `discover` step output directories.
+
+The following example shows how this is done for mapped sequences from the HG002 trio, given the following bam files: `HG004.GRCh38.bam`, `HG003.GRCh38.bam`, `HG002.GRCh38.bam`.
+
+As a first step, `discover` needs to be run on all 3 samples. In the example below 16 threads are used to process each sample. Note that these 3 command-lines could be run in parallel.
+
+    sawfish discover --threads 16 --ref GRCh38.fa --bam HG004.GRCh38.bam --output-dir HG004_discover_dir
+    sawfish discover --threads 16 --ref GRCh38.fa --bam HG003.GRCh38.bam --output-dir HG003_discover_dir
+    sawfish discover --threads 16 --ref GRCh38.fa --bam HG002.GRCh38.bam --output-dir HG002_discover_dir
+
+After all discover steps have completed, joint calling can be run over all 3 samples using the following command:
+
+    sawfish joint-call --threads 16 --sample HG004_discover_dir --sample HG003_discover_dir --sample HG002_discover_dir --output-dir HG002_trio_joint_call_dir
+
+The final joint calling output can be found in `HG002_trio_joint_call_dir/genotyped.sv.vcf.gz`. See the (Output)[] section below for detailed discussion of the output VCF contents.
+
+Just as in the single-sample case, note that the reference fasta and all 3 sample bams specified in the `discover` steps are still used in the subsequent `joint-call` step, but they don't need to be specified on the command-line, since their paths are recorded in the metadata of each discover output data.
+
+## Outputs
+
+### Joint call step
+
+The primary user output of the sawfish SV caller is the SV VCF produced by the joint-call step. This file lists all SVs in VCF 4.2 format. Details of the SV representation in this file are provided below.
+
+#### Quality scores
+
+The primary quality metrics for each SV call are:
+1. `QUAL`: This is the phred-scaled confidence that the given SV allele exists in the set of genotyped samples.
+2. `GQ`: This value is provided once for each sample. It is the phred-scaled confidence that the given sample genotype is correct.
+
+All phred-scaled quality scores in the VCF output have a maximum value of 999.
+
+#### Filters
+
+The following filters may be applied to each VCF record:
+
+- `MinQUAL`: The SV allele quality score (`QUAL`) is less than 10
+- `MaxScoringDepth`: Read depth at the SV locus exceeds 1000x, so all scoring and genotyping steps were disabled.
+- `InvBreakpoint`: This breakpoint is represented as part of a separate VCF inversion record (the inversion record shares the same EVENT ID)
+
+#### SV Types
+
+Notes on formatting and representation of SVs are listed below for each major type.
+
+##### Deletions
+
+All deletions of 100kb or smaller are represented by directly writing the deleted sequence in the VCF `REF` field and any breakpoint insertion sequence in `ALT`. Deletions larger than 100kb are written as symbolic alleles using the ALT value of `<DEL>`. All candidate deletions at least 50kb in length will be checked for a supporting depth signature, if this support is not found the candidate deletion will be reported in the VCF output as a breakend (`BND`) pair instead.
+
+###### Insertions
+
+Any indel-like SVs where the length of sequence inserted at the breakpoint exceeds the length of deleted sequence will be formatted as an insertion in the VCF output if it is possible to fully assemble the inserted sequence, and will be formatted as a duplication otherwise. If represented as an insertion the full inserted sequence assembly will be written to the VCF `ALT` field.
+
+##### Duplications
+
+Very large insertions with long breakpoint homology will be represented as duplications in the VCF output only if they cannot be output as insertions. These will be written to the VCF output using the symbolic ALT value of `<DUP:TANDEM>`. All candidate duplications at least 50kb in length will be checked for a supporting depth signature, if this support is not found the candidate duplication will be reported in the VCF output as a breakend (`BND`) pair instead.
+
+##### Breakpoints
+
+All SV breakpoints which can't be modeled as one of the simple SV types above will be output as a pair of breakend (`BND`) records.
+
+##### Inversions
+
+Sawfish will currently identify one type of multi-breakpoint complex SV signature, corresponding to that of a simple inversion. Inversions are identified when two intra-chromosomal inverted breakpoints of opposite orientation have overlapping spans with at least an 80% reciprocal overlap. The longer span must not be greater than 100kb.
+
+When an inversion is found, a VCF record will be output using the `<INV>` symbolic allele summarizing the inversion in as much detail as possible. It is not possible to retain the details of all 4 breakends in this format such as all breakend positions and breakpoint insertion sequences. For this reason the corresponding breakend records are retained in the VCF output but marked as filtered, such that full breakend details remain available in the output. The inversion record and the filtered breakend records are given a shared VCF `EVENT` label so that their relationship can be identified.
+
+#### Overlapping SV formatting
+
+All sawfish SVs are output so that only one allele is described in each VCF record, even if an overlapping SV allele is output at the same locus. The internal SV calling model accounts for up to 2 overlapping alleles per sample during genotyping and quality scoring, reads supporting a 2nd alternate allele at any given locus will be counted as support the reference in output fields such as allele depth (`AD`). This protocol matches standard SV caller formatting conventions. Users interested in a more detailed output format, such as representing overlapping read support on the VCF `<*>` allele can request this for prioritization.
+
+### Discover step
+
+The discover step produces a number of output files in the discover output directory used by sawfish during the subsequent joint calling step. Although these are not intended for direct use, some of the important files are described here:
+
+- `assembly.regions.bed` Describes each region of the genome targeted for assembly.
+- `contig.alignment.bam` This is a BAM file containing the SV locus contigs aligned back to the genome to create candidate SVs for each sample.
+- `candidate.sv.bcf` These are the candidate SVs expressed in a simplified format for each sample. These are used as input for joint genotyping together with the aligned candidate contigs.
+- `discover.settings.json` Various parameters from the discover step (either user input or default) are recorded in this file. Some of the paths to files like the sample bam and reference fasta will be reused in the joint call step.
+
+### Debug outputs
+
+In either run step, the following files are produced to help debug problematic runs:
+1. `${OUTPUT_DIR}/sawfish.log` - High level logging output
+2. `${OUTPUT_DIR}/run_stats.json` - Run statistics and component timings
+
+## Usage Details
+
+### Read mapper
+
+Sawfish has been tested with sequencing reads mapped by [pbmm2](https://github.com/PacificBiosciences/pbmm2). In general it is designed to work on supplementary alignments without hard-clipping. If this requirement is fulfilled it may work with other mappers, but no others are tested or supported.
+
+### Determinism
+
+Sawfish should always produce the same output from a given command-line and input file set (allowing for expected changes in timestamps, benchmark timers and similar metadata).
+
+### Output directory / clobber
+
+Each step of the pipeline accepts the argument `--output-dir` where all files from the step will be written. If not specified the default of either `sawfish_discover_output` or `sawfish_joint-call_output` will be used. Sawfish will not proceed if the output directory already exists, unless the `--clobber` argument is given as well.
+
+### VCF ID Field
+
+The entries in the output VCF ID field (such as `sawfish:0:2803:1:2` and `sawfish:INV4`) are designed to guarantee a unique identifier for each record in the VCF output. This identifier isn't meant to convey useful details about the call and may be reformatted in future releases.
+
+### Expected compute requirements
+
+#### Runtime
+
+For a typical ~30x HiFi sample analyzed on 16 threads, the `discover` step should complete in about 30-40 minutes and the `joint-call` step should complete in about 5 minutes.
+
+Running the `joint-call` step on 10 samples at 30-100x depth completes in about 1 hour on 64 threads.
+
+#### Memory
+
+The `discover` step should typically require less than 8Gb/thread so long as at least several threads are selected. The `joint-call` step should require substantially less memory but hasn't been tested at scale with less than 1Gb/thread.
+
+### Haploid regions
+
+The SV caller `discover` step accepts a specially formatted BED file format which specifies expected copy number/ploidy by genome region. By default all regions of the genome are treated as diploid, so these files only need to specify non-diploid regions.  
+
+In the copy number BED file, the first 3 columns are used to specify regions following standard BED format, and expected copy number will be read from column 5 of the input BED file. Column 4 is ignored and can be used as a region label. For the purpose of SV calling, any region with copy number 1 will be treated as haploid and all other values will be treated as diploid.
+
+Expected copy number BED files are typically used to specify ploidy in the non-PAR regions of the sex chromosomes. For example, in the example discover step for HG002, we can additionally specify an `--expected-cn` argument as follows:
+
+    sawfish discover --threads 16 --ref GRCh38.fa --bam HG002.GRCh38.bam --output-dir HG002_discover_dir --expected-cn ${SAWFISH_DIR}/data/expected_cn/expected_cn.hg38.XY.bed
+
+The file `expected_cn.hg38.XY.bed` contains:
+```
+chrX    0       2781479 chrX_PAR_1      2
+chrX    2781479 155701382       chrX_uniq_1     1
+chrX    155701382       156040895       chrX_PAR_2      2
+chrY    0       2781479 chrY_PAR_1      0
+chrY    2781479 56887902        chrY_uniq_1     1
+chrY    56887902        57227415        chrY_PAR_2      0
+```
+
+...expected sex chromosome copy number files for this and other references can be found in the [expected_cn](../data/expected_cn) directory.
+
+All expected copy number files submitted for each sample at the discover phase are saved in the discover directory and used to select per-sample ploidy in the specified regions during the joint-calling step.
