@@ -4,10 +4,12 @@ Sawfish tends to assemble and describe multiple overlapping SV alleles at loci w
 
 ## Assessing genome-wide SV accuracy on HG002
 
+### Overview
+
 We assess general SV accuracy against the new GIAB T2T SV truth set for HG002. Both sawfish and the GIAB T2T truth set include more detailed overlapping SV alleles compared to previous
 truth sets, complicating benchmarking. Optimizing benchmarking methods for this case is an active area of community methods development. For the time being, we have found `hap-eval` to handle this benchmarking problem in a fairly effective manner without an SV phasing requirement. We additionally restrict evaluation to autosomes to simplify assessment.
 
-Result using this benchmarking approach are:
+### Results
 
 #### HG002 GIAB T2T 1.0 SV assessment using hap_eval
 
@@ -16,8 +18,7 @@ Result using this benchmarking approach are:
 | sawfish | 0.958  | 0.981     | 0.969 |
 | pbsv    | 0.922  | 0.943     | 0.932 |
 
-
-### Details to reproduce HG002 accuracy assessment
+### Methods
 
 The above analysis used the sawfish v0.10.0 release binary. HG002 HiFi data and reference files were downloaded as described below. The following commands were used to produce the benchmarked SV call output:
 

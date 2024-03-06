@@ -3,6 +3,7 @@
 ## Table of Contents
 
 * [Overview](#overview)
+* [Accuracy Evaluation](#accuracy-evaluation)
 * [Getting Started](#getting-started)
 * [Outputs](#outputs)
 * [Usage Details](#usage-details)
@@ -31,22 +32,23 @@ Recommended methods for SV accuracy assessment and benchmarking results are sepa
 
 ### Download binary
 
-To use `sawfish` download the latest release tarball compiled for 64-bit linux platforms on the 
+To use `sawfish`, download the latest release tarball compiled for 64-bit linux platforms on the
 [github release channel](https://github.com/PacificBiosciences/sawfish/releases/latest), then unpack the tar file.
-As an example, the v0.10.0 release can be obtained as follows:
+Using v0.10.0 as an example, the tar file can be unpacked as follows:
 
-    wget https://github.com/PacificBiosciences/sawfish/releases/download/v0.10.0/sawfish-v0.10.0-x86_64-unknown-linux-gnu.tar.gz
     tar -xzf sawfish-v0.10.0-x86_64-unknown-linux-gnu.tar.gz
 
-    # Run help option to test binary and see latest usage details:
+The sawfish binary is found in the `bin/` directory of the unpacked file distribution.
+This can be run with the help option to test the binary and review latest usage details:
+
     sawfish-v0.10.0-x86_64-unknown-linux-gnu/bin/sawfish --help
 
 ### Analysis Steps
 
 Sawfish analyzes samples in 2 steps:
 
-1. `discover`: The discover step identifies candidate structural variant (SV) regions and assembles each local SV haplotype.
-2. `joint-call`: The joint call step takes the output of the sawfish 'discover' step for one to many samples and provides jointly genotyped SV calls over the sample set. Joint calling includes the following operations:
+1. `discover` - The discover step identifies candidate structural variant (SV) regions and assembles each local SV haplotype.
+2. `joint-call` - The joint call step takes the output of the sawfish 'discover' step for one to many samples and provides jointly genotyped SV calls over the sample set. Joint calling includes the following operations:
     - Merge duplicate SV haplotypes
     - Associate deduplicated SV haplotypes with samples
     - Evaluate SV read support in each sample
@@ -67,7 +69,7 @@ Note that the reference fasta and sample bam specified in the `discover` step ar
 
 ### Joint Calling SVs across a set of samples
 
-To call SVs one a set of samples, run `discover` separately on each mapped sample bam, and then run joint call on all `discover` step output directories.
+To call SVs on a set of samples, run `discover` separately on each mapped sample bam, and then run joint call on all `discover` step output directories.
 
 The following example shows how this is done for mapped sequences from the HG002 trio, given the following bam files: `HG004.GRCh38.bam`, `HG003.GRCh38.bam`, `HG002.GRCh38.bam`.
 
@@ -81,7 +83,7 @@ After all discover steps have completed, joint calling can be run over all 3 sam
 
     sawfish joint-call --threads 16 --sample HG004_discover_dir --sample HG003_discover_dir --sample HG002_discover_dir --output-dir HG002_trio_joint_call_dir
 
-The final joint calling output can be found in `HG002_trio_joint_call_dir/genotyped.sv.vcf.gz`. See the (Output)[] section below for detailed discussion of the output VCF contents.
+The final joint calling output can be found in `HG002_trio_joint_call_dir/genotyped.sv.vcf.gz`. See the (outputs)[#outputs] section below for detailed discussion of the output VCF contents.
 
 Just as in the single-sample case, note that the reference fasta and all 3 sample bams specified in the `discover` steps are still used in the subsequent `joint-call` step, but they don't need to be specified on the command-line, since their paths are recorded in the metadata of each discover output data.
 
@@ -94,8 +96,8 @@ The primary user output of the sawfish SV caller is the SV VCF produced by the j
 #### Quality scores
 
 The primary quality metrics for each SV call are:
-1. `QUAL`: This is the phred-scaled confidence that the given SV allele exists in the set of genotyped samples.
-2. `GQ`: This value is provided once for each sample. It is the phred-scaled confidence that the given sample genotype is correct.
+1. `QUAL` - This is the phred-scaled confidence that the given SV allele exists in the set of genotyped samples.
+2. `GQ` - This value is provided once for each sample. It is the phred-scaled confidence that the given sample genotype is correct.
 
 All phred-scaled quality scores in the VCF output have a maximum value of 999.
 
@@ -103,9 +105,9 @@ All phred-scaled quality scores in the VCF output have a maximum value of 999.
 
 The following filters may be applied to each VCF record:
 
-- `MinQUAL`: The SV allele quality score (`QUAL`) is less than 10
-- `MaxScoringDepth`: Read depth at the SV locus exceeds 1000x, so all scoring and genotyping steps were disabled.
-- `InvBreakpoint`: This breakpoint is represented as part of a separate VCF inversion record (the inversion record shares the same EVENT ID)
+- `MinQUAL` - The SV allele quality score (`QUAL`) is less than 10
+- `MaxScoringDepth` - Read depth at the SV locus exceeds 1000x, so all scoring and genotyping steps were disabled.
+- `InvBreakpoint` - This breakpoint is represented as part of a separate VCF inversion record (the inversion record shares the same EVENT ID)
 
 #### SV Types
 
@@ -141,10 +143,10 @@ All sawfish SVs are output so that only one allele is described in each VCF reco
 
 The discover step produces a number of output files in the discover output directory used by sawfish during the subsequent joint calling step. Although these are not intended for direct use, some of the important files are described here:
 
-- `assembly.regions.bed` Describes each region of the genome targeted for assembly.
-- `contig.alignment.bam` This is a BAM file containing the SV locus contigs aligned back to the genome to create candidate SVs for each sample.
-- `candidate.sv.bcf` These are the candidate SVs expressed in a simplified format for each sample. These are used as input for joint genotyping together with the aligned candidate contigs.
-- `discover.settings.json` Various parameters from the discover step (either user input or default) are recorded in this file. Some of the paths to files like the sample bam and reference fasta will be reused in the joint call step.
+- `assembly.regions.bed` - Describes each region of the genome targeted for assembly.
+- `contig.alignment.bam` - This is a BAM file containing the SV locus contigs aligned back to the genome to create candidate SVs for each sample.
+- `candidate.sv.bcf` - These are the candidate SVs expressed in a simplified format for each sample. These are used as input for joint genotyping together with the aligned candidate contigs.
+- `discover.settings.json` - Various parameters from the discover step (either user input or default) are recorded in this file. Some of the paths to files like the sample bam and reference fasta will be reused in the joint call step.
 
 ### Debug outputs
 
