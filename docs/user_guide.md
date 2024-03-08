@@ -180,6 +180,8 @@ For a typical ~30x HiFi sample analyzed on 16 threads, the `discover` step shoul
 
 Running the `joint-call` step on 10 samples at 30-100x depth completes in about 1 hour on 64 threads.
 
+In general, runtime response to thread count is expected to be nearly linear. The current joint calling scheme has been designed with pedigree-scale analysis in mind. Sawfish joint calling has completed on 47 HPRC samples in testing, but substantially larger cohorts would be difficult without further changes to the joint-calling design.
+
 #### Memory
 
 The `discover` step should typically require less than 8Gb/thread so long as at least several threads are selected. The `joint-call` step should require substantially less memory but hasn't been tested at scale with less than 1Gb/thread.
