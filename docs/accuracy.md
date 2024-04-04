@@ -1,18 +1,18 @@
 # Sawfish accuracy assessment
 
-Sawfish tends to assemble and describe multiple overlapping SV alleles at loci where older truth sets may compress overlapping variants down to a single allele, which can complicate interpretation of benchmarking results. For this reason we describe some effective sawfish accuracy evaluation approaches here.
+Sawfish tends to assemble and describe multiple overlapping SV alleles at loci where older SV benchmarks tend to compress overlapping variants down to a single allele, which can complicate interpretation of results. For this reason we describe some effective sawfish accuracy evaluation approaches here.
 
 ## Assessing SV accuracy on HG002
 
-Single-sample SV calling performance on HG002 can be assessed with multiple GIAB SV truth sets. We demonstrate results for CMRG v1.0 and T2T v1.0 below.
+Single-sample SV calling performance on HG002 can be assessed with multiple GIAB SV benchmark sets. We demonstrate results for CMRG v1.0 and a recent draft T2T SV benchmark set below.
 
 ### Results
 
 #### HG002 GIAB CMRG assessment
 
-SV accuracy in medically relevant genes can be assessed by benchmarking calls against the GIAB CMRG SV truth set. Sawfish SV calls are generated and benchmarked using truvari, as detailed below in [methods](#methods).
+SV accuracy in medically relevant genes can be assessed by comparing calls against the GIAB CMRG SV benchmark set. Sawfish SV calls are generated and then compared to the benchmark using truvari, as detailed below in [methods](#methods).
 
-This accuracy benchmark shows a reduction in false calls within the CMRG confident regions:
+This accuracy assessment shows a reduction in false SV calls from sawfish:
 
 | Method  | Recall | #FN | Precision | #FP | F1    |
 |:-------:|:------:|:---:|:---------:|:---:|:-----:|
@@ -20,12 +20,11 @@ This accuracy benchmark shows a reduction in false calls within the CMRG confide
 | pbsv    | 0.958  | 9   | 0.985     | 3   | 0.971 |
 
 
-#### HG002 GIAB T2T 1.0 SV assessment using hap_eval
+#### HG002 GIAB T2T SV assessment using hap_eval
 
-We assess general SV accuracy against the GIAB T2T SV truth set for HG002. Both sawfish and the GIAB T2T truth set include more detailed overlapping SV alleles compared to previous
-truth sets, complicating benchmarking. Optimizing benchmarking methods for this case is an active area of community methods development. For the time being, we have found `hap-eval` to handle this benchmarking problem in a fairly effective manner without an SV phasing requirement. We additionally restrict evaluation to autosomes to simplify assessment. Details of SV call generation and benchmarking methods are provided in [methods](#methods) below.
+We assess general SV accuracy against the GIAB T2T SV benchmark set for HG002. Both sawfish and the GIAB T2T benchmark set include more detailed overlapping SV alleles compared to previous SV benchmark sets, complicating assessment of accuracy between the SV caller output and the benchmark set. Optimizing assessment methods for this case is an active area of community methods development. For the time being, we have found `hap-eval` to handle this assessment problem in a fairly effective manner without an SV phasing requirement. We additionally restrict evaluation to autosomes to simplify assessment. Details of SV call generation and assessment methods are provided in [methods](#methods) below.
 
-The resulting accuracy benchmark shows a substantial improvement in both recall and precision:
+The resulting accuracy assessment shows that sawfish yields a substantial improvement in both recall and precision:
 
 | Method  | Recall | Precision | F1    |
 |:-------:|:------:|:---------:|:-----:|
@@ -42,20 +41,19 @@ The above analyses use the sawfish v0.10.0 release binary. HG002 HiFi data and r
 
 After running these commands the final sawfish SV output will be found in `sawfish_joint-call_output/genotyped.sv.vcf.gz`.
 
-For CMRG assessment, the SVs were benchmarked against the GIAB CMRG v1.0 truth set using truvari with following command:
+For CMRG assessment, the SVs were assessed against the GIAB CMRG v1.0 benchmark set using truvari with following command:
 
     truvari bench -r 1000 --passonly --pick ac -f human_GRCh38_no_alt_analysis_set.fasta -b HG002_GRCh38_CMRG_SV_v1.00.vcf.gz --includebed HG002_GRCh38_CMRG_SV_v1.00.bed -c sawfish_joint-call_output/genotyped.sv.vcf.gz -o out
 
-Truth set links and truvari installation details are given below.
+Benchmark set links and truvari installation details are given below.
 
-For general accuracy assessment, the SVs are benchmarked against the GIAB T2T v1.0 truth set. Download and sex chromosome exclusion details are described below.
-Instructions to download the version of `hap-eval` used here together with an example installation procedure are also described below.
+For general accuracy assessment, the SVs are assessed against a recent GIAB T2T benchmark set. The benchmark set download link and sex chromosome exclusion details are described below. Instructions to download the version of `hap-eval` used here together with an example installation procedure are also described below.
 
-Given the sawfish SV calls, GIAB T2T truth set files and a version of `hap-eval` activated in the current environment, the benchmarking command is:
+Given the sawfish SV calls, GIAB T2T benchmark set files and a version of `hap-eval` activated in the current environment, the benchmarking command is:
 
     hap_eval --reference human_GRCh38_no_alt_analysis_set.fasta --base GRCh38_HG002-T2TQ100-V1.0_stvar.vcf.gz --interval GRCh38_HG002-T2TQ100-V1.0_stvar.benchmark.only_autosomes.bed --comp sawfish_joint-call_output/genotyped.sv.vcf.gz
 
-SV calls from pbsv are benchmarked on CMRG and T2T truth sets using the same methods.
+SV calls from pbsv are assessed on CMRG and T2T benchmark sets using the same methods.
 
 #### Downloading the GRCh38 reference
 
@@ -102,25 +100,25 @@ From the `sawfish_accuracy_test_v1` conda environment, pbsv calling was run as f
     pbsv discover --hifi -b human_GRCh38_no_alt_analysis_set.trf.bed m84011_220902_175841_s1.pbmm2-1.13.1.GRCh38.bam m84011_220902_175841_s1.pbmm2-1.13.1.GRCh38.svsig.gz
     pbsv call --hifi -j 8 -t INS,DEL human_GRCh38_no_alt_analysis_set.fasta m84011_220902_175841_s1.pbmm2-1.13.1.GRCh38.svsig.gz m84011_220902_175841_s1.pbmm2-1.13.1.GRCh38.pbsv.vcf
 
-#### Downloading GIAB CMRG SV truth set
+#### Downloading GIAB CMRG SV benchmark
 
-The CMRG SV truth set was obtained from the following GIAB directory:
+The CMRG SV benchmark was obtained from the following URL:
 
     https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/CMRG_v1.00
 
-The specific CMRG truth set files for GRCh38 SVs are:
+The specific CMRG benchmark files for GRCh38 SVs are:
 
     https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/CMRG_v1.00/GRCh38/StructuralVariant/HG002_GRCh38_CMRG_SV_v1.00.vcf.gz
     https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/CMRG_v1.00/GRCh38/StructuralVariant/HG002_GRCh38_CMRG_SV_v1.00.vcf.gz.tbi
     https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/release/AshkenazimTrio/HG002_NA24385_son/CMRG_v1.00/GRCh38/StructuralVariant/HG002_GRCh38_CMRG_SV_v1.00.bed
 
-#### Downloading and modifying GIAB T2T SV truth set
+#### Downloading and modifying the GIAB draft T2T SV benchmark
 
-The T2T SV truth set was obtained from the following GIAB directory:
+We assess general SV accuracy compared to the GIAB draft SV benchmark (V0.012-20231107) based on the T2T-HG002-Q100v1.0 diploid assembly. These benchmark files were obtained from the following URL:
 
     https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/AshkenazimTrio/analysis/NIST_HG002_DraftBenchmark_defrabbV0.012-20231107
 
-The specific T2T truth set files for GRCh38 SVs are:
+The specific T2T benchmark files for GRCh38 SVs are:
 
     https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/AshkenazimTrio/analysis/NIST_HG002_DraftBenchmark_defrabbV0.012-20231107/GRCh38_HG002-T2TQ100-V1.0_stvar.vcf.gz
     https://ftp-trace.ncbi.nlm.nih.gov/ReferenceSamples/giab/data/AshkenazimTrio/analysis/NIST_HG002_DraftBenchmark_defrabbV0.012-20231107/GRCh38_HG002-T2TQ100-V1.0_stvar.vcf.gz.tbi
