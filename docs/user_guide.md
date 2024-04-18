@@ -105,6 +105,7 @@ All phred-scaled quality scores in the VCF output have a maximum value of 999.
 
 The following filters may be applied to each VCF record:
 
+- `ConflictingBreakpointGT` - Genotypes of breakpoints in a multi-breakpoint event conflict in the majority of cases (This filter is only relevant to inversions at present)
 - `MinQUAL` - The SV allele quality score (`QUAL`) is less than 10
 - `MaxScoringDepth` - Read depth at the SV locus exceeds 1000x, so all scoring and genotyping steps were disabled.
 - `InvBreakpoint` - This breakpoint is represented as part of a separate VCF inversion record (the inversion record shares the same EVENT ID)
