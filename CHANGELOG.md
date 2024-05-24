@@ -1,5 +1,19 @@
 # Change Log
 
+## v0.12.0 - 2024-05-23
+
+### Added
+- CR-327 Add local SV phasing
+  - Short-range phasing provided in VCF records wherever multiple hets are genotyped on one or more overlapping SV haplotypes
+
+### Changed
+- CR-340 Improve handling of multi-breakpoint haplotypes
+  - Improves detection of complex SV breakpoints, especially for small inversions
+- CR-333 Adjust alignment for long breakpoint homology
+  - Improves detection of high homology inversions
+- CR-330 Expand trimmed read search region for small SV regions
+  - Improves detection of soft-clipped evidence for low homology insertions
+
 ## v0.11.0 - 2024-04-18
 
 Improve a number of discovery and scoring features related to inversions, inverted breakpoints and large deletions.

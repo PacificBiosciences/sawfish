@@ -140,6 +140,10 @@ When an inversion is found, a VCF record will be output using the `<INV>` symbol
 
 All sawfish SVs are output so that only one allele is described in each VCF record, even if an overlapping SV allele is output at the same locus. The internal SV calling model accounts for up to 2 overlapping alleles per sample during genotyping and quality scoring, reads supporting a 2nd alternate allele at any given locus will be counted as support the reference in output fields such as allele depth (`AD`). This protocol matches standard SV caller formatting conventions. Users interested in a more detailed output format, such as representing overlapping read support on the VCF `<*>` allele can request this for prioritization.
 
+#### Phasing
+
+Sawfish adds short-range phasing information to clarify the relationship of heterozygous SVs called from the same or overlapping SV haplotypes. This does not have the range of general read-backed phasing and will only result in phased genotype output for smaller insertions and deletions. Each local cluster of phased genotypes corresponds to a phase set as annotated using the VCF `PS` tag. The phase set ID is the `POS` value of the first SV called from the SV haplotype cluster.
+
 ### Discover step
 
 The discover step produces a number of output files in the discover output directory used by sawfish during the subsequent joint calling step. Although these are not intended for direct use, some of the important files are described here:
