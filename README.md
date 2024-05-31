@@ -1,3 +1,5 @@
+<h1 align="center"><img width="250px" src="img/logo.svg"/></h1>
+
 <h1 align="center">Sawfish</h1>
 
 <h4 align="center">Structural variant caller for HiFi sequencing data based on local haplotype assembly</h3>
