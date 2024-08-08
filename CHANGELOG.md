@@ -1,5 +1,11 @@
 # Change Log
 
+## v0.12.1 - 2024-08-08
+
+### Fixed
+- CR-375 Fix infrequent discover mode failures due to invalid breakpoint ranges.
+  - Issue seems to have started with v0.12.0 via CR-340
+
 ## v0.12.0 - 2024-05-23
 
 ### Added
