@@ -30,18 +30,29 @@ Recommended methods for SV accuracy assessment and benchmarking results are sepa
 
 ## Getting Started
 
-### Download binary
+### Installation
 
-To use `sawfish`, download the latest release tarball compiled for 64-bit linux platforms on the
+Sawfish binaries are available for 64-bit Linux platforms. These can be installed either directly from the GitHub release tarball, or via conda as described below.
+
+#### Install from GitHub
+
+To install sawfish from github, download the latest release tarball compiled for 64-bit Linux on the
 [github release channel](https://github.com/PacificBiosciences/sawfish/releases/latest), then unpack the tar file.
-Using v0.10.0 as an example, the tar file can be unpacked as follows:
+Using v0.12.1 as an example, the tar file can be downloaded and unpacked as follows:
 
-    tar -xzf sawfish-v0.10.0-x86_64-unknown-linux-gnu.tar.gz
+    wget https://github.com/PacificBiosciences/sawfish/releases/download/v0.12.1/sawfish-v0.12.1-x86_64-unknown-linux-gnu.tar.gz
+    tar -xzf sawfish-v0.12.1-x86_64-unknown-linux-gnu.tar.gz
 
 The sawfish binary is found in the `bin/` directory of the unpacked file distribution.
 This can be run with the help option to test the binary and review latest usage details:
 
-    sawfish-v0.10.0-x86_64-unknown-linux-gnu/bin/sawfish --help
+    sawfish-v0.12.1-x86_64-unknown-linux-gnu/bin/sawfish --help
+
+#### Install from conda
+
+For [conda](https://github.com/conda/conda) users, installing sawfish on conda may be a more convenient option. Sawfish is available for conda on Linux from the `bioconda` channel. A new conda environment with the latest sawfish release can be created as follows:
+
+    conda create -n sawfish -c bioconda sawfish
 
 ### Analysis Steps
 
