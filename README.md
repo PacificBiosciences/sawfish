@@ -22,6 +22,12 @@ All SVs are modeled internally as breakpoints, but will be reported as deletions
 
 See the [getting started](docs/user_guide.md#getting-started) section in the [user guide](docs/user_guide.md) to start using sawfish.
 
+## Citation
+
+Sawfish is detailed in the following pre-print:
+
+[Saunders, C. T., Holt, J. M., Baker, D. N., Lake, J. A., Belyeu, J. R. Kronenberg, Z., Rowell, W. J., & Eberle, M. (2024). Sawfish: Improving long-read structural variant discovery and genotyping with local haplotype modeling. *bioRxiv*](https://doi.org/10.1101/2024.08.19.608674)
+
 ## Support
 
 Create a new [issue ticket](https://github.com/PacificBiosciences/sawfish/issues) on this repo for support with current capabilities or new feature requests.
