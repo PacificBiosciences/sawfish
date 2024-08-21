@@ -1,5 +1,10 @@
 # Change Log
 
+## v0.12.2 - 2024-08-21
+
+### Fixed
+-CR-377 Remove `rq` tag requirement in input alignment records
+
 ## v0.12.1 - 2024-08-08
 
 ### Fixed
