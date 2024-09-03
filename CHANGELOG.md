@@ -1,5 +1,11 @@
 # Change Log
 
+## v0.12.3 - 2024-09-03
+
+### Fixed
+-CR-378 Improve error message for hard-clipped split read input
+-CR-379 Improve error message when discover directory is missing
+
 ## v0.12.2 - 2024-08-21
 
 ### Fixed
