@@ -5,6 +5,8 @@ use clap::Args;
 use const_format::concatcp;
 use simple_error::{bail, SimpleResult};
 
+use super::defaults::{MIN_GAP_COMPRESSED_IDENTITY, MIN_SV_MAPQ};
+
 #[derive(Args)]
 pub struct JointCallSettings {
     /// Directory for all joint-call command output (must not already exist)
@@ -18,18 +20,18 @@ pub struct JointCallSettings {
     pub sample: Vec<PathBuf>,
 
     /// Minimum QUAL score below which the VCF record is marked as filtered
-    #[arg(hide = true, long, default_value = "10")]
+    #[arg(hide = true, long, default_value_t = 10)]
     pub min_qual: i32,
 
     /// Min mapq value for reads to be used in SV breakend finding. This does not change depth
     /// analysis.
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value_t = MIN_SV_MAPQ)]
     pub min_sv_mapq: u32,
 
     /// Threshold for the gap-compressed identity filter, to filter out reads with identity to the
     /// reference so low that they are likely to reflect a reference compression or other form
     /// of mismapping.
-    #[arg(hide = true, long, default_value = "0.97")]
+    #[arg(hide = true, long, default_value_t = MIN_GAP_COMPRESSED_IDENTITY)]
     pub min_gap_compressed_identity: f64,
 
     /// Disable end-stage VCF duplicate record filter

@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use rust_htslib::bam::{self, record::CigarString, Read};
-use rust_vc_utils::bam_utils::aux::is_aux_tag_found;
+use rust_vc_utils::bam_utils::aux::{get_optional_float_aux_tag, is_aux_tag_found};
 use rust_vc_utils::bam_utils::cigar::{
     get_cigar_ref_offset, is_hard_clipped, update_ref_and_hard_clipped_read_pos,
 };
@@ -10,11 +10,10 @@ use rust_vc_utils::bam_utils::filter_out_alignment_record;
 use rust_vc_utils::{ChromList, GenomeRef};
 use unwrap::unwrap;
 
-use crate::bam_sa_parser::{get_fwd_read_split_segments, FwdStrandSplitReadSegment};
+use crate::bam_sa_parser::{get_seq_order_read_split_segments, SeqOrderSplitReadSegment};
 use crate::bam_utils::{
-    bam_fetch_segment, get_gap_compressed_identity, get_optional_float_aux_tag,
-    test_read_for_large_insertion_soft_clip, translate_ref_range_to_hardclipped_read_range,
-    LargeInsertionSoftClipState,
+    bam_fetch_segment, get_gap_compressed_identity, test_read_for_large_insertion_soft_clip,
+    translate_ref_range_to_hardclipped_read_range, LargeInsertionSoftClipState,
 };
 use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint, BreakpointCluster, InsertInfo};
 use crate::genome_segment::{get_int_range_distance, GenomeSegment, IntRange};
@@ -127,9 +126,9 @@ fn get_large_del_candidate_read_range(record: &bam::Record, bp: &Breakpoint) -> 
 }
 
 fn get_breakend2_split_segment(
-    segments: &[FwdStrandSplitReadSegment],
+    segments: &[SeqOrderSplitReadSegment],
     is_higher: bool,
-) -> Option<&FwdStrandSplitReadSegment> {
+) -> Option<&SeqOrderSplitReadSegment> {
     for (i, s) in segments.iter().enumerate() {
         if s.from_primary_bam_record {
             if is_higher {
@@ -219,13 +218,15 @@ fn get_split_candidate_read_range(
     // We will use this to extract the 1 segment adjacent to the primary alignment which we just
     // matched to breakend1
     //
-    let fwd_read_split_segments = get_fwd_read_split_segments(chrom_list, record);
+    let seq_order_read_split_segments = get_seq_order_read_split_segments(chrom_list, record);
 
     // Determine if breakend2 has a higher sequencing order in the read compared to breakend1
-    let is_breakend2_higher_fwd_read_pos =
+    let is_breakend2_higher_seq_order_read_pos =
         (bp.breakend1.dir == BreakendDirection::LeftAnchor) ^ record.is_reverse();
-    let breakend2_split_segment =
-        get_breakend2_split_segment(&fwd_read_split_segments, is_breakend2_higher_fwd_read_pos);
+    let breakend2_split_segment = get_breakend2_split_segment(
+        &seq_order_read_split_segments,
+        is_breakend2_higher_seq_order_read_pos,
+    );
 
     // Test whether breakend2 maps to the expected SA alignment record:
     let is_breakend2_close = if let Some(breakend2_split_segment) = breakend2_split_segment {
@@ -246,18 +247,18 @@ fn get_split_candidate_read_range(
 
     // The breakend matches the read's split pattern so now report the corresponding read_range
     let breakend2_split_segment = breakend2_split_segment.unwrap();
-    let fwd_read_start = if is_breakend2_higher_fwd_read_pos {
-        breakend2_split_segment.fwd_read_start - 1
+    let seq_order_read_start = if is_breakend2_higher_seq_order_read_pos {
+        breakend2_split_segment.seq_order_read_start - 1
     } else {
-        breakend2_split_segment.fwd_read_end
+        breakend2_split_segment.seq_order_read_end
     };
 
     // Orient read coordinates to match the primary alignment's frame of reference:
     let read_start = if record.is_reverse() {
-        let fwd_read_end = fwd_read_start + 1;
-        record.seq_len() - (fwd_read_end + 1)
+        let seq_order_read_end = seq_order_read_start + 1;
+        record.seq_len() - (seq_order_read_end + 1)
     } else {
-        fwd_read_start
+        seq_order_read_start
     };
 
     Some(IntRange::from_int(read_start as i64))

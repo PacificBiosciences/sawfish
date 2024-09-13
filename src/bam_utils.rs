@@ -352,11 +352,13 @@ pub fn get_cigar_total_edge_clipping(cigar: &[Cigar]) -> (usize, usize) {
 /// Note that enum order is non-arbitrary and used as part of read sort for assembly
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum LargeInsertionSoftClipState {
+    /// Large soft-clipped region on the right side of the read alignment
     Right,
 
     /// Null state represents everything besides the right or left side clipping states
     Null,
 
+    /// Large soft-clipped region on the left side of the read alignment
     Left,
 }
 
@@ -392,51 +394,6 @@ pub fn test_read_for_large_insertion_soft_clip(
 pub fn is_split_read(record: &bam::Record) -> bool {
     const SA_AUX_TAG: &[u8] = b"SA";
     is_aux_tag_found(record, SA_AUX_TAG)
-}
-
-fn unexpected_aux_val_err(
-    record: &bam::Record,
-    aux_tag: &[u8],
-    aux_val: bam::record::Aux<'_>,
-) -> ! {
-    let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
-    panic!(
-        "Unexpected {} tag format in read {qname}: {:?}",
-        std::str::from_utf8(aux_tag).unwrap(),
-        aux_val,
-    );
-}
-
-fn missing_aux_tag_err(record: &bam::Record, aux_tag: &[u8]) -> ! {
-    let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
-    panic!(
-        "Missing {} tag in read {qname}",
-        std::str::from_utf8(aux_tag).unwrap(),
-    );
-}
-
-/// Retrieve an aux tag float value from bam record, if the tag exists.
-///
-/// In this version the the tag itself is optional, but the function will still panic if the tag is present but has a non-float value
-///
-pub fn get_optional_float_aux_tag(record: &bam::Record, aux_tag: &[u8]) -> Option<f32> {
-    match record.aux(aux_tag) {
-        Ok(aux_val) => Some(match aux_val {
-            bam::record::Aux::Float(val) => val,
-            _ => unexpected_aux_val_err(record, aux_tag, aux_val),
-        }),
-        _ => None,
-    }
-}
-
-/// Retrieve an aux tag float value from bam record
-///
-/// Function will panic if the tag is missing or has a non-float value
-///
-#[allow(unused)]
-pub fn get_float_aux_tag(record: &bam::Record, aux_tag: &[u8]) -> f32 {
-    get_optional_float_aux_tag(record, aux_tag)
-        .unwrap_or_else(|| missing_aux_tag_err(record, aux_tag))
 }
 
 /// Modify a cigar string so that the read is soft-clipped on the left side to achieve at least the specified reference start position shift
@@ -605,6 +562,22 @@ pub fn clip_alignment_read_edges(
     let cigar_out = compress_cigar(&clip_cigar);
 
     (cigar_out, ref_shift)
+}
+
+/// Return true if the CIGAR string contains any aligned (M/X/=) segments
+///
+// TODO move to library
+pub fn has_aligned_segments(cigar: &[Cigar]) -> bool {
+    use Cigar::*;
+    for c in cigar.iter() {
+        match c {
+            Match(_) | Equal(_) | Diff(_) => {
+                return true;
+            }
+            _ => (),
+        }
+    }
+    false
 }
 
 #[cfg(test)]

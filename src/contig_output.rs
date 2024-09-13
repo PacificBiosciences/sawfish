@@ -7,8 +7,10 @@ use rust_htslib::bam::{
 };
 use rust_vc_utils::{bam_reg2bin, get_alignment_end, ChromList};
 
+use crate::bam_utils::has_aligned_segments;
 use crate::discover;
 use crate::int_range::IntRange;
+use crate::version::SAWFISH_VERSION;
 
 pub const SA_AUX_TAG: &[u8] = b"SA";
 pub const CONTIG_AUX_TAG: &[u8] = b"sf";
@@ -145,6 +147,9 @@ pub fn convert_contig_alignment_to_bam_record(
             if segment_index == contig_alignment.segment_id {
                 continue;
             }
+            if !has_aligned_segments(&segment.cigar) {
+                panic!("invalid CIGAR string in contig SA output for contig qname {qname}");
+            }
             aux_str += get_sa_tag_segment(chrom_list, segment, CONTIG_MAPQ).as_str();
         }
         record.push_aux(SA_AUX_TAG, Aux::String(&aux_str)).unwrap();
@@ -181,12 +186,11 @@ fn write_contig_alignments_bam(
         let mut output_bam_header: bam::header::Header =
             bam::header::Header::from_template(&bam_header);
         let cmdline = std::env::args().collect::<Vec<_>>().join(" ");
-        let pkg_version = env!("CARGO_PKG_VERSION");
 
         let mut pg_record = bam::header::HeaderRecord::new(b"PG");
         pg_record.push_tag(b"PN", pkg_name);
-        pg_record.push_tag(b"ID", &format!("{pkg_name}-v{pkg_version}"));
-        pg_record.push_tag(b"VN", pkg_version);
+        pg_record.push_tag(b"ID", format!("{pkg_name}-{SAWFISH_VERSION}"));
+        pg_record.push_tag(b"VN", SAWFISH_VERSION);
         pg_record.push_tag(b"CL", &cmdline);
         output_bam_header.push_record(&pg_record);
 

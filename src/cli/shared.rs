@@ -8,12 +8,20 @@ pub struct SharedSettings {
     thread_count_option: Option<usize>,
 
     /// This value will be filled in by thread_count_option
-    #[arg(hide = true, default_value = "0")]
+    #[arg(hide = true, default_value_t = 0)]
     pub thread_count: usize,
 
-    /// If true, overwrite an existing output directory.
-    #[arg(hide = true, long, global = true)]
+    /// Overwrite an existing output directory
+    #[arg(long, global = true)]
     pub clobber: bool,
+
+    /// Turn on extra debug logging
+    ///
+    /// This option enables extra logging intended for debugging only. It is highly
+    /// recommended (but not required) to set --threads to 1 when this is enabled.
+    ///
+    #[arg(long, global = true)]
+    pub debug: bool,
 
     /// Specify one or more target regions for SV calling
     ///

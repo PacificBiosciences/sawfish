@@ -6,7 +6,7 @@ use rust_vc_utils::aux::{get_string_aux_tag, is_aux_tag_found};
 use rust_vc_utils::{rev_comp_in_place, ChromList};
 use unwrap::unwrap;
 
-use crate::bam_sa_parser::get_fwd_read_split_segments;
+use crate::bam_sa_parser::get_seq_order_read_split_segments;
 use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint, InsertInfo};
 use crate::contig_output::{CONTIG_AUX_TAG, SA_AUX_TAG};
 use crate::discover;
@@ -134,7 +134,7 @@ fn update_sample_assemblies_from_bam_record(
         .push(primary_segment_alignment);
 
     if is_aux_tag_found(record, SA_AUX_TAG) {
-        for segment in get_fwd_read_split_segments(chrom_list, record)
+        for segment in get_seq_order_read_split_segments(chrom_list, record)
             .into_iter()
             .filter(|x| !x.from_primary_bam_record)
         {
@@ -289,11 +289,9 @@ fn process_bcf_record_to_anno_refine_sv(
         get_sv_id_from_label(std::str::from_utf8(rec.id().as_slice()).unwrap());
 
     // Assert that locus is biallelic
-    if rec.allele_count() != 2 {
-        panic!(
-            "Unexpected allele count in sample candidate SV input {}",
-            rec.allele_count()
-        );
+    let allele_count = rec.allele_count();
+    if allele_count != 2 {
+        panic!("Unexpected allele count in sample candidate SV input {allele_count}",);
     }
 
     let alt_allele = rec.alleles()[1];

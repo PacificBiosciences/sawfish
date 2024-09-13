@@ -1,3 +1,6 @@
+//! Miscelanious BAM record processing utilities that don't fit any other modules
+//!
+
 use rust_htslib::{bam, htslib};
 
 use super::cigar::{
@@ -175,6 +178,30 @@ pub fn get_sample_name(header: &bam::HeaderView, default_name: &str) -> String {
     default_name.to_string()
 }
 
+/// Translate the (zero-indexed) read position into the corresponding read position in the reverse orientation
+///
+pub fn get_reverse_read_position(record: &bam::Record, read_pos: usize) -> usize {
+    let read_len = record.seq_len();
+    if read_pos >= read_len {
+        let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
+        panic!(
+            "Invalid read position {read_pos}, exceeds the read_length {read_len}, in read {qname}"
+        );
+    }
+    read_len - (read_pos + 1)
+}
+
+/// Translate the (zero-indexed) read position in fwd-aligned read order to the read position for the
+/// read in sequencer order
+///
+pub fn get_seq_order_read_position(record: &bam::Record, read_pos: usize) -> usize {
+    if record.is_reverse() {
+        get_reverse_read_position(record, read_pos)
+    } else {
+        read_pos
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -225,5 +252,14 @@ mod tests {
 
         let rval = get_hard_clipped_read_to_ref_pos_map(&record);
         assert_eq!(rval, vec![Some(9), Some(10), None, Some(11)]);
+    }
+
+    #[test]
+    fn test_get_seq_order_read_position() {
+        let header = get_test_header();
+        let sam_line =
+            b"qname\t16\tchr1\t10\t60\t20M\t*\t0\t0\tACGCCGTATCGTCTCGAGGA\tDDDDDEEEEEDDDDDEEEEE";
+        let rec = bam::Record::from_sam(&header, sam_line).unwrap();
+        assert_eq!(get_seq_order_read_position(&rec, 1), 18);
     }
 }

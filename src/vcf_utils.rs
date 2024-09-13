@@ -2,6 +2,8 @@ use rust_htslib::bcf::header::Header;
 use rust_htslib::{htslib, utils};
 use rust_vc_utils::ChromList;
 
+use crate::version::SAWFISH_VERSION;
+
 // Imported non-public constants from rust-htslib
 pub const VECTOR_END_INTEGER: i32 = i32::MIN + 1;
 
@@ -24,8 +26,7 @@ pub fn get_basic_vcf_header(
     header.push_record(format!("##fileDate={date_string}").as_bytes());
     header.push_record(format!("##reference=file://{ref_filename}").as_bytes());
     let prog_name = env!("CARGO_PKG_NAME");
-    header
-        .push_record(format!("##source=\"{prog_name} v{}\"", env!("CARGO_PKG_VERSION")).as_bytes());
+    header.push_record(format!("##source=\"{prog_name} {}\"", SAWFISH_VERSION).as_bytes());
     let cmdline = std::env::args().collect::<Vec<_>>().join(" ");
     header.push_record(format!("##{prog_name}_cmdline=\"{cmdline}\"").as_bytes());
 

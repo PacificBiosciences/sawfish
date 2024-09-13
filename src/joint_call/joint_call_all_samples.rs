@@ -81,6 +81,7 @@ pub(super) fn joint_genotype_all_samples(
         merged_sv_groups.len() as u64,
         "Genotyped",
         "SV candidate clusters",
+        false,
     );
     let progress_reporter = &progress_reporter;
 

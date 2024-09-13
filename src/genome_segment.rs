@@ -33,6 +33,13 @@ impl GenomeSegment {
         }
     }
 
+    /// Convert to a string in 'samtools' region format (e.g. chr20:100-200)
+    ///
+    pub fn to_region_str(&self, chrom_list: &ChromList) -> String {
+        let chrom = &chrom_list.data[self.chrom_index].label;
+        format!("{chrom}:{}-{}", self.range.start + 1, self.range.end)
+    }
+
     #[allow(dead_code)]
     pub fn intersect(&self, other: &Self) -> bool {
         self.chrom_index == other.chrom_index && self.range.intersect_range(&other.range)
@@ -123,7 +130,7 @@ pub fn samtools_region_string_splitter(
     let chrom_index = match chrom_list.label_to_index.get(s1[0]) {
         Some(x) => *x,
         None => {
-            panic!("Can't find chromosome '{}' in bam file header", s1[0]);
+            panic!("Can't find chromosome '{}' in bam file header", chrom);
         }
     };
     let chrom_size = chrom_list.data[chrom_index].length as i64;
@@ -207,6 +214,23 @@ mod tests {
             range: IntRange::from_int(10),
         };
         assert!(segment1 >= segment2);
+    }
+
+    #[test]
+    fn test_to_region_string() {
+        let mut chrom_list = ChromList::default();
+        chrom_list.add_chrom("chr1", 100);
+        chrom_list.add_chrom("chr2", 100);
+
+        let segment1 = GenomeSegment {
+            chrom_index: 1,
+            range: IntRange::from_int(10),
+        };
+
+        assert_eq!(
+            segment1.to_region_str(&chrom_list),
+            "chr2:11-11".to_string()
+        );
     }
 
     #[test]

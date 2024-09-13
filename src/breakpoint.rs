@@ -445,11 +445,11 @@ pub struct BreakpointObservation {
     pub evidence: BreakpointEvidenceType,
     pub qname: Option<Vec<u8>>,
 
-    /// Sequencer-order read position of the last mapped base before breakend1
-    pub breakend1_fwd_strand_read_pos: usize,
+    /// Sequencer-order read position of the last mapped base on the anchor side of breakend1
+    pub breakend1_seq_order_read_pos: usize,
 
-    /// Sequencer-order read position of the last mapped base before breakend2
-    pub breakend2_fwd_strand_read_pos: usize,
+    /// Sequencer-order read position of the last mapped base on the anchor side of breakend2
+    pub breakend2_seq_order_read_pos: usize,
 
     /// If a close breakend was found on the same haplotype in this read, record it here for the breakend 1 or 2 side of the breakpoint
     /// so that we can account for these later.

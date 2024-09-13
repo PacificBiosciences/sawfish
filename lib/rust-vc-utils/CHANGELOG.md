@@ -1,3 +1,16 @@
+## v0.29.0 - 2024-09-xx
+
+### Added
+- Add new force-periodic option to progress_reporter, breaks api
+- Add new bam record utils
+
+## v0.28.0 - 2024-09-04
+
+### Changed
+- Add changes to bam aux tag parsing
+    - CR-380 Reduce the chance of a 'panic-in-panic' leading to a SIGILL
+    - Add new parser for float aux tags
+
 ## v0.27.0 - 2024-08-29
 
 ### Changed

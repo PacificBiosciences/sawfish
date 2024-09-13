@@ -1,6 +1,6 @@
 # Sawfish accuracy assessment
 
-Sawfish tends to assemble and describe multiple overlapping SV alleles at loci where older SV benchmarks tend to compress overlapping variants down to a single allele, which can complicate interpretation of results. For this reason we describe some effective sawfish accuracy evaluation approaches here.
+Sawfish tends to assemble and describe multiple overlapping SV alleles at loci where older SV benchmarks tend to compress overlapping variants down to a single allele, which can complicate interpretation of benchmarking results. Our current recommended methods for SV accuracy assessment and benchmarking results are described in detail in the [sawfish preprint](https://doi.org/10.1101/2024.08.19.608674). The following page describes an earlier simplified assessment and benchmarking approach for HG002.
 
 ## Assessing SV accuracy on HG002
 

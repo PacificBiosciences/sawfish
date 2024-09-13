@@ -18,7 +18,7 @@ use super::assemble::AssemblyResultContig;
 use super::{AssemblyResult, RefineSVSettings, RefinedSV};
 use crate::bam_utils::{
     get_gap_compressed_identity_from_alignment,
-    get_gap_compressed_identity_from_cigar_segment_range,
+    get_gap_compressed_identity_from_cigar_segment_range, has_aligned_segments,
 };
 use crate::breakpoint::{
     Breakend, BreakendDirection, Breakpoint, BreakpointCluster, InsertInfo, NeighborBreakend,
@@ -609,7 +609,10 @@ pub struct TwoRegionAltHapInfo {
     /// Reference segment extracted from the reference region around breakend2
     pub ref_segment2: GenomeSegment,
 
+    /// Amount of additional sequence extended from the segment1 'neighbor' breakpoint, this is not part of ref_segment1
     pub segment1_neighbor_extension_size: usize,
+
+    /// Amount of additional sequence extended from the segment2 'neighbor' breakpoint, this is not part of ref_segment2
     pub segment2_neighbor_extension_size: usize,
 
     /// If true, the ref segment2 region is reverse complemented in the alt hap derived chromosome
@@ -652,6 +655,26 @@ pub struct TwoRegionAltHapInfo {
     /// but can be useful to more accurately assess breakpoint homology.
     ///
     pub extended_alt_hap_seq: Vec<u8>,
+}
+
+impl TwoRegionAltHapInfo {
+    pub fn get_ref_segment(&self, segment_index: usize) -> &GenomeSegment {
+        assert!(segment_index < 2);
+        if segment_index == 0 {
+            &self.ref_segment1
+        } else {
+            &self.ref_segment2
+        }
+    }
+
+    pub fn get_segment_neighbor_extension_size(&self, segment_index: usize) -> usize {
+        assert!(segment_index < 2);
+        if segment_index == 0 {
+            self.segment1_neighbor_extension_size
+        } else {
+            self.segment2_neighbor_extension_size
+        }
+    }
 }
 
 impl fmt::Debug for TwoRegionAltHapInfo {
@@ -1515,6 +1538,67 @@ fn is_good_left_right_segment_alignment_quality(
     left_good && right_good
 }
 
+/// If the segment has extention sequence, then clip the extended regeion off of the
+/// segment alignment so that it corresponds to the true local segment alignment
+///
+fn get_clipped_contig_alignment_segment(
+    alt_hap_info: &TwoRegionAltHapInfo,
+    bp: &Breakpoint,
+    breakend_index: usize,
+    ref_segment_alignment: &SimpleAlignment,
+    debug: bool,
+) -> ContigAlignmentSegment {
+    let ref_segment = alt_hap_info.get_ref_segment(breakend_index);
+    let extension_size = alt_hap_info.get_segment_neighbor_extension_size(breakend_index) as i64;
+    let clipped_alignment = if extension_size == 0 {
+        ref_segment_alignment
+    } else {
+        let (left_extension_size, right_extension_size) = {
+            if bp.get_breakend(breakend_index).dir == BreakendDirection::LeftAnchor {
+                (extension_size, 0)
+            } else {
+                (0, extension_size)
+            }
+        };
+
+        let ref_size = (ref_segment.range.size() + extension_size) as usize;
+        let mut clipped_alignment = clip_alignment_ref_edges(
+            ref_segment_alignment,
+            ref_size,
+            left_extension_size,
+            right_extension_size,
+        );
+        clipped_alignment.ref_offset -= left_extension_size;
+
+        if debug {
+            eprintln!("segment{breakend_index} left_ext/right_ext {left_extension_size}/{right_extension_size}");
+            eprintln!(
+                "segment{breakend_index} input alignment {:?}",
+                ref_segment_alignment
+            );
+            eprintln!(
+                "segment{breakend_index} output alignment {:?}",
+                clipped_alignment
+            );
+        }
+
+        &Box::new(clipped_alignment)
+    };
+
+    let is_fwd_strand = if breakend_index == 0 {
+        true
+    } else {
+        !alt_hap_info.ref_segment2_revcomp
+    };
+
+    ContigAlignmentSegment {
+        tid: ref_segment.chrom_index as i32,
+        pos: ref_segment.range.start + clipped_alignment.ref_offset,
+        cigar: clipped_alignment.cigar.clone(),
+        is_fwd_strand,
+    }
+}
+
 /// Update contig alignments used for bam output to debug the SV refinement routine
 ///
 #[allow(clippy::too_many_arguments)]
@@ -1536,105 +1620,10 @@ fn update_two_ref_segment_contig_alignments(
         eprintln!("Creating bam record for cluster/assembly {cluster_index}/{assembly_index}");
     }
 
-    let segment1 = {
-        // Clip off any neighbor extension from the alignment if required:
-        let clipped_alignment = {
-            let x = alt_hap_info.segment1_neighbor_extension_size as i64;
-            if x == 0 {
-                None
-            } else {
-                let (left_extension_size, right_extension_size) = {
-                    if bp.breakend1.dir == BreakendDirection::LeftAnchor {
-                        (x, 0)
-                    } else {
-                        (0, x)
-                    }
-                };
-
-                let ref_size = (alt_hap_info.ref_segment1.range.size() + x) as usize;
-                let mut clipped_alignment = clip_alignment_ref_edges(
-                    ref_segment1_alignment,
-                    ref_size,
-                    left_extension_size,
-                    right_extension_size,
-                );
-                clipped_alignment.ref_offset -= left_extension_size;
-
-                if debug {
-                    eprintln!(
-                        "segment1 left_ext/right_ext {left_extension_size}/{right_extension_size}"
-                    );
-                    eprintln!("segment1 input alignment {:?}", ref_segment1_alignment);
-                    eprintln!("segment1 output alignment {:?}", clipped_alignment);
-                }
-
-                Some(clipped_alignment)
-            }
-        };
-
-        let maybe_clipped_alignment = if let Some(x) = &clipped_alignment {
-            x
-        } else {
-            ref_segment1_alignment
-        };
-
-        ContigAlignmentSegment {
-            tid: alt_hap_info.ref_segment1.chrom_index as i32,
-            pos: alt_hap_info.ref_segment1.range.start + maybe_clipped_alignment.ref_offset,
-            cigar: maybe_clipped_alignment.cigar.clone(),
-            is_fwd_strand: true,
-        }
-    };
-
-    let segment2 = {
-        // Clip off any neighbor extension if required:
-        let clipped_alignment = {
-            let x = alt_hap_info.segment2_neighbor_extension_size as i64;
-            if x == 0 {
-                None
-            } else {
-                let (left_extension_size, right_extension_size) = {
-                    if bp.breakend2.as_ref().unwrap().dir == BreakendDirection::LeftAnchor {
-                        (x, 0)
-                    } else {
-                        (0, x)
-                    }
-                };
-
-                let ref_size = (alt_hap_info.ref_segment2.range.size() + x) as usize;
-                let mut clipped_alignment = clip_alignment_ref_edges(
-                    ref_segment2_alignment,
-                    ref_size,
-                    left_extension_size,
-                    right_extension_size,
-                );
-                clipped_alignment.ref_offset -= left_extension_size;
-
-                if debug {
-                    eprintln!(
-                        "segment2 left_ext/right_ext {left_extension_size}/{right_extension_size}"
-                    );
-                    eprintln!("segment2 input alignment {:?}", ref_segment2_alignment);
-                    eprintln!("segment2 output alignment {:?}", clipped_alignment);
-                }
-
-                Some(clipped_alignment)
-            }
-        };
-
-        let maybe_clipped_alignment = if let Some(x) = &clipped_alignment {
-            x
-        } else {
-            ref_segment2_alignment
-        };
-
-        ContigAlignmentSegment {
-            tid: alt_hap_info.ref_segment2.chrom_index as i32,
-            pos: alt_hap_info.ref_segment2.range.start + maybe_clipped_alignment.ref_offset,
-            cigar: maybe_clipped_alignment.cigar.clone(),
-            is_fwd_strand: !alt_hap_info.ref_segment2_revcomp,
-        }
-    };
+    let segment1 =
+        get_clipped_contig_alignment_segment(alt_hap_info, bp, 0, ref_segment1_alignment, debug);
+    let segment2 =
+        get_clipped_contig_alignment_segment(alt_hap_info, bp, 1, ref_segment2_alignment, debug);
 
     /*
     eprintln!(
@@ -1670,6 +1659,40 @@ fn update_two_ref_segment_contig_alignments(
             high_quality_contig_range,
         });
     }
+}
+
+fn check_segment_for_invalid_extension_clipping(
+    bp: &Breakpoint,
+    alt_hap_info: &TwoRegionAltHapInfo,
+    breakend_index: usize,
+    ref_segment_alignment: &SimpleAlignment,
+) -> bool {
+    if alt_hap_info.get_segment_neighbor_extension_size(breakend_index) > 0 {
+        let segment = get_clipped_contig_alignment_segment(
+            alt_hap_info,
+            bp,
+            breakend_index,
+            ref_segment_alignment,
+            false,
+        );
+        !has_aligned_segments(&segment.cigar)
+    } else {
+        false
+    }
+}
+
+/// If neighbor extension clipping occurs for this breakpoint, then check if the clipping creates invalid alignment output
+///
+/// Ideally this should never occur but the check allows us to guard against some rarely occuring complications.
+///
+fn check_for_invalid_extension_clipping(
+    bp: &Breakpoint,
+    alt_hap_info: &TwoRegionAltHapInfo,
+    ref_segment1_alignment: &SimpleAlignment,
+    ref_segment2_alignment: &SimpleAlignment,
+) -> bool {
+    check_segment_for_invalid_extension_clipping(bp, alt_hap_info, 0, ref_segment1_alignment)
+        || check_segment_for_invalid_extension_clipping(bp, alt_hap_info, 1, ref_segment2_alignment)
 }
 
 /// Get the zero-indexed ref offset of the position immediately before the breakend
@@ -2057,6 +2080,21 @@ fn align_multi_ref_region_assemblies(
                     "alt_hap_ref_segment_alignment_info: {:?}",
                     alt_hap_ref_segment_alignment_info
                 );
+            }
+
+            // Add additional check here to make sure we still meet the minimum alignment size after any
+            // segment1 or segment2 extension sequence is accounted for
+            //
+            if check_for_invalid_extension_clipping(
+                bp,
+                &alt_hap_info,
+                &alt_hap_ref_segment_alignment_info.ref_segment1_alignment,
+                &alt_hap_ref_segment_alignment_info.ref_segment2_alignment,
+            ) {
+                if debug {
+                    eprintln!("Filtered for invalid alignment clipping of neighbor extension");
+                }
+                continue;
             }
 
             // Convert alignment into refined SV candidate -- note that for multi-region analyses,

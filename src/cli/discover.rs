@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use simple_error::{bail, SimpleResult};
 use unwrap::unwrap;
 
+use super::defaults::{MIN_GAP_COMPRESSED_IDENTITY, MIN_SV_MAPQ};
 use crate::discover::SETTINGS_FILENAME;
 
 #[derive(Args, Default, Deserialize, Serialize)]
@@ -46,18 +47,18 @@ pub struct DiscoverSettings {
 
     /// Size of bins used for CNV depth track. The segmentation parameters are highly dependent on
     /// this value so it cannot be changed independently.
-    #[arg(hide = true, long, default_value = "2000")]
+    #[arg(hide = true, long, default_value_t = 2000)]
     pub depth_bin_size: u32,
 
     /// The transition probability for going away from the current copy number.
     /// Stay probability is derived from this value.
-    #[arg(hide = true, long = "transition-probability", default_value = "1e-50")]
+    #[arg(hide = true, long = "transition-probability", default_value_t = 1e-50)]
     pub transition_prob: f64,
 
     /// Threshold for the gap-compressed identity filter, to filter out reads with identity to the
     /// reference so low that they are likely to reflect a reference compression or other form
     /// of mismapping.
-    #[arg(hide = true, long, default_value = "0.97")]
+    #[arg(hide = true, long, default_value_t = MIN_GAP_COMPRESSED_IDENTITY)]
     pub min_gap_compressed_identity: f64,
 
     /// Regex used to select chromosomes for mean haploid coverage estimation. All selected
@@ -74,7 +75,7 @@ pub struct DiscoverSettings {
     /// Depth will be estimated for each GC division, or 'level', which has enough support in the
     /// genome, and the relative depth of each gc level will be used to implement the coverage
     /// correction.
-    #[arg(hide = true, long, default_value = "40")]
+    #[arg(hide = true, long, default_value_t = 40)]
     pub gc_level_count: usize,
 
     /// This flag enables additional GC correction tracks and files useful for debugging
@@ -83,13 +84,13 @@ pub struct DiscoverSettings {
 
     /// Each depth bin is GC corrected based on the GC content of a genomic segment of this size,
     /// centered on the bin.
-    #[arg(hide = true, long, default_value = "20000")]
+    #[arg(hide = true, long, default_value_t = 20000)]
     pub gc_genome_window_size: u32,
 
     /// Co-linear SVs must have either an insertion or deletion of this size or greater to be
     /// included in the output. All other SV evidence patterns such as those consistent with
     /// duplications, inversions and translocations will always be included in the output.
-    #[arg(long, default_value = "35")]
+    #[arg(long, default_value_t = 35)]
     pub min_indel_size: u32,
 
     /// Specify how much noise is expected in the obs indel size near the minimum size threshold
@@ -102,12 +103,12 @@ pub struct DiscoverSettings {
     ///    process, this will be a more accurate non-SV haplotype model then simply using the reference
     ///    sequence
     ///
-    #[arg(hide = true, long, default_value = "10")]
+    #[arg(hide = true, long, default_value_t = 10)]
     pub min_indel_size_noise_margin: u32,
 
     /// Min mapq value for reads to be used in SV breakend finding. This does not change depth
     /// analysis.
-    #[arg(long, default_value = "10")]
+    #[arg(long, default_value_t = MIN_SV_MAPQ)]
     pub min_sv_mapq: u32,
 
     /// Reduce overlapping SV alleles to a single copy
@@ -130,13 +131,13 @@ pub struct DiscoverSettings {
     ///
     /// This shouldn't normally be used in the new discover/joint-call two step mode.
     ///
-    #[arg(hide = true, long, default_value = "10")]
+    #[arg(hide = true, long, default_value_t = 10)]
     pub min_qual: i32,
 
     /// Maximum distance between breakends for them to be treated as 'close' for the porpose of modifying
     /// the alt haplotype model
     ///
-    #[arg(hide = true, long, default_value = "2000")]
+    #[arg(hide = true, long, default_value_t = 2000)]
     pub max_close_breakend_distance: usize,
 
     /// Remove all clusters except for the given index and turn on high level refinement debug output.

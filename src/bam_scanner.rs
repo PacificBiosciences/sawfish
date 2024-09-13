@@ -265,7 +265,7 @@ pub fn scan_sample_bam_for_sv_evidence(
 
     let genome_kb = chrom_list.data.iter().map(|x| x.length).sum::<u64>() / 1000;
     let progress_reporter =
-        ProgressReporter::new(genome_kb, "Processed alignments on", "ref genome kb");
+        ProgressReporter::new(genome_kb, "Processed alignments on", "ref genome kb", false);
 
     let (tx, rx) = channel();
 

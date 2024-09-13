@@ -2,13 +2,14 @@ use std::collections::BTreeMap;
 
 use rust_htslib::bam;
 use rust_vc_utils::aux::is_aux_tag_found;
+use rust_vc_utils::bam_utils::get_seq_order_read_position;
 use rust_vc_utils::cigar::{
     get_cigar_ref_offset, get_hard_clipped_read_clip_positions,
     update_ref_and_hard_clipped_read_pos,
 };
 use rust_vc_utils::ChromList;
 
-use crate::bam_sa_parser::{get_fwd_read_split_segments, FwdStrandSplitReadSegment};
+use crate::bam_sa_parser::{get_seq_order_read_split_segments, SeqOrderSplitReadSegment};
 use crate::bam_utils::{test_read_for_large_insertion_soft_clip, LargeInsertionSoftClipState};
 use crate::breakpoint::*;
 use crate::genome_segment::{get_segment_distance, GenomeSegment};
@@ -180,9 +181,98 @@ impl<'a> BreakBuilder<'a> {
         }
     }
 
+    /// Check if candidate indel meets the minimum size, and if so return a breakpoint observation
+    ///
+    /// # Arguments
+    /// * record - bam record for error/debug messages
+    /// * read_pos - Position in read coordinates on the alignment strand for the position immediately after the indel
+    ///
+    fn process_cand_indel_impl(
+        &self,
+        record: &bam::Record,
+        read_pos: usize,
+        cand_indel: &CandidateIndel,
+    ) -> Option<BreakpointObservation> {
+        let indel_in_worker_region = self.worker_region.intersect_pos(cand_indel.ref_pos);
+        let indel_large_enough = cand_indel.del_size >= self.min_evidence_indel_size
+            || cand_indel.ins_size >= self.min_evidence_indel_size;
+
+        if !(indel_in_worker_region && indel_large_enough) {
+            return None;
+        }
+
+        let breakend1 = Breakend {
+            segment: GenomeSegment {
+                chrom_index: record.tid() as usize,
+                range: IntRange::from_int(cand_indel.ref_pos),
+            },
+            dir: BreakendDirection::LeftAnchor,
+        };
+
+        let breakend2 = Some(Breakend {
+            segment: GenomeSegment {
+                chrom_index: record.tid() as usize,
+                range: IntRange::from_int(cand_indel.ref_pos + cand_indel.del_size as i64),
+            },
+            dir: BreakendDirection::RightAnchor,
+        });
+
+        let breakpoint = Breakpoint {
+            breakend1,
+            breakend2,
+            insert_info: InsertInfo::SizeRange(IntRange::from_int(cand_indel.ins_size as i64)),
+            is_precise: false,
+        };
+
+        let breakend1_read_pos = match read_pos.checked_sub((cand_indel.ins_size + 1) as usize) {
+            Some(x) => x,
+            None => {
+                let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
+                panic!(
+                    "Unexpected insertion size {} and read_pos {read_pos} in read: {qname}",
+                    cand_indel.ins_size
+                );
+            }
+        };
+        let breakend2_read_pos = read_pos;
+
+        // Reset the read coordinates to sequencer order instead of alignment fwd-strand order
+        let breakend1_seq_order_read_pos = get_seq_order_read_position(record, breakend1_read_pos);
+        let breakend2_seq_order_read_pos = get_seq_order_read_position(record, breakend2_read_pos);
+
+        Some(BreakpointObservation {
+            breakpoint,
+            evidence: BreakpointEvidenceType::ReadAlignment,
+            qname: None,
+            breakend1_seq_order_read_pos,
+            breakend2_seq_order_read_pos,
+            breakend1_neighbor: None,
+            breakend2_neighbor: None,
+        })
+    }
+
+    /// Check if candidate indel meets the minimum size, and if so push it into `all_bpo`
+    ///
+    /// # Arguments
+    /// * record - bam record for error/debug messages
+    /// * read_pos - Position in read coordinates on the alignment strand for the position immediately after the indel
+    ///
+    fn process_cand_indel(
+        &self,
+        record: &bam::Record,
+        read_pos: usize,
+        cand_indel: &mut CandidateIndel,
+        all_bpo: &mut Vec<BreakpointObservation>,
+    ) {
+        if let Some(bpo) = self.process_cand_indel_impl(record, read_pos, cand_indel) {
+            all_bpo.push(bpo);
+        }
+        cand_indel.clear();
+    }
+
     /// Find large indels from the cigar string
     ///
-    /// Fuse any adjacent deletion/insertion tags into one event
+    /// Fuse any adjacent deletion/insertion tags into one event and push qualifying events into `all_bpo`
     ///
     fn parse_breaks_from_cigar_alignment(
         &self,
@@ -195,73 +285,6 @@ impl<'a> BreakBuilder<'a> {
         let mut read_pos = 0;
 
         let mut cand_indel = CandidateIndel::new();
-
-        // Check if candidate indel meets the minimum size, and if so add it to candidate SV
-        // accumulation structure
-        //
-        let mut process_cand_indel = |cand_indel: &mut CandidateIndel, read_pos: usize| {
-            if cand_indel.is_empty() {
-                return;
-            }
-
-            let indel_in_worker_region = self.worker_region.intersect_pos(cand_indel.ref_pos);
-            let indel_large_enough = cand_indel.del_size >= self.min_evidence_indel_size
-                || cand_indel.ins_size >= self.min_evidence_indel_size;
-
-            if indel_in_worker_region && indel_large_enough {
-                let breakend1 = Breakend {
-                    segment: GenomeSegment {
-                        chrom_index: record.tid() as usize,
-                        range: IntRange::from_int(cand_indel.ref_pos),
-                    },
-                    dir: BreakendDirection::LeftAnchor,
-                };
-
-                let breakend2 = Some(Breakend {
-                    segment: GenomeSegment {
-                        chrom_index: record.tid() as usize,
-                        range: IntRange::from_int(cand_indel.ref_pos + cand_indel.del_size as i64),
-                    },
-                    dir: BreakendDirection::RightAnchor,
-                });
-
-                let breakpoint = Breakpoint {
-                    breakend1,
-                    breakend2,
-                    insert_info: InsertInfo::SizeRange(IntRange::from_int(
-                        cand_indel.ins_size as i64,
-                    )),
-                    is_precise: false,
-                };
-
-                let breakend1_read_pos = read_pos
-                    .checked_sub((cand_indel.ins_size + 1) as usize)
-                    .unwrap();
-                let breakend2_read_pos = read_pos;
-                let breakend1_fwd_strand_read_pos = if record.is_reverse() {
-                    record.seq_len().checked_sub(breakend1_read_pos).unwrap()
-                } else {
-                    breakend1_read_pos
-                };
-                let breakend2_fwd_strand_read_pos = if record.is_reverse() {
-                    record.seq_len().checked_sub(breakend2_read_pos).unwrap()
-                } else {
-                    breakend2_read_pos
-                };
-                let bpo = BreakpointObservation {
-                    breakpoint,
-                    evidence: BreakpointEvidenceType::ReadAlignment,
-                    qname: None,
-                    breakend1_fwd_strand_read_pos,
-                    breakend2_fwd_strand_read_pos,
-                    breakend1_neighbor: None,
-                    breakend2_neighbor: None,
-                };
-
-                all_bpo.push(bpo);
-            }
-            cand_indel.clear();
-        };
 
         for c in record.cigar().iter() {
             match c {
@@ -278,7 +301,7 @@ impl<'a> BreakBuilder<'a> {
                     cand_indel.del_size += *len;
                 }
                 _ => {
-                    process_cand_indel(&mut cand_indel, read_pos);
+                    self.process_cand_indel(record, read_pos, &mut cand_indel, all_bpo);
                 }
             }
             update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_pos);
@@ -288,22 +311,22 @@ impl<'a> BreakBuilder<'a> {
                 break;
             }
         }
-        process_cand_indel(&mut cand_indel, read_pos);
+        self.process_cand_indel(record, read_pos, &mut cand_indel, all_bpo);
     }
 
     /// Process 2 adjacent split read segments, ordered such that s1 comes before s2 in the read
     /// sequencing order.
     fn process_adjacent_split_segments(
         &self,
-        s1: &FwdStrandSplitReadSegment,
-        s2: &FwdStrandSplitReadSegment,
+        s1: &SeqOrderSplitReadSegment,
+        s2: &SeqOrderSplitReadSegment,
         all_bpo: &mut Vec<BreakpointObservation>,
     ) {
         if s1.mapq < self.min_sv_mapq as u8 || s2.mapq < self.min_sv_mapq as u8 {
             return;
         }
 
-        fn get_breakend(s: &FwdStrandSplitReadSegment, is_s1: bool) -> Breakend {
+        fn get_breakend(s: &SeqOrderSplitReadSegment, is_s1: bool) -> Breakend {
             let right_anchor = s.is_fwd_strand ^ is_s1;
             let dir = if right_anchor {
                 BreakendDirection::RightAnchor
@@ -324,12 +347,12 @@ impl<'a> BreakBuilder<'a> {
             }
         }
 
-        fn get_breakend_fwd_strand_read_pos(s: &FwdStrandSplitReadSegment, is_s1: bool) -> usize {
+        fn get_breakend_seq_order_read_pos(s: &SeqOrderSplitReadSegment, is_s1: bool) -> usize {
             let right_anchor = s.is_fwd_strand ^ is_s1;
             if right_anchor {
-                s.fwd_read_start
+                s.seq_order_read_start
             } else {
-                s.fwd_read_end
+                s.seq_order_read_end - 1
             }
         }
 
@@ -344,8 +367,8 @@ impl<'a> BreakBuilder<'a> {
             breakpoint,
             evidence: BreakpointEvidenceType::SplitRead,
             qname: None,
-            breakend1_fwd_strand_read_pos: get_breakend_fwd_strand_read_pos(s1, true),
-            breakend2_fwd_strand_read_pos: get_breakend_fwd_strand_read_pos(s2, false),
+            breakend1_seq_order_read_pos: get_breakend_seq_order_read_pos(s1, true),
+            breakend2_seq_order_read_pos: get_breakend_seq_order_read_pos(s2, false),
             breakend1_neighbor: None,
             breakend2_neighbor: None,
         });
@@ -403,24 +426,25 @@ impl<'a> BreakBuilder<'a> {
             }
         }
 
-        let fwd_read_split_segments = get_fwd_read_split_segments(self.chrom_list, record);
+        let seq_order_read_split_segments =
+            get_seq_order_read_split_segments(self.chrom_list, record);
 
         let debug = false;
         if debug {
             let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
             eprintln!("SA segments for read: {qname}");
-            for seg in fwd_read_split_segments.iter() {
+            for seg in seq_order_read_split_segments.iter() {
                 eprintln!("Sorted Segment: {:?}", seg);
             }
         }
 
         // Now iterate through the sorted list and convert each junction into a breakpoint observation:
         //
-        let split_count = fwd_read_split_segments.len();
+        let split_count = seq_order_read_split_segments.len();
         for split_index in 0..(split_count - 1) {
             self.process_adjacent_split_segments(
-                &fwd_read_split_segments[split_index],
-                &fwd_read_split_segments[split_index + 1],
+                &seq_order_read_split_segments[split_index],
+                &seq_order_read_split_segments[split_index + 1],
                 all_bpo,
             );
         }
@@ -441,11 +465,11 @@ impl<'a> BreakBuilder<'a> {
         // insertions, so first see how many we can call, then go back and work on the coordination
         // vs. BND calls
         //
-        let li_soft_clip_state =
+        let large_insertion_soft_clip_state =
             test_read_for_large_insertion_soft_clip(record, self.min_large_insertion_soft_clip_len);
 
         use LargeInsertionSoftClipState::*;
-        let dir = match li_soft_clip_state {
+        let dir = match large_insertion_soft_clip_state {
             Null => {
                 return;
             }
@@ -454,34 +478,31 @@ impl<'a> BreakBuilder<'a> {
         };
 
         let ref_pos = record.pos()
-            + if li_soft_clip_state == Left {
+            + if large_insertion_soft_clip_state == Left {
                 0
             } else {
                 get_cigar_ref_offset(&record.cigar())
             };
 
         // Get the sequenced strand read position of the soft-clip breakpoint:
-        let breakend1_fwd_strand_read_pos = {
-            let (left_sclip_len, right_sclip_start, read_size) =
+        let breakend1_seq_order_read_pos = {
+            let (left_sclip_len, right_sclip_start, _read_size) =
                 get_hard_clipped_read_clip_positions(&record.cigar());
-            let read_pos = if li_soft_clip_state == Left {
+            let read_pos = if large_insertion_soft_clip_state == Left {
                 left_sclip_len
             } else {
-                right_sclip_start
+                right_sclip_start - 1
             };
-            if record.is_reverse() {
-                read_size.checked_sub(read_pos).unwrap()
-            } else {
-                read_pos
-            }
+            get_seq_order_read_position(record, read_pos)
         };
 
         // Get a theoretical breakend2 position, even though we don't have a breakend location here:
-        let breakend2_fwd_strand_read_pos = if (li_soft_clip_state == Left) ^ record.is_reverse() {
-            breakend1_fwd_strand_read_pos - 1
-        } else {
-            breakend1_fwd_strand_read_pos + 1
-        };
+        let breakend2_seq_order_read_pos =
+            if (large_insertion_soft_clip_state == Left) ^ record.is_reverse() {
+                breakend1_seq_order_read_pos - 1
+            } else {
+                breakend1_seq_order_read_pos + 1
+            };
 
         let segment = GenomeSegment {
             chrom_index: record.tid() as usize,
@@ -507,8 +528,8 @@ impl<'a> BreakBuilder<'a> {
             breakpoint,
             evidence: BreakpointEvidenceType::SoftClip,
             qname: None,
-            breakend1_fwd_strand_read_pos,
-            breakend2_fwd_strand_read_pos,
+            breakend1_seq_order_read_pos,
+            breakend2_seq_order_read_pos,
             breakend1_neighbor: None,
             breakend2_neighbor: None,
         });
@@ -531,11 +552,11 @@ impl<'a> BreakBuilder<'a> {
             .collect::<Vec<_>>();
 
         // Step 2: Walk through filtered list in read pos order and test adjacent cases
-        cand_bpo.sort_by_key(|x| x.breakend1_fwd_strand_read_pos);
+        cand_bpo.sort_by_key(|x| x.breakend1_seq_order_read_pos);
 
         fn get_breakend_index(bpo: &BreakpointObservation, is_upstream_breakend: bool) -> usize {
             let is_be0_upstream =
-                bpo.breakend1_fwd_strand_read_pos > bpo.breakend2_fwd_strand_read_pos;
+                bpo.breakend1_seq_order_read_pos > bpo.breakend2_seq_order_read_pos;
             if is_be0_upstream ^ is_upstream_breakend {
                 1
             } else {

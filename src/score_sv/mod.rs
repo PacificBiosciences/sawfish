@@ -13,7 +13,7 @@ use strum::EnumCount;
 use unwrap::unwrap;
 
 use self::assess_depth::assess_sv_depth_support;
-use crate::bam_sa_parser::get_fwd_read_split_segments;
+use crate::bam_sa_parser::get_seq_order_read_split_segments;
 use crate::bam_utils::{
     bam_fetch_segment, get_alignment_closest_to_target_ref_pos,
     get_bam_alignment_closest_to_target_ref_pos, get_gap_compressed_identity, is_split_read,
@@ -490,7 +490,7 @@ struct OverlappingHaplotypeFlankSeqs<'a> {
 }
 
 struct BreakendMatchSplitReadInfo {
-    fwd_read_split_segments: Vec<GenomeSegment>,
+    seq_order_read_split_segments: Vec<GenomeSegment>,
     primary_split_segment_index: usize,
 }
 
@@ -518,7 +518,7 @@ fn is_segment_breakend_match(
     split_read_info: &BreakendMatchSplitReadInfo,
 ) -> bool {
     let segment_breakend_dist = split_read_info
-        .fwd_read_split_segments
+        .seq_order_read_split_segments
         .iter()
         .map(|x| get_segment_breakend_distance(x, breakend))
         .collect::<Vec<_>>();
@@ -557,7 +557,7 @@ fn does_read_segment_match_breakend(
     let is_plus_one_index = is_left_anchor ^ record.is_reverse();
     let mate_segment_index = if is_plus_one_index {
         // One segment downstream on the read
-        if target_segment_index + 1 < split_read_info.fwd_read_split_segments.len() {
+        if target_segment_index + 1 < split_read_info.seq_order_read_split_segments.len() {
             target_segment_index + 1
         } else {
             return false;
@@ -617,11 +617,12 @@ fn get_split_read_info(
 ) -> Option<BreakendMatchSplitReadInfo> {
     // Check for conditions that require we confirm we're extracting the read from the correct split read segment, otherwise return None
     if (!single_region_refinement) && is_split_read(record) {
-        let mut fwd_read_split_segments = Vec::new();
+        let mut seq_order_read_split_segments = Vec::new();
         let mut primary_split_segment_index = 0;
-        for (split_segment_index, split_segment) in get_fwd_read_split_segments(chrom_list, record)
-            .into_iter()
-            .enumerate()
+        for (split_segment_index, split_segment) in
+            get_seq_order_read_split_segments(chrom_list, record)
+                .into_iter()
+                .enumerate()
         {
             if split_segment.from_primary_bam_record {
                 primary_split_segment_index = split_segment_index;
@@ -631,10 +632,10 @@ fn get_split_read_info(
                 chrom_index: split_segment.chrom_index,
                 range: IntRange::from_pair(split_segment.pos, end),
             };
-            fwd_read_split_segments.push(segment);
+            seq_order_read_split_segments.push(segment);
         }
         Some(BreakendMatchSplitReadInfo {
-            fwd_read_split_segments,
+            seq_order_read_split_segments,
             primary_split_segment_index,
         })
     } else {

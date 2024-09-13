@@ -18,6 +18,7 @@ mod genome_segment;
 mod int_range;
 mod joint_call;
 mod large_variant_output;
+mod log_utils;
 mod maf_utils;
 mod prob_utils;
 mod refine_sv;
@@ -29,6 +30,7 @@ mod sv_group;
 mod sv_id;
 mod utils;
 mod vcf_utils;
+mod version;
 mod wfa2_utils;
 mod worker_thread_data;
 
@@ -42,10 +44,16 @@ use crate::cli::Commands;
 use crate::copy_number_segmentation::*;
 use crate::discover::run_discover;
 use crate::joint_call::run_joint_call;
+use crate::version::SAWFISH_VERSION;
 
 static PROG_NAME: &str = env!("CARGO_PKG_NAME");
 
-fn setup_logger(output_dir: Option<&Path>) -> Result<(), fern::InitError> {
+fn setup_logger(output_dir: Option<&Path>, debug: bool) -> Result<(), fern::InitError> {
+    let level = if debug {
+        log::LevelFilter::Debug
+    } else {
+        log::LevelFilter::Info
+    };
     let logger = fern::Dispatch::new()
         .format(|out, message, record| {
             out.finish(format_args!(
@@ -56,7 +64,7 @@ fn setup_logger(output_dir: Option<&Path>) -> Result<(), fern::InitError> {
                 message
             ))
         })
-        .level(log::LevelFilter::Info)
+        .level(level)
         .chain(std::io::stderr());
 
     let logger = if let Some(output_dir) = output_dir {
@@ -74,7 +82,7 @@ fn setup_logger(output_dir: Option<&Path>) -> Result<(), fern::InitError> {
 ///
 /// All error messaging in this method needs to account for no logger being setup yet.
 ///
-fn setup_output_dir_and_logger(output_dir: &Path, clobber: bool) {
+fn setup_output_dir_and_logger(output_dir: &Path, clobber: bool, debug: bool) {
     let mut output_dir_exists = false;
     if let Err(msg) = cli::check_novel_dirname(output_dir, "Output directory") {
         if clobber && output_dir.is_dir() {
@@ -96,11 +104,11 @@ fn setup_output_dir_and_logger(output_dir: &Path, clobber: bool) {
             }
         }
     }
-    setup_logger(Some(output_dir)).unwrap();
+    setup_logger(Some(output_dir), debug).unwrap();
 }
 
 fn run(settings: &cli::Settings) -> Result<(), Box<dyn error::Error>> {
-    info!("Starting {PROG_NAME}");
+    info!("Starting {PROG_NAME} {SAWFISH_VERSION}");
     info!(
         "cmdline: {}",
         std::env::args().collect::<Vec<_>>().join(" ")
@@ -130,7 +138,11 @@ fn main() {
 
     // Validation of output_dir needs to be handled separately so that we don't log error messages
     // before logging is setup.
-    setup_output_dir_and_logger(settings.get_output_dir(), settings.shared.clobber);
+    setup_output_dir_and_logger(
+        settings.get_output_dir(),
+        settings.shared.clobber,
+        settings.shared.debug,
+    );
 
     let settings = cli::validate_and_fix_settings(settings);
 

@@ -1,3 +1,6 @@
+//! BAM record cigar-processing utilities
+//!
+
 use rust_htslib::bam::record::{self, Cigar};
 
 pub fn get_cigarseg_complete_read_offset(c: &Cigar) -> usize {
@@ -81,7 +84,7 @@ pub fn update_ref_and_hard_clipped_read_pos(c: &Cigar, ref_pos: &mut i64, read_p
 
 /// Report the following positions in read coordinates, all cases ignoring any hard-clipping:
 /// 1. The first position after all left-side soft clipping
-/// 2. The first position before all right-side soft clipping
+/// 2. The first position of all right-side soft clipping
 /// 3. The read length
 ///
 pub fn get_hard_clipped_read_clip_positions(cigar: &[Cigar]) -> (usize, usize, usize) {
@@ -101,6 +104,7 @@ pub fn get_hard_clipped_read_clip_positions(cigar: &[Cigar]) -> (usize, usize, u
                     right_clip_size += *len as usize;
                 }
             }
+            HardClip(_) => {}
             _ => {
                 left_clip = false;
             }
@@ -112,7 +116,7 @@ pub fn get_hard_clipped_read_clip_positions(cigar: &[Cigar]) -> (usize, usize, u
 
 /// Report the following positions in read coordinates:
 /// 1. The first position after all left-side hard and soft clipping
-/// 2. The first position before all right-side hard and soft clipping
+/// 2. The first position of all right-side hard and soft clipping
 /// 3. The read length
 ///
 pub fn get_complete_read_clip_positions(cigar: &[Cigar]) -> (usize, usize, usize) {
@@ -143,7 +147,7 @@ pub fn get_complete_read_clip_positions(cigar: &[Cigar]) -> (usize, usize, usize
 
 /// Report the following positions in read coordinates:
 /// 1. The first position after all left-side hard clipping
-/// 2. The first position before all right-side hard clipping
+/// 2. The first position of all right-side hard clipping
 /// 3. The read length
 ///
 pub fn get_complete_read_hard_clip_positions(cigar: &[Cigar]) -> (usize, usize, usize) {
@@ -315,10 +319,24 @@ mod tests {
     }
 
     #[test]
+    fn test_get_hard_clipped_read_clip_positions() {
+        let cigar = record::CigarString::try_from("10H10S10M10S10H".as_bytes()).unwrap();
+        let result = get_hard_clipped_read_clip_positions(&cigar);
+        assert_eq!(result, (10, 20, 30));
+    }
+
+    #[test]
     fn test_get_complete_read_clip_positions() {
         let cigar = record::CigarString::try_from("10H10S10M10S10H".as_bytes()).unwrap();
         let result = get_complete_read_clip_positions(&cigar);
         assert_eq!(result, (20, 30, 50));
+    }
+
+    #[test]
+    fn test_get_complete_read_hard_clip_positions() {
+        let cigar = record::CigarString::try_from("10H10S10M10S10H".as_bytes()).unwrap();
+        let result = get_complete_read_hard_clip_positions(&cigar);
+        assert_eq!(result, (10, 40, 50));
     }
 
     #[test]

@@ -17,6 +17,7 @@ use self::joint_call::validate_and_fix_joint_call_settings;
 pub use self::joint_call::JointCallSettings;
 use self::shared::validate_and_fix_shared_settings;
 pub use self::shared::SharedSettings;
+use crate::version::SAWFISH_VERSION;
 
 #[derive(Subcommand)]
 pub enum Commands {
@@ -30,7 +31,7 @@ pub enum Commands {
 #[derive(Parser)]
 #[command(
     author,
-    version,
+    version = SAWFISH_VERSION,
     about,
     after_help = format!("Copyright (C) 2004-{}     Pacific Biosciences of California, Inc.
 This program comes with ABSOLUTELY NO WARRANTY; it is intended for
@@ -104,4 +105,10 @@ pub fn validate_and_fix_settings(settings: Settings) -> Settings {
 
 pub fn parse_settings() -> Settings {
     Settings::parse()
+}
+
+// Shared default parameter values
+pub mod defaults {
+    pub const MIN_GAP_COMPRESSED_IDENTITY: f64 = 0.97;
+    pub const MIN_SV_MAPQ: u32 = 10;
 }

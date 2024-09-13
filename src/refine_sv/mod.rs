@@ -13,6 +13,7 @@ use std::sync::{
 };
 use std::time::Instant;
 
+use itertools::Itertools;
 use log::info;
 use rust_htslib::bam::{self, Read};
 use rust_vc_utils::{downsample_vector, ChromList, GenomeRef, ProgressReporter};
@@ -34,6 +35,7 @@ use crate::contig_output::{write_contig_alignments, ContigAlignmentInfo};
 use crate::discover::StaticDiscoverSettings;
 use crate::expected_ploidy::{get_max_haplotype_count_for_regions, SVLocusPloidy};
 use crate::genome_segment::{GenomeSegment, IntRange};
+use crate::log_utils::debug_msg;
 use crate::refine_sv::SVFilterType::{GTExcluded, NoFilter, Replicated};
 use crate::run_stats::RefineStats;
 use crate::sv_group::SVGroup;
@@ -364,15 +366,17 @@ fn refine_sv_candidate_breakpoint(
     bam_reader: &mut bam::IndexedReader,
     bpc: &BreakpointCluster,
     cluster_index: usize,
+    worker_thread_index: usize,
     debug: bool,
 ) -> (
     Vec<ContigAlignmentInfo>,
     Option<SVGroup>,
     ClusterDurationInfo,
 ) {
-    if debug {
-        eprintln!("Starting refine_sv_candidate_breakpoint for cluster {cluster_index}");
-    }
+    debug_msg!(
+        debug,
+        "Cluster {cluster_index}: Starting refine_sv_candidate_breakpoint on worker thread {worker_thread_index}. Regions: {}",
+        bpc.assembly_segments.iter().map(|x| x.to_region_str(chrom_list)).join(", "));
 
     // Get the reference regions from which to take reads for breakpoint assembly
     //
@@ -425,11 +429,12 @@ fn refine_sv_candidate_breakpoint(
         )
     };
 
+    debug_msg!(
+        debug,
+        "Cluster {cluster_index}: refine_sv_candidate_breakpoint: Trimmed read count {}",
+        trimmed_reads.len()
+    );
     if debug {
-        eprintln!(
-            "refine_sv_candidate_breakpoint: Trimmed read count {}",
-            trimmed_reads.len()
-        );
         eprintln!("trimmed read info:");
         for tr in trimmed_reads.iter() {
             eprintln!(
@@ -466,11 +471,12 @@ fn refine_sv_candidate_breakpoint(
         rval
     };
 
+    debug_msg!(
+        debug,
+        "Cluster {cluster_index}: refine_sv_candidate_breakpoint: Assemblies count {}",
+        assemblies.len()
+    );
     if debug {
-        eprintln!(
-            "refine_sv_candidate_breakpoint: Assemblies count {}",
-            assemblies.len()
-        );
         let print_contigs = false;
         if print_contigs {
             let seqs = assemblies
@@ -501,12 +507,11 @@ fn refine_sv_candidate_breakpoint(
         rval
     };
 
-    if debug {
-        eprintln!(
-            "refine_sv_candidate_breakpoint: Alignment count {}",
-            contig_alignments.len()
-        );
-    }
+    debug_msg!(
+        debug,
+        "Cluster {cluster_index}: refine_sv_candidate_breakpoint: Alignment count {}",
+        contig_alignments.len()
+    );
 
     (contig_alignments, sv_group, cluster_duration_info)
 }
@@ -659,10 +664,10 @@ fn refine_sv_candidate_breakpoint_wrapper(
     // Get total processing time for this cluster:
     let cluster_start_time = Instant::now();
 
-    let worker_id = rayon::current_thread_index().unwrap();
+    let worker_thread_index = rayon::current_thread_index().unwrap();
     if debug_worker_status_report {
         // Update worker thread status to reflect the start of this job
-        let worker_id_debug_info = &mut *worker_debug_info[worker_id].lock().unwrap();
+        let worker_id_debug_info = &mut *worker_debug_info[worker_thread_index].lock().unwrap();
         *worker_id_debug_info = Some(WorkerDebugInfo {
             cluster_start_time,
             bp: bpc.breakpoint.clone(),
@@ -672,8 +677,10 @@ fn refine_sv_candidate_breakpoint_wrapper(
 
     // Hard-code one sample in discover mode:
     let sample_index = 0;
-    let bam_reader =
-        &mut worker_thread_dataset[worker_id].lock().unwrap().bam_readers[sample_index];
+    let bam_reader = &mut worker_thread_dataset[worker_thread_index]
+        .lock()
+        .unwrap()
+        .bam_readers[sample_index];
 
     let (contig_alignments, sv_group, mut duration) = refine_sv_candidate_breakpoint(
         refine_settings,
@@ -682,6 +689,7 @@ fn refine_sv_candidate_breakpoint_wrapper(
         bam_reader,
         bpc,
         cluster_index,
+        worker_thread_index,
         debug,
     );
 
@@ -694,7 +702,7 @@ fn refine_sv_candidate_breakpoint_wrapper(
     tx.send(result).unwrap();
     if debug_worker_status_report {
         // Update worker thread status to reflect the end of this job:
-        let worker_id_debug_info = &mut *worker_debug_info[worker_id].lock().unwrap();
+        let worker_id_debug_info = &mut *worker_debug_info[worker_thread_index].lock().unwrap();
         *worker_id_debug_info = None;
     } else if let Some(progress_reporter) = progress_reporter {
         progress_reporter.inc(1);
@@ -801,10 +809,13 @@ pub fn refine_sv_candidates(
 
     info!("Starting refinement of breakpoint evidence clusters ");
     let progress_reporter = if !debug_worker_status_report {
+        // Turn off the progress bar if we're logging debug info during refinement:
+        let force_periodic_updates = shared_settings.debug;
         Some(ProgressReporter::new(
             cluster_job_order.len() as u64,
             "Refined",
             "breakpoint evidence clusters",
+            force_periodic_updates,
         ))
     } else {
         None

@@ -1,5 +1,18 @@
 # Change Log
 
+## v0.12.4 - 2024-09-13
+
+### Added
+-CR-384 Add debug logging option
+  - High detail level intended to improve crash reports from external users
+  - Initially populated for breakpoint refinement only, debug log coverage will be expanded as required
+- Expose clobber option to overwrite existing output directory
+
+### Fixed
+-CR-385 Improve error message for unexpected alignment patterns from VACmap
+  - This also adjusts some off-by-one errors in neighbor extension handling, which could cause infrequent changes to inversion output
+  - Note VACmap is still unsupported; working towards clear error messages for problematic alignments from any source
+
 ## v0.12.3 - 2024-09-03
 
 ### Fixed

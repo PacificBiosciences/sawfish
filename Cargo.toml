@@ -1,9 +1,10 @@
 [package]
 name = "sawfish"
-version = "0.12.3"
+version = "0.12.4"
 authors = ["Chris Saunders <csaunders@pacificbiosciences.com>"]
 description = "Structural variant analysis for mapped PacBio HiFi reads"
 edition = "2021"
+license-file="LICENSE.md"
 
 [profile.release]
 panic = "abort"
@@ -11,6 +12,9 @@ panic = "abort"
 [profile.release-with-debug]
 inherits = "release"
 debug = true
+
+[build-dependencies]
+vergen-gitcl = "1"
 
 [dependencies]
 approx = "0.5"
@@ -22,6 +26,7 @@ exitcode = "1"
 fern = "0.6"
 flate2 = "1"
 hhmmss = "0.1"
+itertools = "0.13"
 log = "0.4"
 num = "0.4"
 num_cpus = "1"

@@ -64,12 +64,23 @@ impl ProgressReporter {
     /// The report format is: "{event_verb} {completed_count} of {event_count} {event label} ({percent}%)"
     /// For instance "Refined  1,696 of 42,056 breakpoint evidence clusters (4%)"
     ///
+    /// The reporter will be formatted as either a single-line progress bar or as a periodic update.
+    /// The progress bar will be selected if:
+    ///   1. The terminal allows for this (the program is running on tty without output redirection, etc..)
+    ///   2. the force_periodic flag is not true
+    ///
     /// # Arguments
     /// * event_count - Total events to be completed
     /// * event_verb - Part of report phrase as described above
     /// * event_label - Part of report phrase as described above
+    /// * force_periodic_updates - Force the progess output into the periodic format even if tty is available
     ///
-    pub fn new(event_count: u64, event_verb: &str, event_label: &str) -> Self {
+    pub fn new(
+        event_count: u64,
+        event_verb: &str,
+        event_label: &str,
+        force_periodic_updates: bool,
+    ) -> Self {
         let display_chars = {
             if event_count == 0 {
                 1
@@ -89,14 +100,12 @@ impl ProgressReporter {
         );
 
         use ProgressReporterType::*;
-        // For consistent tty determination, we reuse the criteria from indicatif so that the
-        // the periodic update is always provided when the progress bar is not.
-        if !progress_bar.is_hidden() {
-            progress_bar.tick();
-            Self {
-                pr_type: Bar(progress_bar),
-            }
-        } else {
+        // Determine whether this will be reported as a tty progress bar, or periodic log updates.
+        //
+        // For consistent tty determination we reuse the criteria from indicatif, ie. "bar.is_hidden()", so
+        // that the the periodic update is always provided when the progress bar is not.
+        let use_periodic_updates = force_periodic_updates || progress_bar.is_hidden();
+        if use_periodic_updates {
             let log_info = LogInfo {
                 total: event_count,
                 event_verb: event_verb.to_string(),
@@ -115,6 +124,11 @@ impl ProgressReporter {
 
             Self {
                 pr_type: PeriodicLog(log_info),
+            }
+        } else {
+            progress_bar.tick();
+            Self {
+                pr_type: Bar(progress_bar),
             }
         }
     }
