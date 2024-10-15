@@ -1,0 +1,32 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+url: "https://github.com/PacificBiosciences/sawfish"
+preferred-citation:
+  type: article
+  authors:
+  - family-names: "Saunders"
+    given-names: "Christopher T."
+    orcid: "https://orcid.org/0000-0002-0726-7600"
+  - family-names: "Holt"
+    given-names: "James M."
+    orcid: "https://orcid.org/0000-0001-6411-9236"
+  - family-names: "Baker"
+    given-names: "Daniel N."
+  - family-names: "Lake"
+    given-names: "Juniper A."
+  - family-names: "Belyeu"
+    given-names: "Jonathan R."
+    orcid: "https://orcid.org/0000-0001-5470-8299"
+  - family-names: "Kronenberg"
+    given-names: "Zev"
+    orcid: "https://orcid.org/0000-0002-7627-9808"
+  - family-names: "Rowell"
+    given-names: "William J."
+    orcid: "https://orcid.org/0000-0002-7422-1194"
+  - family-names: "Eberle"
+    given-names: "Michael A."
+    orcid: "https://orcid.org/0000-0001-8965-1253"
+  doi: "10.1101/2024.08.19.608674"
+  journal: "bioRxiv"
+  title: "Sawfish: Improving long-read structural variant discovery and genotyping with local haplotype modeling"
+  year: 2024
