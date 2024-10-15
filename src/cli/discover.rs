@@ -2,7 +2,6 @@ use std::path::{Path, PathBuf};
 
 use clap::Args;
 use const_format::concatcp;
-use log::{error, info, warn};
 use rust_vc_utils::ChromList;
 use serde::{Deserialize, Serialize};
 use simple_error::{bail, SimpleResult};
@@ -106,7 +105,7 @@ pub struct DiscoverSettings {
     #[arg(hide = true, long, default_value_t = 10)]
     pub min_indel_size_noise_margin: u32,
 
-    /// Min mapq value for reads to be used in SV breakend finding. This does not change depth
+    /// Minimum MAPQ value for reads to be used in SV breakend finding. This does not change depth
     /// analysis.
     #[arg(long, default_value_t = MIN_SV_MAPQ)]
     pub min_sv_mapq: u32,
@@ -119,6 +118,17 @@ pub struct DiscoverSettings {
     ///
     #[arg(long)]
     pub reduce_overlapping_sv_alleles: bool,
+
+    /// Don't canonicalize input file paths
+    ///
+    /// By default, all file paths input to the discover step are canonicalized and stored in the
+    /// discover output directory for use in follow-on joint-call steps. This flag disables all
+    /// canonicalization, which allows all paths to be stored as-is, including as relative paths. This
+    /// may be useful for situations where the sample discover and joint-call steps are run in
+    /// different directory structures.
+    ///
+    #[arg(long)]
+    pub disable_path_canonicalization: bool,
 
     /// Disable large insertion assembly to save memory/runtime.
     ///
@@ -155,6 +165,8 @@ impl DiscoverSettings {
 
 /// Validate settings and update to parameters that can't be processed automatically by clap.
 ///
+/// Assumes that the logger is not setup
+///
 pub fn validate_and_fix_discovery_settings(
     settings: DiscoverSettings,
 ) -> SimpleResult<DiscoverSettings> {
@@ -190,19 +202,41 @@ pub fn validate_and_fix_discovery_settings(
         "expected cn filename",
     )?;
 
-    let mut settings = settings;
-
     if settings.gc_level_count == 0 {
         bail!("--gc-level-count argument must be greater than 0");
     }
 
     if settings.gc_genome_window_size < settings.depth_bin_size {
-        warn!(
-            "--gc-genome-window-size argument is set too low and will be set to the depth bin size of {}",
+        bail!(
+            "--gc-genome-window-size is set below the depth bin size of {}",
             settings.depth_bin_size
         );
-        settings.gc_genome_window_size = settings.depth_bin_size;
     }
+
+    // Canonicalize file paths:
+    fn canonicalize_string_path(s: &str) -> String {
+        PathBuf::from(s)
+            .canonicalize()
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string()
+    }
+
+    let mut settings = settings;
+    if settings.disable_path_canonicalization {
+        settings.ref_filename = canonicalize_string_path(&settings.ref_filename);
+        settings.bam_filename = canonicalize_string_path(&settings.bam_filename);
+
+        settings.exclude_filename = settings
+            .exclude_filename
+            .map(|x| canonicalize_string_path(&x));
+        settings.expected_copy_number_filename = settings
+            .expected_copy_number_filename
+            .map(|x| canonicalize_string_path(&x));
+        settings.maf_filename = settings.maf_filename.map(|x| canonicalize_string_path(&x));
+    }
+
     Ok(settings)
 }
 
@@ -216,6 +250,7 @@ enum SettingValidationError {
 fn validate_discover_settings_data_impl(
     settings: &DiscoverSettings,
 ) -> Result<(), SettingValidationError> {
+    use log::error;
     use regex::Regex;
     use rust_htslib::bam::{self, Read};
 
@@ -263,6 +298,8 @@ fn validate_discover_settings_data_impl(
 
 /// Extended input data/settings validation that's too complex/slow to put in the cmdline parser
 ///
+/// Assumes that the logger is setup
+///
 pub fn validate_discover_settings_data(settings: &DiscoverSettings) {
     if let Err(err) = validate_discover_settings_data_impl(settings) {
         match err {
@@ -274,6 +311,8 @@ pub fn validate_discover_settings_data(settings: &DiscoverSettings) {
 
 /// Write discover settings out in json format
 pub fn write_discover_settings(output_dir: &Path, settings: &DiscoverSettings) {
+    use log::info;
+
     let filename = output_dir.join(SETTINGS_FILENAME);
 
     info!(

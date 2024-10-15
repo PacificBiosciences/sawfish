@@ -13,18 +13,17 @@ pub struct JointCallSettings {
     #[arg(long, value_name = "DIR", default_value = concatcp!(env!("CARGO_PKG_NAME"), "_joint-call_output"))]
     pub output_dir: PathBuf,
 
-    /// Sample discover-mode results directory. Can be specified multiple times
+    /// Sample discover-mode results directory (required). Can be specified multiple times
     /// to joint call over multiple samples.
     ///
-    #[arg(long, value_name = "DIR")]
+    #[arg(long, value_name = "DIR", required = true)]
     pub sample: Vec<PathBuf>,
 
     /// Minimum QUAL score below which the VCF record is marked as filtered
     #[arg(hide = true, long, default_value_t = 10)]
     pub min_qual: i32,
 
-    /// Min mapq value for reads to be used in SV breakend finding. This does not change depth
-    /// analysis.
+    /// Minimum MAPQ value for reads to be used in joint-genotyping.
     #[arg(long, default_value_t = MIN_SV_MAPQ)]
     pub min_sv_mapq: u32,
 
@@ -41,15 +40,15 @@ pub struct JointCallSettings {
     #[arg(hide = true, long)]
     pub no_vcf_dedup: bool,
 
-    /// Create a JSON output listing the reads supporting each variant
+    /// Create a JSON output file listing the reads supporting each variant
     ///
-    /// This is only intended for internal debugging use cases
-    ///
-    #[arg(hide = true, long)]
+    #[arg(long)]
     pub report_supporting_reads: bool,
 }
 
 /// Validate settings and update to parameters that can't be processed automatically by clap.
+///
+/// Assumes that the logger is not setup
 ///
 pub fn validate_and_fix_joint_call_settings(
     mut settings: JointCallSettings,

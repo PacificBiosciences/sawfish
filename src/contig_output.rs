@@ -9,8 +9,8 @@ use rust_vc_utils::{bam_reg2bin, get_alignment_end, ChromList};
 
 use crate::bam_utils::has_aligned_segments;
 use crate::discover;
+use crate::globals::PROGRAM_VERSION;
 use crate::int_range::IntRange;
-use crate::version::SAWFISH_VERSION;
 
 pub const SA_AUX_TAG: &[u8] = b"SA";
 pub const CONTIG_AUX_TAG: &[u8] = b"sf";
@@ -189,8 +189,8 @@ fn write_contig_alignments_bam(
 
         let mut pg_record = bam::header::HeaderRecord::new(b"PG");
         pg_record.push_tag(b"PN", pkg_name);
-        pg_record.push_tag(b"ID", format!("{pkg_name}-{SAWFISH_VERSION}"));
-        pg_record.push_tag(b"VN", SAWFISH_VERSION);
+        pg_record.push_tag(b"ID", format!("{pkg_name}-{PROGRAM_VERSION}"));
+        pg_record.push_tag(b"VN", PROGRAM_VERSION);
         pg_record.push_tag(b"CL", &cmdline);
         output_bam_header.push_record(&pg_record);
 

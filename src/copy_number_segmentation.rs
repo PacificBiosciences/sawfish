@@ -1,6 +1,9 @@
+use std::path::Path;
+
 use log::info;
 use rust_vc_utils::ChromList;
 use statrs::distribution::Discrete;
+use unwrap::unwrap;
 
 use crate::bam_scanner::SampleAlignmentScanResult;
 use crate::cli;
@@ -434,6 +437,48 @@ fn get_sample_copy_number_states(
         sample_cn_states.quals.push(relative_probs);
     }
     (sample_cn_states, gc_corrected_haploid_coverage)
+}
+
+/// Write out a bedgraph track for copy number segments
+pub fn write_copy_number_segment_file(
+    output_dir: &Path,
+    sample_cn_segments: &SampleCopyNumberSegments,
+) {
+    use std::fs::File;
+    use std::io::{BufWriter, Write};
+
+    let filename = output_dir.join("copynum.bedgraph");
+
+    info!(
+        "Writing bedgraph copy number track to file: '{}'",
+        filename.display()
+    );
+
+    let f = unwrap!(
+        File::create(&filename),
+        "Unable to create bedgraph copy number track file: '{}'",
+        filename.display()
+    );
+    let mut f = BufWriter::new(f);
+
+    let chrom_list = &sample_cn_segments.chrom_list;
+    let chrom_count = sample_cn_segments.chrom_list.data.len();
+
+    for chrom_index in 0..chrom_count {
+        let chrom_label = &chrom_list.data[chrom_index].label;
+        let chrom_cn_segments = &sample_cn_segments.data[chrom_index];
+        for s in chrom_cn_segments.iter() {
+            if s.state == CNState::Unknown {
+                continue;
+            }
+            writeln!(
+                f,
+                "{}\t{}\t{}\t{}",
+                chrom_label, s.begin, s.end, s.state as u32
+            )
+            .unwrap();
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, strum::FromRepr)]

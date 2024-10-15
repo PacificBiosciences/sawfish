@@ -1,3 +1,6 @@
+//! Generic logging utilities
+//!
+
 pub use log::debug;
 
 /// Print log message for either of two debug scenarios:

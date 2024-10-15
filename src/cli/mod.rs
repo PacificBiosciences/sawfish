@@ -17,21 +17,21 @@ use self::joint_call::validate_and_fix_joint_call_settings;
 pub use self::joint_call::JointCallSettings;
 use self::shared::validate_and_fix_shared_settings;
 pub use self::shared::SharedSettings;
-use crate::version::SAWFISH_VERSION;
+use crate::globals::PROGRAM_VERSION;
 
 #[derive(Subcommand)]
 pub enum Commands {
     /// Discover SV candidate alleles in one sample
     Discover(DiscoverSettings),
 
-    /// Call and genotype SVs in one to many samples, given the discover command results from each
+    /// Merge and genotype SVs from one or more samples, given the discover command results from each
     JointCall(JointCallSettings),
 }
 
 #[derive(Parser)]
 #[command(
     author,
-    version = SAWFISH_VERSION,
+    version = PROGRAM_VERSION,
     about,
     after_help = format!("Copyright (C) 2004-{}     Pacific Biosciences of California, Inc.
 This program comes with ABSOLUTELY NO WARRANTY; it is intended for
@@ -70,30 +70,28 @@ pub fn check_novel_dirname(dirname: &Path, label: &str) -> SimpleResult<()> {
     Ok(())
 }
 
-/// Validate settings and update parameters that can't be processed by clap
+/// Validate settings and update settings that can't be processed by clap
 ///
-/// Parts of this process assume logging is already setup
-///
-pub fn validate_and_fix_settings_impl(mut settings: Settings) -> SimpleResult<Settings> {
-    settings.shared = validate_and_fix_shared_settings(settings.shared)?;
-
-    settings.command = match settings.command {
-        Commands::Discover(x) => {
-            let x = validate_and_fix_discovery_settings(x)?;
-            Commands::Discover(x)
-        }
-        Commands::JointCall(x) => {
-            let x = validate_and_fix_joint_call_settings(x)?;
-            Commands::JointCall(x)
-        }
-    };
-
-    Ok(settings)
-}
-
-/// Validate settings and update to parameters that can't be processed automatically by clap.
+/// Assumes that the logger is not setup
 ///
 pub fn validate_and_fix_settings(settings: Settings) -> Settings {
+    fn validate_and_fix_settings_impl(mut settings: Settings) -> SimpleResult<Settings> {
+        settings.shared = validate_and_fix_shared_settings(settings.shared)?;
+
+        settings.command = match settings.command {
+            Commands::Discover(x) => {
+                let x = validate_and_fix_discovery_settings(x)?;
+                Commands::Discover(x)
+            }
+            Commands::JointCall(x) => {
+                let x = validate_and_fix_joint_call_settings(x)?;
+                Commands::JointCall(x)
+            }
+        };
+
+        Ok(settings)
+    }
+
     match validate_and_fix_settings_impl(settings) {
         Ok(x) => x,
         Err(msg) => {

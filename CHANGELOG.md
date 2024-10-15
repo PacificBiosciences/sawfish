@@ -1,28 +1,40 @@
 # Change Log
 
+## v0.12.5 - 2024-10-14
+
+### Added
+
+- Add new joint-call `--report-supporting-reads` option to report read names supporting each variant
+
+### Changed
+
+- CR-390 Canonicalize all discover mode input paths
+  - Also provide new `--disable-path-canonicalization` discover step option to store input paths as-is
+- CR-391 Don't create output directory until command line is validated
+
 ## v0.12.4 - 2024-09-13
 
 ### Added
--CR-384 Add debug logging option
+- CR-384 Add debug logging option
   - High detail level intended to improve crash reports from external users
   - Initially populated for breakpoint refinement only, debug log coverage will be expanded as required
 - Expose clobber option to overwrite existing output directory
 
 ### Fixed
--CR-385 Improve error message for unexpected alignment patterns from VACmap
+- CR-385 Improve error message for unexpected alignment patterns from VACmap
   - This also adjusts some off-by-one errors in neighbor extension handling, which could cause infrequent changes to inversion output
   - Note VACmap is still unsupported; working towards clear error messages for problematic alignments from any source
 
 ## v0.12.3 - 2024-09-03
 
 ### Fixed
--CR-378 Improve error message for hard-clipped split read input
--CR-379 Improve error message when discover directory is missing
+- CR-378 Improve error message for hard-clipped split read input
+- CR-379 Improve error message when discover directory is missing
 
 ## v0.12.2 - 2024-08-21
 
 ### Fixed
--CR-377 Remove `rq` tag requirement in input alignment records
+- CR-377 Remove `rq` tag requirement in input alignment records
 
 ## v0.12.1 - 2024-08-08
 

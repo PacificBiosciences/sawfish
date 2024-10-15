@@ -870,6 +870,99 @@ fn dedup_records(records: Vec<VcfRecord>) -> (Vec<VcfRecord>, usize) {
     (new_records, duplicate_record_count)
 }
 
+#[allow(clippy::too_many_arguments)]
+fn convert_sv_group_to_vcf_records(
+    settings: &VcfSettings,
+    genome_ref: &GenomeRef,
+    chrom_list: &ChromList,
+    sample_count: usize,
+    vcf: &bcf::Writer,
+    candidate_mode: bool,
+    sv_group: &SVGroup,
+    records: &mut Vec<VcfRecord>,
+) {
+    let group_contig_indexes = if candidate_mode {
+        sv_group.sample_haplotype_list[0].clone()
+    } else {
+        Vec::new()
+    };
+
+    for refined_sv in sv_group.refined_svs.iter().filter(|x| !x.filter_sv()) {
+        assert_eq!(refined_sv.score.samples.len(), sample_count);
+
+        // Force the SV type to breakpoint for various cases
+        let sv_type = {
+            let x = get_rsv_vcf_sv_type(refined_sv);
+            let force_breakpoint = if x == VcfSVType::SingleBreakend {
+                false
+            } else if refined_sv.ext.force_breakpoint_representation {
+                true
+            } else if candidate_mode && x == VcfSVType::Deletion {
+                let be1 = &refined_sv.bp.breakend1;
+                let be2 = refined_sv.bp.breakend2.as_ref().unwrap();
+                std::cmp::max(be2.segment.range.start - be1.segment.range.start, 0) > 1_000
+            } else {
+                candidate_mode && x == VcfSVType::Duplication
+            };
+
+            if force_breakpoint {
+                VcfSVType::Breakpoint
+            } else {
+                x
+            }
+        };
+
+        match sv_type {
+            VcfSVType::Deletion
+            | VcfSVType::Insertion
+            | VcfSVType::Duplication
+            | VcfSVType::Inversion => {
+                let record = convert_refined_sv_to_non_bnd_vcf_record(
+                    settings,
+                    genome_ref,
+                    chrom_list,
+                    vcf,
+                    refined_sv,
+                    &group_contig_indexes,
+                    candidate_mode,
+                );
+                if let Some(record) = record {
+                    records.push(VcfRecord(record));
+                }
+            }
+            VcfSVType::Breakpoint => {
+                let record0 = convert_refined_sv_to_bnd_vcf_record(
+                    settings,
+                    genome_ref,
+                    chrom_list,
+                    vcf,
+                    refined_sv,
+                    &group_contig_indexes,
+                    true,
+                    candidate_mode,
+                );
+                let record1 = convert_refined_sv_to_bnd_vcf_record(
+                    settings,
+                    genome_ref,
+                    chrom_list,
+                    vcf,
+                    refined_sv,
+                    &group_contig_indexes,
+                    false,
+                    candidate_mode,
+                );
+                if let (Some(record0), Some(record1)) = (record0, record1) {
+                    records.push(VcfRecord(record0));
+                    records.push(VcfRecord(record1));
+                }
+            }
+            VcfSVType::SingleBreakend => {
+                panic!("No support for single-ended breakend output to VCF");
+            }
+        }
+    }
+}
+
 /// Returns the de-duplicated records and the count of filtered duplicate records
 ///
 fn get_vcf_records(
@@ -884,86 +977,16 @@ fn get_vcf_records(
     let mut records = Vec::new();
 
     for sv_group in sv_groups {
-        let group_contig_indexes = if candidate_mode {
-            sv_group.sample_haplotype_list[0].clone()
-        } else {
-            Vec::new()
-        };
-
-        for refined_sv in sv_group.refined_svs.iter().filter(|x| !x.filter_sv()) {
-            assert_eq!(refined_sv.score.samples.len(), sample_count);
-
-            // Force the SV type to breakpoint for various cases
-            let sv_type = {
-                let x = get_rsv_vcf_sv_type(refined_sv);
-                let force_breakpoint = if x == VcfSVType::SingleBreakend {
-                    false
-                } else if refined_sv.ext.force_breakpoint_representation {
-                    true
-                } else if candidate_mode && x == VcfSVType::Deletion {
-                    let be1 = &refined_sv.bp.breakend1;
-                    let be2 = refined_sv.bp.breakend2.as_ref().unwrap();
-                    std::cmp::max(be2.segment.range.start - be1.segment.range.start, 0) > 1_000
-                } else {
-                    candidate_mode && x == VcfSVType::Duplication
-                };
-
-                if force_breakpoint {
-                    VcfSVType::Breakpoint
-                } else {
-                    x
-                }
-            };
-
-            match sv_type {
-                VcfSVType::Deletion
-                | VcfSVType::Insertion
-                | VcfSVType::Duplication
-                | VcfSVType::Inversion => {
-                    let record = convert_refined_sv_to_non_bnd_vcf_record(
-                        settings,
-                        genome_ref,
-                        chrom_list,
-                        vcf,
-                        refined_sv,
-                        &group_contig_indexes,
-                        candidate_mode,
-                    );
-                    if let Some(record) = record {
-                        records.push(VcfRecord(record));
-                    }
-                }
-                VcfSVType::Breakpoint => {
-                    let record0 = convert_refined_sv_to_bnd_vcf_record(
-                        settings,
-                        genome_ref,
-                        chrom_list,
-                        vcf,
-                        refined_sv,
-                        &group_contig_indexes,
-                        true,
-                        candidate_mode,
-                    );
-                    let record1 = convert_refined_sv_to_bnd_vcf_record(
-                        settings,
-                        genome_ref,
-                        chrom_list,
-                        vcf,
-                        refined_sv,
-                        &group_contig_indexes,
-                        false,
-                        candidate_mode,
-                    );
-                    if let (Some(record0), Some(record1)) = (record0, record1) {
-                        records.push(VcfRecord(record0));
-                        records.push(VcfRecord(record1));
-                    }
-                }
-                VcfSVType::SingleBreakend => {
-                    panic!("No support for single-ended breakend output to VCF");
-                }
-            }
-        }
+        convert_sv_group_to_vcf_records(
+            settings,
+            genome_ref,
+            chrom_list,
+            sample_count,
+            vcf,
+            candidate_mode,
+            sv_group,
+            &mut records,
+        );
     }
 
     records.sort();

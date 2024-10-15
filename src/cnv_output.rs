@@ -2,82 +2,11 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use log::info;
-use rust_vc_utils::ChromList;
-use unwrap::unwrap;
 
 use crate::cli;
 use crate::copy_number_segmentation::{CNState, SampleCopyNumberSegments};
 use crate::genome_regions::GenomeRegions;
 use crate::vcf_utils;
-
-/// Write out a bedgraph track for copy number segments
-pub fn write_copy_number_segment_file(
-    output_dir: &Path,
-    sample_cn_segments: &SampleCopyNumberSegments,
-) {
-    use std::fs::File;
-    use std::io::{BufWriter, Write};
-
-    let filename = output_dir.join("copynum.bedgraph");
-
-    info!(
-        "Writing bedgraph copy number track to file: '{}'",
-        filename.display()
-    );
-
-    let f = unwrap!(
-        File::create(&filename),
-        "Unable to create bedgraph copy number track file: '{}'",
-        filename.display()
-    );
-    let mut f = BufWriter::new(f);
-
-    let chrom_list = &sample_cn_segments.chrom_list;
-    let chrom_count = sample_cn_segments.chrom_list.data.len();
-
-    for chrom_index in 0..chrom_count {
-        let chrom_label = &chrom_list.data[chrom_index].label;
-        let chrom_cn_segments = &sample_cn_segments.data[chrom_index];
-        for s in chrom_cn_segments.iter() {
-            if s.state == CNState::Unknown {
-                continue;
-            }
-            writeln!(
-                f,
-                "{}\t{}\t{}\t{}",
-                chrom_label, s.begin, s.end, s.state as u32
-            )
-            .unwrap();
-        }
-    }
-}
-
-#[allow(dead_code)]
-// this is just temporary until we get a system for denoting sex expected CN
-fn estimate_sex(sample_cn_segments: &SampleCopyNumberSegments, chrom_list: &ChromList) -> u32 {
-    let chrom_count = chrom_list.data.len();
-    for chrom_index in 0..chrom_count {
-        let chrom_label = &chrom_list.data[chrom_index].label;
-        if chrom_label == "chrX" {
-            let chrom_cn_segments = &sample_cn_segments.data[chrom_index];
-            let state_count = CNState::Unknown as usize;
-            let mut bin_counts = vec![0; state_count];
-            for s in chrom_cn_segments.iter() {
-                if s.state == CNState::Unknown {
-                    continue;
-                }
-                bin_counts[s.state as usize] += s.end - s.begin;
-            }
-            if bin_counts[2] >= bin_counts[1] {
-                return 2;
-            } else {
-                return 1;
-            }
-        }
-    }
-    // no chrX detected, so we will just default to 2
-    2
-}
 
 fn get_expected_cn(expected_cn_regions: &GenomeRegions, chrom: &str, begin: i64, end: i64) -> u32 {
     let default_expected_cn: u32 = 2;

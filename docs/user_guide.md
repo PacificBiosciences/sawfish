@@ -155,6 +155,34 @@ All sawfish SVs are output so that only one allele is described in each VCF reco
 
 Sawfish adds short-range phasing information to clarify the relationship of heterozygous SVs called from the same or overlapping SV haplotypes. This does not have the range of general read-backed phasing and will only result in phased genotype output for smaller insertions and deletions. Each local cluster of phased genotypes corresponds to a phase set as annotated using the VCF `PS` tag. The phase set ID is the `POS` value of the first SV called from the SV haplotype cluster.
 
+#### Optional variant read support output
+
+To help show which reads support each SV allele, the optional `--report-supporting-reads` argument can be added to the joint-call command line. When this is used a compressed json output file is provided in `${OUTPUT_DIR}/supporting_reads.json.gz`.
+
+In this json output file, the top-level objects are variant IDs matching those provided in the ID field of the VCF output. Nested under each variant ID are sample IDs. For each sample ID associated with a variant, the array of supporting read QNAME values are provided. A simplified example output is shown below for two variants:
+
+```
+{
+  "sawfish:0:1041:0:0": {
+    "HG002": [
+      "m84005_220919_232112_s2/22021538/ccs",
+      "m84005_220919_232112_s2/108659098/ccs",
+      "m84005_220919_232112_s2/166989308/ccs"
+    ]
+  },
+  "sawfish:0:1051:0:0": {
+    "HG002": [
+      "m84005_220919_232112_s2/130223022/ccs",
+      "m84005_220919_232112_s2/9113818/ccs",
+      "m84005_220919_232112_s2/84214835/ccs",
+      "m84005_220919_232112_s2/116654499/ccs"
+    ]
+  }
+}
+```
+
+Note that the number of read QNAME entries should often match the supporting AD count for the alternate allele from the same variant/sample entry in the VCF, but this is not always an exact match. Also to keep a consistent relationship between supporting reads and variants, no output is provided for VCF records with the inversion (`<INV>`) allele type, but the supporting reads for the breakends comprising each inversion are provided.
+
 ### Discover step
 
 The discover step produces a number of output files in the discover output directory used by sawfish during the subsequent joint calling step. Although these are not intended for direct use, some of the important files are described here:
@@ -225,3 +253,15 @@ chrY    56887902        57227415        chrY_PAR_2      0
 ...expected sex chromosome copy number files for this and other references can be found in the [expected_cn](../data/expected_cn) directory.
 
 All expected copy number files submitted for each sample at the discover phase are saved in the discover directory and used to select per-sample ploidy in the specified regions during the joint-calling step.
+
+### Discover step input file path storage
+
+Sawfish accesses several files associated with each sample during joint-genotyping in the `joint-call` step. For instance, this is done to test read support for each allele by accessing the sample alignment file.
+
+To find these files for each sample, input file paths are stored from the `discover` step in a configuration file written to the output directory here:
+
+    ${OUTPUT_DIR}/discover.settings.json
+
+These input file paths are normally canonicalized, so that relative paths can be reliably reused after any change to the working directory. In some cases it may be more convenient to store relative file paths. To do so the `discover` step option `--disable-path-canonicalization` can be used to store all input paths as-is. This may be useful if e.g., the `discover` and `joint-call` steps are being run in different directory structures.
+
+Note that for even more complex situations, the paths in the above discover settings json file can be manually edited before running the `joint-call` step.

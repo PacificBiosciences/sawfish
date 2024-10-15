@@ -5,7 +5,7 @@ use crate::bam_scanner::scan_sample_bam_for_sv_evidence;
 use crate::cli;
 use crate::cluster_breakpoints;
 use crate::cnv_output;
-use crate::copy_number_segmentation::*;
+use crate::copy_number_segmentation::{segment_sample_copy_number, write_copy_number_segment_file};
 use crate::depth_bins;
 use crate::gc_correction::*;
 use crate::genome_regions::{write_genome_regions_to_bed, GenomeRegions};
@@ -218,10 +218,7 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         let copy_number_segment_result =
             segment_sample_copy_number(settings, &chrom_list, &sample_scan_result, &gc_bias_data);
 
-        cnv_output::write_copy_number_segment_file(
-            &settings.output_dir,
-            &copy_number_segment_result,
-        );
+        write_copy_number_segment_file(&settings.output_dir, &copy_number_segment_result);
         cnv_output::write_indexed_cnv_vcf_file(
             shared_settings,
             settings,
