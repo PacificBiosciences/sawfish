@@ -1576,7 +1576,7 @@
   },
   {
     "name": "sawfish",
-    "version": "0.12.5",
+    "version": "0.12.6",
     "authors": "Chris Saunders <csaunders@pacificbiosciences.com>",
     "repository": null,
     "license": null,

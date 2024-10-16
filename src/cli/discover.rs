@@ -224,7 +224,7 @@ pub fn validate_and_fix_discovery_settings(
     }
 
     let mut settings = settings;
-    if settings.disable_path_canonicalization {
+    if !settings.disable_path_canonicalization {
         settings.ref_filename = canonicalize_string_path(&settings.ref_filename);
         settings.bam_filename = canonicalize_string_path(&settings.bam_filename);
 

@@ -1,5 +1,11 @@
 # Change Log
 
+## v0.12.6 - 2024-10-15
+
+### Fixed
+
+- Fix discover mode input path canonicalization (reversed flag logic)
+
 ## v0.12.5 - 2024-10-14
 
 ### Added
