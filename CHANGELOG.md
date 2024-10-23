@@ -1,5 +1,13 @@
 # Change Log
 
+## v0.12.7 - 2024-10-23
+
+### Fixed
+
+- Fix "Illegal Instruction" error reported for some use cases (github #3)
+  - Removed gcc native cpu optimization in WFA2-lib believed to be causing this issue
+  - Added additional `--debug` output to discover mode contig alignment logic
+
 ## v0.12.6 - 2024-10-15
 
 ### Fixed

@@ -722,7 +722,7 @@ fn get_bnd_alt_seq(
     ))
 }
 
-/// * vcf - Used to link the corresponding bam header to the the vcf record
+/// * vcf - Used to link the corresponding bam header to the vcf record
 ///
 #[allow(clippy::too_many_arguments)]
 fn convert_refined_sv_to_bnd_vcf_record(

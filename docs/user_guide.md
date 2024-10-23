@@ -67,7 +67,7 @@ Sawfish analyzes samples in 2 steps:
 
 ### Calling SVs on one sample
 
-To call SVs in one sample, run `discover` on the the mapped sample bam, and then run joint call on the output directory of the discover step.
+To call SVs in one sample, run `discover` on the mapped sample bam, and then run joint call on the output directory of the discover step.
 
 The following example shows how this is done for a mapped sample bam named `HG002.GRCh38.bam`, using 16 threads for both the `discover` and the `joint-call` steps.
 

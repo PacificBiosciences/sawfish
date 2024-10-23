@@ -126,15 +126,6 @@
     "description": "Automatically generates Rust FFI bindings to C and C++ libraries."
   },
   {
-    "name": "bindgen",
-    "version": "0.70.1",
-    "authors": "Jyun-Yan You <jyyou.tw@gmail.com>|Emilio Cobos Álvarez <emilio@crisal.io>|Nick Fitzgerald <fitzgen@gmail.com>|The Servo project developers",
-    "repository": "https://github.com/rust-lang/rust-bindgen",
-    "license": "BSD-3-Clause",
-    "license_file": null,
-    "description": "Automatically generates Rust FFI bindings to C and C++ libraries."
-  },
-  {
     "name": "bio",
     "version": "2.0.3",
     "authors": "Johannes Köster <johannes.koester@tu-dortmund.de>",
@@ -781,6 +772,15 @@
     "license": "MIT",
     "license_file": null,
     "description": "Format time and duration in chrono, std::time and time as HH:MM:SS and HH:MM:SS.xxx"
+  },
+  {
+    "name": "home",
+    "version": "0.5.9",
+    "authors": "Brian Anderson <andersrb@gmail.com>",
+    "repository": "https://github.com/rust-lang/cargo",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Shared definitions of home directories."
   },
   {
     "name": "hts-sys",
@@ -1576,7 +1576,7 @@
   },
   {
     "name": "sawfish",
-    "version": "0.12.6",
+    "version": "0.12.7",
     "authors": "Chris Saunders <csaunders@pacificbiosciences.com>",
     "repository": null,
     "license": null,
@@ -2140,6 +2140,15 @@
     "license": null,
     "license_file": null,
     "description": null
+  },
+  {
+    "name": "which",
+    "version": "4.4.2",
+    "authors": "Harry Fei <tiziyuanfang@gmail.com>",
+    "repository": "https://github.com/harryfei/which-rs.git",
+    "license": "MIT",
+    "license_file": null,
+    "description": "A Rust equivalent of Unix command \"which\". Locate installed executable in cross platforms."
   },
   {
     "name": "wide",

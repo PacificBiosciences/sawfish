@@ -28,6 +28,7 @@ use crate::expected_ploidy::SVLocusPloidy;
 use crate::genome_ref_utils::get_ref_segment_seq;
 use crate::genome_segment::GenomeSegment;
 use crate::int_range::{get_overlap_range, IntRange};
+use crate::log_utils::debug_msg;
 use crate::refine_sv::{AnnotatedOverlappingHaplotype, RefinedSVExt, SVScoreInfo};
 use crate::simple_alignment::{clip_alignment_ref_edges, SimpleAlignment};
 use crate::sv_group::{
@@ -417,17 +418,13 @@ fn align_single_ref_region_assemblies(
     let is_any_filter = filter_all_overlapping_svs || filter_close_overlapping_svs;
 
     let debug = false;
-    if debug {
-        eprintln!("SingleRef cluster id {cluster_index} - filter_all_overlapping_svs: {filter_all_overlapping_svs} filter_close_overlapping_svs: {filter_close_overlapping_svs}");
-    }
+    debug_msg!(debug, "SingleRef Cluster {cluster_index}: filter_all_overlapping_svs: {filter_all_overlapping_svs} filter_close_overlapping_svs: {filter_close_overlapping_svs}");
 
     let mut overlapping_haplotypes = Vec::new();
 
     for (assembly_index, assembly) in assemblies.iter().enumerate() {
         if assembly.supporting_read_count() < refine_settings.min_assembly_read_support {
-            if debug {
-                eprintln!("SingleRef cluster/contig id {cluster_index}/{assembly_index} - filtered for low read support: {}", assembly.supporting_read_count());
-            }
+            debug_msg!(debug, "SingleRef cluster/contig: {cluster_index}/{assembly_index} - filtered for low read support: {}", assembly.supporting_read_count());
             continue;
         }
 
@@ -440,20 +437,17 @@ fn align_single_ref_region_assemblies(
         {
             (score, Some(x)) => (score, x),
             (_, None) => {
-                if debug {
-                    eprintln!("SingleRef cluster/contig id {cluster_index}/{assembly_index} - filtered for poor contig to ref alignment");
-                }
+                debug_msg!(debug, "SingleRef cluster/contig: {cluster_index}/{assembly_index} - filtered for poor contig to ref alignment");
                 // TODO add warning or statistics to track these filtration cases
                 continue;
             }
         };
-        if debug {
-            eprintln!("SingleRef cluster/contig id {cluster_index}/{assembly_index} - assembly_contig_to_chrom_segment_alignment: {:?}", assembly_contig_to_chrom_segment_alignment);
-            eprintln!(
-                "SingleRef cluster/contig ids {cluster_index}/{assembly_index} - alignment_score {}",
-                alignment_score
-            );
-        }
+        debug_msg!(debug, "SingleRef cluster/contig: {cluster_index}/{assembly_index} - assembly_contig_to_chrom_segment_alignment: {:?}", assembly_contig_to_chrom_segment_alignment);
+        debug_msg!(
+            debug,
+            "SingleRef cluster/contig: {cluster_index}/{assembly_index} - alignment_score {}",
+            alignment_score
+        );
 
         // Starting reference position of the assembly alignment
         let chrom_pos =

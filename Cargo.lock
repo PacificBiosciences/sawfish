@@ -120,24 +120,6 @@ dependencies = [
  "itertools 0.12.1",
  "lazy_static",
  "lazycell",
- "proc-macro2",
- "quote",
- "regex",
- "rustc-hash",
- "shlex",
- "syn 2.0.77",
-]
-
-[[package]]
-name = "bindgen"
-version = "0.70.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f49d8fed880d473ea71efb9bf597651e77201bdd4893efe54c9e5d65ae04ce6f"
-dependencies = [
- "bitflags",
- "cexpr",
- "clang-sys",
- "itertools 0.13.0",
  "log",
  "prettyplease",
  "proc-macro2",
@@ -146,6 +128,7 @@ dependencies = [
  "rustc-hash",
  "shlex",
  "syn 2.0.77",
+ "which",
 ]
 
 [[package]]
@@ -165,7 +148,7 @@ dependencies = [
  "editdistancek",
  "enum-map",
  "fxhash",
- "itertools 0.13.0",
+ "itertools 0.12.1",
  "itertools-num",
  "lazy_static",
  "multimap",
@@ -812,12 +795,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "home"
+version = "0.5.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e3d1354bf6b7235cb4a0576c2619fd4ed18183f689b12b006a0ee7329eeff9a5"
+dependencies = [
+ "windows-sys 0.52.0",
+]
+
+[[package]]
 name = "hts-sys"
 version = "2.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e9f348d14cb4e50444e39fcd6b00302fe2ed2bc88094142f6278391d349a386d"
 dependencies = [
- "bindgen 0.69.4",
+ "bindgen",
  "cc",
  "fs-utils",
  "glob",
@@ -1543,7 +1535,7 @@ dependencies = [
 [[package]]
 name = "rust-wfa2"
 version = "0.1.0"
-source = "git+https://github.com/ctsa/rust-wfa2.git#cf636d85fd9797929ef00f2adae96c35441e65c2"
+source = "git+https://github.com/ctsa/rust-wfa2.git#4342b3b06278656fa51c0a33b4eb0b67d53bfa8c"
 dependencies = [
  "serde",
  "wfa2-sys",
@@ -1618,7 +1610,7 @@ dependencies = [
 
 [[package]]
 name = "sawfish"
-version = "0.12.6"
+version = "0.12.7"
 dependencies = [
  "approx",
  "bio",
@@ -2224,10 +2216,22 @@ checksum = "c62a0a307cb4a311d3a07867860911ca130c3494e8c2719593806c08bc5d0484"
 [[package]]
 name = "wfa2-sys"
 version = "0.1.0"
-source = "git+https://github.com/ctsa/rust-wfa2.git#cf636d85fd9797929ef00f2adae96c35441e65c2"
+source = "git+https://github.com/ctsa/rust-wfa2.git#4342b3b06278656fa51c0a33b4eb0b67d53bfa8c"
 dependencies = [
- "bindgen 0.70.1",
+ "bindgen",
  "cmake",
+]
+
+[[package]]
+name = "which"
+version = "4.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "87ba24419a2078cd2b0f2ede2691b6c66d8e47836da3b6db8265ebad47afbfc7"
+dependencies = [
+ "either",
+ "home",
+ "once_cell",
+ "rustix",
 ]
 
 [[package]]
