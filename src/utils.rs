@@ -190,7 +190,7 @@ pub fn pairwise_alignment_printer(width: usize, lines: &[&[u8]]) {
         ruler
     };
 
-    let rows = (len + width - 1) / width;
+    let rows = len.div_ceil(width);
     for row_index in 0..rows {
         let start = width * row_index;
         let end = std::cmp::min(start + width, len);
@@ -219,7 +219,7 @@ pub fn print_fasta(width: usize, lines: &[&[u8]]) {
 
     for (seq_index, seq) in lines.iter().enumerate() {
         let len = seq.len();
-        let rows = (len + width - 1) / width;
+        let rows = len.div_ceil(width);
 
         eprintln!("> {}", seq_index);
         for row_index in 0..rows {
@@ -247,6 +247,23 @@ pub fn drop_true<T>(vec: &mut Vec<T>, drop_list: &[bool]) {
     assert_eq!(vec.len(), drop_list.len());
     let mut drop = drop_list.iter();
     vec.retain(|_| !*drop.next().unwrap())
+}
+
+/// Attempt to increase open file limit to the system's hard limit on *nix-like systems
+///
+/// This is an optional increase so continue through all failure cases without error.
+///
+pub fn attempt_max_open_file_limit() {
+    use rlimit::Resource;
+
+    let (soft, hard) = match Resource::NOFILE.get() {
+        Ok(x) => x,
+        Err(_) => return,
+    };
+
+    if soft < hard {
+        rlimit::setrlimit(Resource::NOFILE, hard, hard).unwrap_or_default();
+    }
 }
 
 #[cfg(test)]

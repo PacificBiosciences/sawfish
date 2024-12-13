@@ -1449,6 +1449,15 @@
     "description": "A regular expression parser."
   },
   {
+    "name": "rlimit",
+    "version": "0.10.2",
+    "authors": "Nugine <nugine@foxmail.com>",
+    "repository": "https://github.com/Nugine/rlimit/",
+    "license": "MIT",
+    "license_file": null,
+    "description": "Resource limits"
+  },
+  {
     "name": "rmp",
     "version": "0.8.14",
     "authors": "Evgeny Safronov <division494@gmail.com>",
@@ -1576,7 +1585,7 @@
   },
   {
     "name": "sawfish",
-    "version": "0.12.7",
+    "version": "0.12.8",
     "authors": "Chris Saunders <csaunders@pacificbiosciences.com>",
     "repository": null,
     "license": null,

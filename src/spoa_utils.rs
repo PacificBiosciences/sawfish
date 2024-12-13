@@ -7,6 +7,7 @@ use rust_htslib::bam::record::Cigar;
 use spoa::{get_alignment_clip_size, get_alignment_overlap_size, AlignmentEngine, Graph};
 
 use crate::simple_alignment::SimpleAlignment;
+use crate::utils;
 
 /// Create a new poa graph with only the given sequence
 ///
@@ -80,7 +81,7 @@ pub fn print_msa(alignments: &[CString]) {
         assert_eq!(seq.len(), len);
     }
 
-    let rows = (len + WIDTH - 1) / WIDTH;
+    let rows = len.div_ceil(WIDTH);
 
     let ruler = {
         let mut ruler = String::new();
@@ -129,23 +130,8 @@ pub fn print_msa(alignments: &[CString]) {
 pub fn print_fasta(alignments: &[CString]) {
     const WIDTH: usize = 100;
 
-    if alignments.is_empty() {
-        return;
-    }
-
     let bytes = alignments.iter().map(|x| x.as_bytes()).collect::<Vec<_>>();
-
-    for (seq_index, seq) in bytes.iter().enumerate() {
-        let len = seq.len();
-        let rows = (len + WIDTH - 1) / WIDTH;
-
-        eprintln!("> {}", seq_index);
-        for row_index in 0..rows {
-            let start = WIDTH * row_index;
-            let end = std::cmp::min(start + WIDTH, len);
-            eprintln!("{}", std::str::from_utf8(&seq[start..end]).unwrap());
-        }
-    }
+    utils::print_fasta(WIDTH, &bytes);
 }
 
 /// Use spoa to get a consensus of two reads using the given alignment engine

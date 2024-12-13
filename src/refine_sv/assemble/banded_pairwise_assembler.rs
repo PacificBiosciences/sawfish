@@ -53,7 +53,7 @@ struct BackboneAlignmentInfo {
 // Align the next read to the backbone. If the read extends the backbone, then redefine the backbone with this extension.
 // Repeat for all reads to form a fully extended backbone.
 // Rejection scoring follows the same scheme as for POA, so we might be building multiple backbones.
-///
+//
 // 2.Pairwise POA from each backbone
 // For each backbone and its associated read set, pairwise align all reads in the set to the backbone, and take a majority vote on each edit to determine the consensus sequence.
 

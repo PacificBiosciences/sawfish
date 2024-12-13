@@ -47,6 +47,12 @@ use crate::globals::{PROGRAM_NAME, PROGRAM_VERSION};
 use crate::joint_call::run_joint_call;
 use crate::logger::setup_output_dir_and_logger;
 
+/// Run system configuration steps prior to starting any other program logic
+///
+fn system_configuration_prelude() {
+    utils::attempt_max_open_file_limit();
+}
+
 fn run(settings: &cli::Settings) -> Result<(), Box<dyn error::Error>> {
     info!("Starting {PROGRAM_NAME} {PROGRAM_VERSION}");
     info!(
@@ -74,6 +80,8 @@ fn run(settings: &cli::Settings) -> Result<(), Box<dyn error::Error>> {
 }
 
 fn main() {
+    system_configuration_prelude();
+
     let settings = cli::validate_and_fix_settings(cli::parse_settings());
 
     // Setup logger, including creation of the output directory for the log file:

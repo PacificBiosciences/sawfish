@@ -1,6 +1,6 @@
 [package]
 name = "sawfish"
-version = "0.12.7"
+version = "0.12.8"
 authors = ["Chris Saunders <csaunders@pacificbiosciences.com>"]
 description = "Structural variant analysis for mapped PacBio HiFi reads"
 edition = "2021"
@@ -32,6 +32,7 @@ num = "0.4"
 num_cpus = "1"
 rayon = "1"
 regex = "1"
+rlimit = "0"
 rust-htslib = { version = "0.47", default-features = false }
 rust-vc-utils = { path="lib/rust-vc-utils" }
 rust-wfa2 = { git = "https://github.com/ctsa/rust-wfa2.git" }

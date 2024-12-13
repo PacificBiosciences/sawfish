@@ -1,5 +1,13 @@
 # Change Log
 
+## v0.12.8 - 2024-12-13
+
+### Fixed
+
+- Increase system open file limit (github #9)
+  - May simplify joint-call for large pedigrees at high thread counts
+- Improve error message when split reads map to an unknown chromosome (github #8)
+
 ## v0.12.7 - 2024-10-23
 
 ### Fixed

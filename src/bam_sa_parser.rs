@@ -144,7 +144,7 @@ pub fn get_seq_order_read_split_segments(
         read_size
     };
 
-    for sa_segment in sa_segments.iter() {
+    for (sa_segment_index, sa_segment) in sa_segments.iter().enumerate() {
         if !has_aligned_segments(&sa_segment.cigar) {
             let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
             panic!("Bam record split segment id unaligned in read {qname}");
@@ -153,7 +153,13 @@ pub fn get_seq_order_read_split_segments(
         assert_eq!(primary_read_size, read_size);
         let (seq_order_read_start, seq_order_read_end) =
             get_seq_order_read_pos(read_start, read_end, read_size, sa_segment.is_fwd_strand);
-        let chrom_index = *chrom_list.label_to_index.get(&sa_segment.rname).unwrap();
+        let chrom_index = match chrom_list.label_to_index.get(&sa_segment.rname) {
+            Some(&x) => x,
+            None => {
+                let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
+                panic!("In read '{qname}', the SA aux tag desribes a split read mapped to {}:{} (in segment {}), which is not found in the input reference fasta", sa_segment.rname, sa_segment.pos, sa_segment_index);
+            }
+        };
         seq_order_read_split_segments.push({
             SeqOrderSplitReadSegment {
                 seq_order_read_start,
