@@ -43,6 +43,12 @@ pub struct ClusterAssemblyAlignment {
     pub contig_alignment: SimpleAlignment,
 
     pub high_quality_contig_range: IntRange,
+
+    /// Used to indicate if the original segment was mapped to the reverse strand
+    ///
+    /// Note that this isn't used by the joint-call routine because contig_seq and high_quality_contig_range will already be reversed if is_fwd_seq is false,
+    /// but this will be used to write out the contig to bam again if needed.
+    pub is_fwd_strand: bool,
 }
 
 #[derive(Clone, Default)]
@@ -50,7 +56,8 @@ pub struct ClusterAssembly {
     /// Contig alignment for each split alignment segment
     ///
     /// For single region SVs there will be only one aligment. For SVs with breakpoints, there should
-    /// be (1 + breakpoint count) alignments.
+    /// be (1 + breakpoint count) alignments. The primary alignment should always be listed first, followed
+    /// by alignments in the SA tag, which will be reordered into 'sequencing order'.
     ///
     pub contig_alignments: Vec<ClusterAssemblyAlignment>,
     pub supporting_read_count: usize,

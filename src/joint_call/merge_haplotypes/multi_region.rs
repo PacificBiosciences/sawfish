@@ -2,6 +2,7 @@ use std::collections::BinaryHeap;
 
 use rust_vc_utils::ChromList;
 
+use super::merge_sv_shared::{clone_sv_group_as_multisample, AnnoSVGroup};
 use super::{get_duplicate_stats, CandidateSVGroupInfo};
 use crate::bio_align_utils::{print_pairwise_alignment, PairwiseAligner};
 use crate::breakpoint::Breakpoint;
@@ -91,41 +92,6 @@ fn test_for_duplicate_haplotypes(sv_group1: &SVGroup, sv_group2: &SVGroup) -> bo
 
     // Finally test for haplotype similarity via alignment
     test_for_duplicate_haplotypes_with_alignment(sv_group1, sv_group2, debug_duptest)
-}
-
-struct AnnoSVGroup<'a> {
-    sv_group: &'a SVGroup,
-    sample_index: usize,
-}
-
-/// Reformat single-sample SV group into multi-sample format
-///
-fn clone_sv_group_as_multisample(
-    sample_count: usize,
-    input_sv_group_info: &AnnoSVGroup,
-) -> SVGroup {
-    let mut multisample_sv_group = input_sv_group_info.sv_group.clone();
-    if sample_count != 1 {
-        // The single sample sv_group input has all information set to a sample_index of 0.
-        // The following steps move the sample index to its new value, and extends
-        // sample_haplotype_list to length sample_count.
-        //
-        let haplotype_source_sample_index = input_sv_group_info.sample_index;
-
-        // 1. Move sample_haplotypes to new sample_index value
-        {
-            let sample_haplotypes = multisample_sv_group.sample_haplotype_list.pop().unwrap();
-            multisample_sv_group.sample_haplotype_list = vec![Vec::new(); sample_count];
-            multisample_sv_group.sample_haplotype_list[haplotype_source_sample_index] =
-                sample_haplotypes;
-        }
-
-        // 2. Move SV ids to new sample_index value
-        for rsv in multisample_sv_group.refined_svs.iter_mut() {
-            rsv.id.sample_index = haplotype_source_sample_index;
-        }
-    }
-    multisample_sv_group
 }
 
 /// Merge candidates from the duplicate candidate pool

@@ -102,7 +102,8 @@ Just as in the single-sample case, note that the reference fasta and all 3 sampl
 
 ### Joint call step
 
-The primary user output of the sawfish SV caller is the SV VCF produced by the joint-call step. This file lists all SVs in VCF 4.2 format. Details of the SV representation in this file are provided below.
+The primary output of the joint-calling step is the genotyped SV calls for all samples in VCF 4.2 format, written to `${OUTPUT_DIR}/genotyped.sv.vcf.gz`.
+Details of the SV representation in this file are provided below.
 
 #### Quality scores
 
@@ -121,7 +122,7 @@ The following filters may be applied to each VCF record:
 - `MaxScoringDepth` - Read depth at the SV locus exceeds 1000x, so all scoring and genotyping steps were disabled.
 - `InvBreakpoint` - This breakpoint is represented as part of a separate VCF inversion record (the inversion record shares the same EVENT ID)
 
-#### SV Types
+#### SV types
 
 Notes on formatting and representation of SVs are listed below for each major type.
 
@@ -149,7 +150,7 @@ When an inversion is found, a VCF record will be output using the `<INV>` symbol
 
 #### Overlapping SV formatting
 
-All sawfish SVs are output so that only one allele is described in each VCF record, even if an overlapping SV allele is output at the same locus. The internal SV calling model accounts for up to 2 overlapping alleles per sample during genotyping and quality scoring, reads supporting a 2nd alternate allele at any given locus will be counted as support the reference in output fields such as allele depth (`AD`). This protocol matches standard SV caller formatting conventions. Users interested in a more detailed output format, such as representing overlapping read support on the VCF `<*>` allele can request this for prioritization.
+All sawfish SVs are output so that only one allele is described in each VCF record, even if an overlapping SV allele is output at the same locus. The internal SV calling model accounts for up to 2 overlapping alleles per sample during genotyping and quality scoring. Reads which support a 2nd alternate allele at any given locus will be counted as supporting the reference in output fields such as allele depth (`AD`). This protocol matches standard SV caller formatting conventions. Users interested in a more detailed output format, such as representing overlapping read support on the VCF `<*>` allele can request this for prioritization.
 
 #### Phasing
 
@@ -185,18 +186,53 @@ Note that the number of read QNAME entries should often match the supporting AD 
 
 ### Discover step
 
-The discover step produces a number of output files in the discover output directory used by sawfish during the subsequent joint calling step. Although these are not intended for direct use, some of the important files are described here:
+The discover step produces a number of output files in the discover output directory used by sawfish during the subsequent joint calling step. Although these are not intended for direct use, some of the important files are summarized here:
 
 - `assembly.regions.bed` - Describes each region of the genome targeted for assembly.
-- `contig.alignment.bam` - This is a BAM file containing the SV locus contigs aligned back to the genome to create candidate SVs for each sample.
 - `candidate.sv.bcf` - These are the candidate SVs expressed in a simplified format for each sample. These are used as input for joint genotyping together with the aligned candidate contigs.
 - `discover.settings.json` - Various parameters from the discover step (either user input or default) are recorded in this file. Some of the paths to files like the sample bam and reference fasta will be reused in the joint call step.
 
-### Debug outputs
+### Debug outputs from either step
 
-In either run step, the following files are produced to help debug problematic runs:
-1. `${OUTPUT_DIR}/sawfish.log` - High level logging output
-2. `${OUTPUT_DIR}/run_stats.json` - Run statistics and component timings
+In either run step, the following files are produced to help debug problematic runs or SV calls:
+
+- `${OUTPUT_DIR}/sawfish.log` - High level logging output
+- `${OUTPUT_DIR}/run_stats.json` - Run statistics and component timings
+- `${OUTPUT_DIR}/contig.alignment.bam` - Contigs for assembled SV haplotypes aligned back to the reference genome
+
+#### Contig alignment format
+
+SV haplotype contig alignments are output to `${OUTPUT_DIR}/contig.alignment.bam` in either the discover or joint-call steps, and can be useful for reviewing SV calls. For instance,
+this file can be viewed in alignment browsers such as IGV.
+
+Aligned contigs are provided for all single breakpoint SV calls. To find the contig for a given SV, locate the SV's VCF ID field, such as `sawfish:0:2803:1:2`,
+and take the prefix from this ID that includes the first three digits, in this case `sawfish:0:2803:1` -- this is `QNAME` value of the corresponding SV
+haplotype alignment(s) in the contig alignment BAM file.
+
+Contigs are not available for multi-breakpoint events such as inversions. However, contigs are available for each individual breakpoint
+comprising the event.
+
+In addition to standard sequence and alignment information, each contig BAM record includes a custom aux field called `sf` which provides a list of key/value
+properties associated with the contig, for instance:
+
+    sf:Z:n_reads:15;hq_range:1500-2311;
+
+The properties are:
+
+- `n_reads` - The number or reads used to assemble the contig
+- `hq_range` - The high-quality assembled region of the contig, prior to appending any flanking read sequence anchors.
+
+An example contig alignment bam record is:
+
+```
+sawfish:0:92:0   0       chr1    1649635 20      211=1X108=2I38=1X201=1X86=20I89=1I12=1X281=6D17=1X65=1D22=1X359=1X129=1X154=53D99=1X210=1X140=1X134=1X73=1X55=1X400=1X186=1X133=1X233=1X44=1D74=1635D9= *       0       0       TCCCTAATGAGAAATAAAGTGTCATGCAAAGAAACCTCACTTCAAAAATTTCACATGAAGCCGGGCACGGAGGCTTATGCCTGTAATCCTAGCACTTTGGGAGGCTGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCAAGGCCATCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAATACAAAAATTAGCTGGGCGTGGTGGCAGACACCTGTAATCCCAGCTACTAAGCGAGGCTGAGGCAGAAGAATTGCTTGAACCCGGGAGGCGGAGGTTGCAGTGAGCCGAGATCACGCCACTGCACTACAGCCTGGGCAAAAAAAAAAAAAAAAAACCCACGTGAAACTGAAATTAAGGCCGGGCGCGGTGGCTCACGCCTGTAATTCCAGCACTCTGGGAGGCCGAGGTGGGCGGATCACAAGGTCAGATCGGGACCATCCTGGCTAACACGGTGAAACCCCATCTCTACTAAAAATACAAAAAATTAGCTGGGTGTGGTGGCGGGCACCTGTAGTCCCAGCTACTCGGGAGGCTGAGGCGGGAGAATAGCGTGAACCCGGGAGATGGAATTTGCAGTGAGCTGAGATTGCGCCACTGTACTCCAGCCTGGGTGACAAGCAAGACTCCGTCCCAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAGAAAGAAATTAAATCAAGAACAGTAAATATTTAAATAAATATTTAAATAATGATGTTAACGTTAAGTAATCCTAATTTTTCTTTTTTTTCTTTTTTTTTTTTTTGAGATGGAGTCTTGCTCTGTCGCCCAGGCTGGAGTGCAGTGGCGCAATCTCGGCTCACTGCAAGCTCCGCCTCCCGTGTTCACACCATTCTCCTGCCTCAGCCTCCCGAGTAGCTGGTACTACAGGCGCCTGCCACCACGCCCGGCTAATTTTTTGTCTTTTTAGTAGAGACGGGGTTCCACCATGTTAGCCAGGATGGTCTTGATGTTCTGACCTCGTGATCTGCCGGCCTCGGCCTCCCAAAGTGTGGGGATTACAGTTGTGAGCCACCGCGCCCGGCCTTTTTTTTTTTTTTTTTAAAAGAGACAGGGTCTCGCTATATTGGCCAGGCTGGTCTTGAACTCCCGGACTCAATTGATCCTCCAAGTGCTGGGATTACAGGCCTGAGCCACTGCACCCAGCCGAATAATCATGATTTTATGTTAAATAAAAAACTTTGAAAATAAAAAACTATCTGCAGTAAGCGTCTAATTATGAAGAAAGAAGAAAAAAGAAAAACAATTCTGCTATCACAGAAGAGCAGAATTGTAATATTCGTCTTTTAAAACTTTTCCATACTGAATAAACTATAATTATCAGTTTTATAATACAAAAATCACTCTTCACAAAGACTACAGAACAAAGCTTTGCTATCAGTGGGCTTCTCCACTGTGCAATGAAGCCACATTAATTAATCAAGTGTATTTATAATCATGACATTTCAATCGGGCTCCAGGTCCAATTTTCCTAACACCCGTAAGAACCTCTTGATGTTGGTACGAGATCAAACTGCTCAAGCCAAACCCATTCTTTGGACTTGAGCAAATACCCATTTTGGGGTGTGTTTTTCTCCTATACTTGTTGAATTCAGGTCATTTTAAATGTAAACAAACTGCTCCCAAACAATATAATGGGGGAGAGAAAACCCCAGAGGAAAAATGGACTAGCCATTCTGAATGGTCTGTGACACACGCACGCTTTCAGCTAGAGTTTGCTCTCTCTGGTTTTCGGTCTGTGATACACGCATGCTTTCAGCTGGAGTTTGCTCTCTGTAGCCCCTCTGAATGGTCTGTGACACATGCACGCTTTCAGCTAGAGTACTCTCTCTATAGCCCTTCTGAATGGTCTGTGACACACGCATGCTTTCAGCTAGAGTTTGCTCTCTCTGGTTTTCGGTCTGGGACACATGCATGCTTTTAGCTAGAGTTTGCTCTGTATAGCCCTTCTGAACGGTCTGTGACACACGCATGCTTTCAGCTGGAGTTTGCTCTCTATAGCCCCTCTGAATGGTCTGTGACACACGCATGCTTTCAGATAGAGTATTCTCTCTATAGCCCTTCTGAATGGTCTGTAACACACGCAAGCTTTCAGCTAGAGTTTGCTCTCTCTGGTTTTTGGTCTGTGACACACGCATGCTTTTAGCTAGAGTTTGCTCTGTATAGCCCTTCTGAATGGTCTGTGACACATGCATGCTTTCAGCTAGAGTTTGCTCTCTCTGGTTTTCAGTCTGTGACACACACATGCTTTTAGCTAGAGTTTGCTCTGTATAGCCCTTCTGAATGGTCTGTGACACACGCGTGCTTTCAGCTAGAGTTTGCTCTCTCTGGTTTTTGGTCTGTGACACACGCATGCTTTTAGCTAGTTTGCTCTCATAGCCCTTCTGAACGGTCTGTGACACATGCATGCTTTCAGCTATTCTCTCTATAGCCATTGTGAATGGTCTGTGACACACGCACGCTTTCAGCTAGAGTTTGCTCTTTCTGGTTTTTGGTCTGTGACACACGCATGCTTTCAGCTAGAGTTTGCTCTCTCTGGTTTTCGGTCTGTGACGCACGCATGCTTTTAGCTAGAGTATTCTCTCTATAGCCATTCTGAACGGTCTGTGACACACGTATGCTTTCAGCTAGAGTTTGCTTTCTCTGGTTTTTCAGTGGTGCTCTGGGGAAGGCAGAAGAGTAGGAACAGGAAAGAAACCACACTTGAACATGATGTCAAAGAAAGTAAATGCTTCTGTACCCCCTTCTGCTGAATGGCTACGATGCCTACGTTTCTCTTTTCTCTTTTCATCTTTTCTGTGATGAGCTTTTTCTTTCCGAGACATTTGCTGGGGTGGTTTGATGGCCAAAGAATCATCTTCTTCTCCTCTGAAATAAAACACAACAGCACTGCGTCATGCTTGAGAAAGTGCAAAGAAGCATCAGGCTATTATAAGGTTTCTTCAACCCAGAAAAATGCATGATTCAGACAGGAACAAAGCTGAAACATCATTTAAAAAATTACATTAATTCTCCAACTTTAGGCATCTTTTTTTTCTTTTTTTCTTTTTTTTAGACAGTCTCGCTCTGTTGCCCGGGCTGTAGTGGCACGATCTCGGCTCACTGCAATCTCCACCCTCCGGGTTCATGCCATTCTCTTGCCTCAGCCTCCCGAGTAGCTGGGACTACAGGCGCCCGCCGCCACGCTGGCTAATTTTTGTATTTTTAGTAGAGATGGGGTTTTACCATGTTAGCCAGGATGGTCTTGGTCTCCTGACCTCATGATCCGCCCACCTCGGTCTCCCAAAGTGCTGGGATTACAGGCGTGAGCCACTGCGCCCGGCCTGTATTTATTTTTTTGAGACGGAGTCTCGCTCTGTTGCCCAGGCTGGAATGCAGTGGTACGATCTCGGCTCATTGCAACCTCCCCTTCCAGTCCCAGGTTCAAGCAATTCTCCTGCCTCTGCCTCAGGAGTAGCTGGGATTACAGGCATGCGCCACCACACCCGGCTAATTTTTTATTTTTAGTAGAGACGGGGTTTCACCATATTGGTCAGGCTGGTCTCAAACTTGTGACATCATGATCCACCCACCTCG     *       sf:Z:n_reads:12;hq_range:1500-2103;
+```
+
+In this case, the VCF record for the corresponding SV call generated from the contig is:
+
+```
+chr1    1651421 sawfish:0:92:0:0        GTAGCCCCTCTGAACGGTCTGTGACACACGCATGCTTTCAGCTAGAGTACTCTA  G       504     PASS    SVTYPE=DEL;END=1651474;SVLEN=-53;HOMLEN=13;HOMSEQ=TAGCCCCTCTGAA        GT:GQ:PL:AD     0/1:387:537,0,387:9,12
+```
 
 ## Usage Details
 

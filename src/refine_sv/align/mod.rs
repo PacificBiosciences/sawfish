@@ -529,6 +529,7 @@ fn align_single_ref_region_assemblies(
                     chrom_index: target_segment.chrom_index,
                     contig_alignment: contig_alignment.clone(),
                     high_quality_contig_range: assembly_contig.high_quality_range.clone(),
+                    is_fwd_strand: true,
                 };
                 let group_haplotype = SVGroupHaplotype {
                     hap_id,
@@ -1910,6 +1911,7 @@ fn get_group_haplotype(
             chrom_index: alt_hap_info.ref_segment1.chrom_index,
             contig_alignment,
             high_quality_contig_range: assembly_contig.high_quality_range.clone(),
+            is_fwd_strand: true,
         }
     };
     let segment2_alignement = {
@@ -1929,6 +1931,7 @@ fn get_group_haplotype(
             chrom_index: alt_hap_info.ref_segment2.chrom_index,
             contig_alignment,
             high_quality_contig_range,
+            is_fwd_strand: !alt_hap_info.ref_segment2_revcomp,
         }
     };
 

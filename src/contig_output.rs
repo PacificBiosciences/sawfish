@@ -43,6 +43,7 @@ impl std::fmt::Debug for ContigAlignmentSegment {
 
 /// Assembly contig alignment information
 ///
+#[derive(Clone)]
 pub struct ContigAlignmentInfo {
     /// Contig source sample
     pub sample_index: usize,
@@ -100,15 +101,15 @@ fn get_sa_tag_segment(
     )
 }
 
-pub fn convert_contig_alignment_to_bam_record(
+fn convert_contig_alignment_to_bam_record(
     chrom_list: &ChromList,
-    upper_pkg_name: &str,
+    pkg_name: &str,
     contig_alignment: ContigAlignmentInfo,
 ) -> bam::Record {
     const CONTIG_MAPQ: u8 = 20;
     let qname = format!(
-        "{}_contig:{}:{}:{}",
-        upper_pkg_name,
+        "{}:{}:{}:{}",
+        pkg_name,
         contig_alignment.sample_index,
         contig_alignment.cluster_index,
         contig_alignment.assembly_index
@@ -122,6 +123,7 @@ pub fn convert_contig_alignment_to_bam_record(
         contig_alignment.seq.as_slice(),
         &quals,
     );
+    record.unset_unmapped();
     record.set_tid(this_segment.tid);
     record.set_pos(this_segment.pos);
     record.set_mapq(CONTIG_MAPQ);
@@ -170,12 +172,41 @@ pub fn convert_contig_alignment_to_bam_record(
     record
 }
 
+/// Create bam header for the sawfish contig alignments
+///
+/// This is a simple header containing just the contig info, and the sawfish commandline as a "PG" entry
+///
+fn get_contig_alignment_header(chrom_list: &ChromList, pkg_name: &str) -> bam::header::Header {
+    let mut new_header = bam::header::Header::new();
+
+    let mut hd_record = bam::header::HeaderRecord::new(b"HD");
+    hd_record.push_tag(b"VN", "1.6");
+    hd_record.push_tag(b"SO", "coordinate");
+    new_header.push_record(&hd_record);
+
+    for chrom_info in chrom_list.data.iter() {
+        let mut sq_record = bam::header::HeaderRecord::new(b"SQ");
+        sq_record.push_tag(b"SN", &chrom_info.label);
+        sq_record.push_tag(b"LN", chrom_info.length);
+        new_header.push_record(&sq_record);
+    }
+
+    let cmdline = std::env::args().collect::<Vec<_>>().join(" ");
+    let mut pg_record = bam::header::HeaderRecord::new(b"PG");
+    pg_record.push_tag(b"PN", pkg_name);
+    pg_record.push_tag(b"ID", format!("{pkg_name}-{PROGRAM_VERSION}"));
+    pg_record.push_tag(b"VN", PROGRAM_VERSION);
+    pg_record.push_tag(b"CL", &cmdline);
+
+    new_header.push_record(&pg_record);
+    new_header
+}
+
 /// Completes writing (and closing) the contig bam file itself
 ///
 fn write_contig_alignments_bam(
     filename: &Path,
     thread_count: usize,
-    bam_header: bam::HeaderView,
     chrom_list: &ChromList,
     contig_alignments: Vec<ContigAlignmentInfo>,
 ) {
@@ -183,35 +214,24 @@ fn write_contig_alignments_bam(
 
     // Setup new bam writer for debug output:
     let mut bam_writer = {
-        let mut output_bam_header: bam::header::Header =
-            bam::header::Header::from_template(&bam_header);
-        let cmdline = std::env::args().collect::<Vec<_>>().join(" ");
-
-        let mut pg_record = bam::header::HeaderRecord::new(b"PG");
-        pg_record.push_tag(b"PN", pkg_name);
-        pg_record.push_tag(b"ID", format!("{pkg_name}-{PROGRAM_VERSION}"));
-        pg_record.push_tag(b"VN", PROGRAM_VERSION);
-        pg_record.push_tag(b"CL", &cmdline);
-        output_bam_header.push_record(&pg_record);
-
+        let output_bam_header = get_contig_alignment_header(chrom_list, pkg_name);
         bam::Writer::from_path(filename, &output_bam_header, bam::Format::Bam).unwrap()
     };
     bam_writer.set_threads(thread_count).unwrap();
 
-    let upper_pkg_name = pkg_name.to_uppercase();
-
     for contig_alignment in contig_alignments.into_iter() {
-        let record =
-            convert_contig_alignment_to_bam_record(chrom_list, &upper_pkg_name, contig_alignment);
+        let record = convert_contig_alignment_to_bam_record(chrom_list, pkg_name, contig_alignment);
         bam_writer.write(&record).unwrap();
     }
 }
 
+/// The bam_header should not already have a sawfish PG entry, to avoid conflicting PG entires which cause problems in IGV
+///
 pub fn write_contig_alignments(
     output_dir: &Path,
     thread_count: usize,
-    bam_header: bam::HeaderView,
     chrom_list: &ChromList,
+    contig_alignment_type_label: &str,
     mut contig_alignments: Vec<ContigAlignmentInfo>,
 ) {
     // Sort contig alignments
@@ -224,17 +244,11 @@ pub fn write_contig_alignments(
     let filename = output_dir.join(discover::CONTIG_ALIGNMENT_FILENAME);
 
     info!(
-        "Writing contig alignments to bam file: '{}'",
+        "Writing {contig_alignment_type_label} contig alignments to bam file: '{}'",
         filename.display()
     );
 
-    write_contig_alignments_bam(
-        &filename,
-        thread_count,
-        bam_header,
-        chrom_list,
-        contig_alignments,
-    );
+    write_contig_alignments_bam(&filename, thread_count, chrom_list, contig_alignments);
 
     // Index bam file
     //

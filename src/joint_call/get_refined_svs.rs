@@ -72,7 +72,11 @@ fn get_high_quality_contig_range(record: &bam::Record) -> Option<IntRange> {
     x
 }
 
-/// Parse BAM record from sawfish contig alignment file into the sample_assembles structure to use in haplotype merging and joint GT steps
+/// Parse BAM record from sawfish contig alignment file into the sample_assembles structure to use in haplotype merging
+/// and joint GT steps
+///
+/// Results are accumulated in the sample_assemblies structure. The primary index for this struct is cluster_index, so
+/// that it can easily be looked up from any SV cluster_index.
 ///
 fn update_sample_assemblies_from_bam_record(
     chrom_list: &ChromList,
@@ -94,7 +98,9 @@ fn update_sample_assemblies_from_bam_record(
     let words = qname.split(':').collect::<Vec<_>>();
     assert!(words.len() >= 4);
 
-    // Ignore sample index
+    // Ignore sample index. The joint call routine will add its own sample indexes based on the input order
+    // of the discover directories
+    //
     //let sample_index = words[1].parse::<usize>().unwrap();
 
     let cluster_index = words[2].parse::<usize>().unwrap();
@@ -126,6 +132,7 @@ fn update_sample_assemblies_from_bam_record(
             chrom_index: record.tid() as usize,
             contig_alignment,
             high_quality_contig_range: high_quality_contig_range.clone(),
+            is_fwd_strand: true, // The contig output format requires fwd-strand for the primary alignment
         }
     };
 
@@ -155,6 +162,7 @@ fn update_sample_assemblies_from_bam_record(
                 chrom_index: segment.chrom_index,
                 contig_alignment,
                 high_quality_contig_range,
+                is_fwd_strand: segment.is_fwd_strand,
             };
             cluster_assembly
                 .contig_alignments
@@ -269,6 +277,11 @@ fn parse_bnd_alt_allele(chrom_list: &ChromList, alt_allele: &[u8], homlen: i64) 
 /// RefinedSV plus auxiliary data which will be added to the SVGroup
 struct AnnotatedRefinedSV {
     refined_sv: RefinedSV,
+
+    /// Assembly index or indexes used to associate the contig back to the SV call
+    ///
+    /// This provides a way to clarify which contigs are associated with the variant in overlapping contig regions.
+    ///
     contig_map: Vec<usize>,
 }
 
@@ -491,6 +504,10 @@ fn process_bcf_record_to_anno_refine_sv(
     }
 }
 
+/// Attempt to convert the full set of AnnotatedRefinedSVs from the same cluster_index into a single-sample SVGroup
+///
+/// The group_arsvs will always be cleared by this method.
+///
 fn process_rsv_cluster_to_sv_group(
     contigs: &SampleAssemblies,
     expected_copy_number_regions: Option<&GenomeRegionsByChromIndex>,
@@ -649,6 +666,7 @@ fn process_rsv_cluster_to_sv_group(
     }
 }
 
+/// Take a set of annotated refined SVs from the same cluster, and try to convert these into an SVGroup
 fn process_rsv_cluster(
     contigs: &SampleAssemblies,
     expected_copy_number_regions: Option<&GenomeRegionsByChromIndex>,

@@ -4,6 +4,7 @@ mod joint_call_all_samples;
 mod merge_haplotypes;
 mod read_sample_data;
 mod supporting_read_names;
+mod write_merged_contigs;
 
 use self::find_inversions::find_inversions;
 use self::joint_call_all_samples::joint_genotype_all_samples;
@@ -20,6 +21,13 @@ pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSett
 
     let (merged_sv_groups, merge_stats) =
         merge_haplotypes(shared_settings, &shared_data.chrom_list, &all_sample_data);
+
+    write_merged_contigs::write_merged_contig_alignments(
+        shared_settings,
+        settings,
+        &shared_data,
+        &merged_sv_groups,
+    );
 
     let enable_phasing = true;
     let (mut scored_svs, mut score_stats) = joint_genotype_all_samples(

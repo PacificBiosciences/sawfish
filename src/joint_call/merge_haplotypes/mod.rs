@@ -1,3 +1,4 @@
+mod merge_sv_shared;
 mod multi_region;
 mod single_region;
 

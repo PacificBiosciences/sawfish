@@ -1,5 +1,12 @@
 # Change Log
 
+## v0.12.9 - 2025-01-10
+
+### Added
+
+- CR-418 Provide BAM output of assembled SV contig alignments in the joint-call step
+  - BAM output reflects all assembled SV haplotypes used during genotyping, which can be useful for reviewing SV calls
+
 ## v0.12.8 - 2024-12-13
 
 ### Fixed

@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, BinaryHeap};
 
+use super::merge_sv_shared::{clone_sv_group_as_multisample, AnnoSVGroup};
 use super::{get_duplicate_stats, CandidateSVGroupInfo};
 use crate::bio_align_utils::{print_pairwise_alignment, PairwiseAligner};
 use crate::breakpoint::{Breakend, Breakpoint};
@@ -47,12 +48,19 @@ fn merge_sv_group_into_base_group(
             y
         }));
 
-    // 2. Concat haplotypes
+    // 2. Copy input group haplotypes with updated sample_index:
+    let input_group_haplotype_iter = input_group.group_haplotypes.iter().map(|x| {
+        let mut y = x.clone();
+        y.hap_id.sample_index = input_sample_index;
+        y
+    });
+
+    // 3. Concat haplotypes
     base_group
         .group_haplotypes
-        .extend(input_group.group_haplotypes.clone());
+        .extend(input_group_haplotype_iter);
 
-    // 3. Update sample_haplotype_list
+    // 4. Update sample_haplotype_list
 
     // TODO bring this check back
     //if !base_group.sample_haplotype_list[input_sample_index].is_empty() {
@@ -463,12 +471,6 @@ fn merge_duplicated_candidates(
         );
     }
 
-    #[derive(Debug)]
-    struct AnnoSVGroup<'a> {
-        sv_group: &'a SVGroup,
-        sample_index: usize,
-    }
-
     let sv_groups = duplicate_candidate_pool
         .iter()
         .map(|x| AnnoSVGroup {
@@ -477,34 +479,12 @@ fn merge_duplicated_candidates(
         })
         .collect::<Vec<_>>();
 
-    // Step 1: Arbitrarily pick the first SV group, and format it for multi-sample output.
+    // Step 1: Arbitrarily pick the first SV group and format it for multi-sample output.
     //
     // Use this SV group as the base onto which any other SV groups will be merged.
     //
-    let mut merged_sv_group = sv_groups[0].sv_group.clone();
     let sample_count = all_sample_data.len();
-    if sample_count != 1 {
-        // Reformat SV group into multi-sample format
-        //
-        // The single sample sv_group input is going to come in with all information set
-        // to a sample_index of 0. The following steps move the sample index to its new value,
-        // and also extends sample_haplotype_list to length sample_count.
-        //
-        let haplotype_source_sample_index = sv_groups[0].sample_index;
-
-        // 1. Move sample_haplotypes to new sample_index value
-        {
-            let sample_haplotypes = merged_sv_group.sample_haplotype_list.pop().unwrap();
-            merged_sv_group.sample_haplotype_list = vec![Vec::new(); sample_count];
-            merged_sv_group.sample_haplotype_list[haplotype_source_sample_index] =
-                sample_haplotypes;
-        }
-
-        // 2. Move SV ids to new sample_index value
-        for rsv in merged_sv_group.refined_svs.iter_mut() {
-            rsv.id.sample_index = haplotype_source_sample_index;
-        }
-    }
+    let mut merged_sv_group = clone_sv_group_as_multisample(sample_count, &sv_groups[0]);
 
     // Step 2: Handle the special N==1 case, where we don't have to worry about any merging:
     if sv_groups.len() == 1 {

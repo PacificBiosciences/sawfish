@@ -15,7 +15,7 @@ use std::time::Instant;
 
 use itertools::Itertools;
 use log::info;
-use rust_htslib::bam::{self, Read};
+use rust_htslib::bam;
 use rust_vc_utils::{downsample_vector, ChromList, GenomeRef, ProgressReporter};
 use strum::EnumCount;
 
@@ -879,15 +879,11 @@ pub fn refine_sv_candidates(
     }
 
     // Write out a debug bam file of contig alignments to the reference
-    let sample_index = 0;
-    let bam_header = worker_thread_dataset[0].lock().unwrap().bam_readers[sample_index]
-        .header()
-        .clone();
     write_contig_alignments(
         &settings.output_dir,
         shared_settings.thread_count,
-        bam_header,
         chrom_list,
+        "all",
         contig_alignments,
     );
 

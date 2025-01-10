@@ -44,6 +44,14 @@ pub struct JointCallSettings {
     ///
     #[arg(long)]
     pub report_supporting_reads: bool,
+
+    /// Disable filtering out unused contigs and trimming alignment artifacts in
+    /// the aligned contig output.
+    ///
+    /// This is only intended for internal debugging cases
+    ///
+    #[arg(hide = true, long)]
+    pub no_contig_cleanup: bool,
 }
 
 /// Validate settings and update to parameters that can't be processed automatically by clap.
