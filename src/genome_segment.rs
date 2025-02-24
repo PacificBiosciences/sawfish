@@ -25,8 +25,7 @@ impl GenomeSegment {
     ///
     #[allow(dead_code)]
     pub fn from_region_str(chrom_list: &ChromList, str: &str) -> Self {
-        let (chrom_index, _chrom_label, start, end) =
-            samtools_region_string_splitter(chrom_list, str);
+        let (chrom_index, start, end) = parse_samtools_region_string(chrom_list, str);
         Self {
             chrom_index,
             range: IntRange::from_pair(start, end),
@@ -109,43 +108,58 @@ pub fn get_segment_dir_distance(gs1: &GenomeSegment, gs2: &GenomeSegment) -> Opt
     }
 }
 
-/// Convert from a string in 'samtools' region format (e.g. chr20:100-200) to a tuple of
-/// (chrom_index, chrom_label, start, end)
-/// ...where start and end are converted to the zero-indexed half-open convention used for bed
+/// Parse the chromosome string out of a samtools-style region string
 ///
-/// Commas will be stripped out of coordinates if present
+/// Return the index of the chromosome from the expected chromosome list, and
+/// an optional position string following the chromosome name
 ///
-pub fn samtools_region_string_splitter(
+fn parse_chrom_index_from_samtools_region_string<'a>(
     chrom_list: &ChromList,
-    str: &str,
-) -> (usize, String, i64, i64) {
-    let s1 = str.split(':').collect::<Vec<_>>();
+    str: &'a str,
+) -> (usize, Option<&'a str>) {
+    // Note that rsplitn orders words in reverse order compared to how they appear in the string:
+    let s1 = str.rsplitn(2, ':').collect::<Vec<_>>();
     let s1l = s1.len();
     assert!(
         s1l > 0 && s1l < 3,
-        "Unexpected format in genome region string {}",
-        str
+        "Unexpected format in genome region string '{str}'"
     );
-    let chrom = s1[0].to_string();
-    let chrom_index = match chrom_list.label_to_index.get(s1[0]) {
-        Some(x) => *x,
-        None => {
-            panic!("Can't find chromosome '{}' in bam file header", chrom);
-        }
-    };
-    let chrom_size = chrom_list.data[chrom_index].length as i64;
-    let (start, end) = if s1l == 1 {
-        (0, chrom_size)
+    let chrom = *s1.last().unwrap();
+    if let Some(&chrom_index) = chrom_list.label_to_index.get(chrom) {
+        let pos_string = if s1l == 2 { Some(s1[0]) } else { None };
+        (chrom_index, pos_string)
+    } else if let Some(&chrom_index) = chrom_list.label_to_index.get(str) {
+        (chrom_index, None)
     } else {
-        let s2 = s1[1].split('-').collect::<Vec<_>>();
+        let msg = if str != chrom {
+            format!("Unexpected format in genome region string '{str}': can't find chromosome name '{chrom}' or '{str}' in bam file header")
+        } else {
+            format!("Unexpected format in genome region string '{str}': can't find chromosome '{chrom}' in bam file header")
+        };
+        panic!("{}", msg);
+    }
+}
+
+/// Parse position range from samtools-style genomic interval string, return
+/// start-end coordinate in bedtools zero-index half-open format.
+///
+/// In the samtools-style string, "100-300" would return (99,300). Just "100"
+/// should retunr (99, chrom_length)
+///
+/// # Arguments
+/// * `region_str` - Only used to improve error messages
+///
+fn parse_samtools_pos_range(
+    region_str: &str,
+    pos_range_str: Option<&str>,
+    chrom_size: i64,
+) -> (i64, i64) {
+    if let Some(pos_range_str) = pos_range_str {
+        let s2 = pos_range_str.split('-').collect::<Vec<_>>();
         let s2l = s2.len();
-        assert!(
-            s2l > 0 && s2l < 3,
-            "Unexpected format in genome region string {}",
-            str
-        );
-        // Strip any commas out of the number field (don't know if samtools does this but just a
-        // nice ease of use bonus:
+        assert!(s2l <= 2, "Unexpected format in position range '{pos_range_str}' from genome region string {region_str}");
+
+        // Strip any commas out of the number field (same as tabix cmdline behavior)
         let s2 = s2
             .into_iter()
             .map(|s| {
@@ -155,14 +169,33 @@ pub fn samtools_region_string_splitter(
             })
             .collect::<Vec<_>>();
         let start = s2[0].parse::<i64>().unwrap() - 1;
-        if s2l == 1 {
-            (start, chrom_size)
+        let end = if s2l == 1 {
+            chrom_size
         } else {
-            let end = s2[1].parse::<i64>().unwrap();
-            (start, end)
-        }
-    };
-    (chrom_index, chrom, start, end)
+            s2[1].parse::<i64>().unwrap()
+        };
+        (start, end)
+    } else {
+        (0, chrom_size)
+    }
+}
+
+/// Convert from a string in 'samtools' region format (e.g. chr20:100-200) to a tuple of
+/// (chrom_index, chrom_label, start, end)
+/// ...where start and end are converted to the zero-indexed half-open convention used for bed
+///
+/// Commas will be stripped out of coordinates if present
+///
+/// This parser makes a 'best-effort' to parse contig names with colons in them, such as HLA alleles
+/// like "HLA-DRB1*10:01:01". Given that samtools region format already has an optinoal colon, it may
+/// be impossible to resolve some cases.
+///
+pub fn parse_samtools_region_string(chrom_list: &ChromList, region_str: &str) -> (usize, i64, i64) {
+    let (chrom_index, pos_str) =
+        parse_chrom_index_from_samtools_region_string(chrom_list, region_str);
+    let chrom_size = chrom_list.data[chrom_index].length as i64;
+    let (start, end) = parse_samtools_pos_range(region_str, pos_str, chrom_size);
+    (chrom_index, start, end)
 }
 
 #[allow(dead_code)]
@@ -235,37 +268,54 @@ mod tests {
 
     #[test]
     fn test_samtools_region_string_splitter() {
-        let mut chrom_list = ChromList::default();
-        chrom_list.add_chrom("chr1", 10000);
-        chrom_list.add_chrom("chr2", 10000);
-        chrom_list.add_chrom("chr3", 10000);
-        let chrom_list = chrom_list;
+        let chrom_list = {
+            let mut x = ChromList::default();
+            x.add_chrom("chr1", 10000);
+            x.add_chrom("chr2", 10000);
+            x.add_chrom("chr3", 10000);
+            x
+        };
 
         // A simple case
         let s = "chr2:1000-2000";
-        let (chrom_index, chrom_label, start, end) =
-            samtools_region_string_splitter(&chrom_list, s);
+        let (chrom_index, start, end) = parse_samtools_region_string(&chrom_list, s);
         assert_eq!(chrom_index, 1);
-        assert_eq!(chrom_label, "chr2");
         assert_eq!(start, 999);
         assert_eq!(end, 2000);
 
         // Simple case with commas
         let s = "chr2:1,000-2,000";
-        let (chrom_index, chrom_label, start, end) =
-            samtools_region_string_splitter(&chrom_list, s);
+        let (chrom_index, start, end) = parse_samtools_region_string(&chrom_list, s);
         assert_eq!(chrom_index, 1);
-        assert_eq!(chrom_label, "chr2");
         assert_eq!(start, 999);
         assert_eq!(end, 2000);
 
         // No end
         let s = "chr2:1,000";
-        let (chrom_index, chrom_label, start, end) =
-            samtools_region_string_splitter(&chrom_list, s);
+        let (chrom_index, start, end) = parse_samtools_region_string(&chrom_list, s);
         assert_eq!(chrom_index, 1);
-        assert_eq!(chrom_label, "chr2");
         assert_eq!(start, 999);
+        assert_eq!(end, 10000);
+    }
+
+    #[test]
+    fn test_samtools_region_string_splitter_hla() {
+        let chrom_list = {
+            let mut x = ChromList::default();
+            x.add_chrom("HLA-DRB1*10:01:01", 10000);
+            x
+        };
+
+        let s = "HLA-DRB1*10:01:01:1000-2000";
+        let (chrom_index, start, end) = parse_samtools_region_string(&chrom_list, s);
+        assert_eq!(chrom_index, 0);
+        assert_eq!(start, 999);
+        assert_eq!(end, 2000);
+
+        let s = "HLA-DRB1*10:01:01";
+        let (chrom_index, start, end) = parse_samtools_region_string(&chrom_list, s);
+        assert_eq!(chrom_index, 0);
+        assert_eq!(start, 0);
         assert_eq!(end, 10000);
     }
 }

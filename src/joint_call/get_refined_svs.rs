@@ -200,6 +200,13 @@ struct BndAltInfo {
     insert_seq: Vec<u8>,
 }
 
+/// Parse a VCF breakend record alt-allele string into component parts describing the breakpoint
+///
+/// Example BND alt allele string is "TCT]chr1:500]", see VCF spec for full description.
+///
+/// # Arguments
+/// * homlen - this is used to correct the remote breakend into a left-shifted position when the breakpoint is inverted
+///
 fn parse_bnd_alt_allele(chrom_list: &ChromList, alt_allele: &[u8], homlen: i64) -> BndAltInfo {
     let alt_allele = std::str::from_utf8(alt_allele).unwrap();
 
@@ -224,17 +231,21 @@ fn parse_bnd_alt_allele(chrom_list: &ChromList, alt_allele: &[u8], homlen: i64) 
         alt_allele
     );
 
-    let mate_location = words[1].split(':').collect::<Vec<_>>();
-    assert_eq!(
-        mate_location.len(),
-        2,
-        "Unexpected BND alt allele format `{}`",
-        alt_allele
-    );
+    let (breakend2_chrom_index, breakend2_raw_pos) = {
+        // Note that rsplitn orders words in reverse order compared to how they appear in the string:
+        let mate_location = words[1].rsplitn(2, ':').collect::<Vec<_>>();
+        assert_eq!(
+            mate_location.len(),
+            2,
+            "Unexpected BND alt allele format `{}`",
+            alt_allele
+        );
 
-    let breakend2_chrom_name = mate_location[0];
-    let breakend2_chrom_index = *chrom_list.label_to_index.get(breakend2_chrom_name).unwrap();
-    let breakend2_raw_pos = mate_location[1].parse::<i64>().unwrap() - 1;
+        let breakend2_chrom_name = mate_location[1];
+        let breakend2_chrom_index = *chrom_list.label_to_index.get(breakend2_chrom_name).unwrap();
+        let breakend2_raw_pos = mate_location[0].parse::<i64>().unwrap() - 1;
+        (breakend2_chrom_index, breakend2_raw_pos)
+    };
 
     let breakend1_direction = if !words[0].is_empty() && words[2].is_empty() {
         BreakendDirection::LeftAnchor
@@ -837,4 +848,61 @@ pub fn get_sample_sv_groups(
     }
 
     sv_groups
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_bnd_alt_allele() {
+        let chrom_list = {
+            let mut x = ChromList::default();
+            x.add_chrom("chr1", 1000);
+            x
+        };
+
+        let alt_allele = b"TCT]chr1:500]";
+
+        let homlen = 10;
+        let bnd_alt_info = parse_bnd_alt_allele(&chrom_list, alt_allele, homlen);
+
+        assert_eq!(
+            bnd_alt_info.breakend1_direction,
+            BreakendDirection::LeftAnchor
+        );
+        assert_eq!(
+            bnd_alt_info.breakend2_direction,
+            BreakendDirection::LeftAnchor
+        );
+        assert_eq!(bnd_alt_info.breakend2_chrom_index, 0);
+        assert_eq!(bnd_alt_info.breakend2_pos, 489);
+        assert_eq!(bnd_alt_info.insert_seq, b"CT");
+    }
+
+    #[test]
+    fn test_parse_bnd_alt_allele_hla() {
+        let chrom_list = {
+            let mut x = ChromList::default();
+            x.add_chrom("HLA-DRB1*10:01:01", 1000);
+            x
+        };
+
+        let alt_allele = b"TCT]HLA-DRB1*10:01:01:500]";
+
+        let homlen = 10;
+        let bnd_alt_info = parse_bnd_alt_allele(&chrom_list, alt_allele, homlen);
+
+        assert_eq!(
+            bnd_alt_info.breakend1_direction,
+            BreakendDirection::LeftAnchor
+        );
+        assert_eq!(
+            bnd_alt_info.breakend2_direction,
+            BreakendDirection::LeftAnchor
+        );
+        assert_eq!(bnd_alt_info.breakend2_chrom_index, 0);
+        assert_eq!(bnd_alt_info.breakend2_pos, 489);
+        assert_eq!(bnd_alt_info.insert_seq, b"CT");
+    }
 }

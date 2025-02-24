@@ -1,5 +1,11 @@
 # Change Log
 
+## v0.12.10 - 2025-02-24
+
+### Fixed
+
+- Fix handling of chromosome names with colons, eg. 'HLA-DRB1*10:01:01' (github #11)
+
 ## v0.12.9 - 2025-01-10
 
 ### Added

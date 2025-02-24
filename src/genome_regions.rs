@@ -6,7 +6,7 @@ use log::info;
 use rust_vc_utils::ChromList;
 use unwrap::unwrap;
 
-use crate::genome_segment::samtools_region_string_splitter;
+use crate::genome_segment::parse_samtools_region_string;
 
 /// A set of chromosome regions which can be efficiently queried
 ///
@@ -144,10 +144,10 @@ impl GenomeRegions {
     ) -> Self {
         let mut regions = Self::new(overlaps_allowed);
         for target_region in target_regions {
-            let (_chrom_index, chrom_label, start, end) =
-                samtools_region_string_splitter(chrom_list, target_region);
+            let (chrom_index, start, end) = parse_samtools_region_string(chrom_list, target_region);
 
-            regions.add_region(&chrom_label, start, end);
+            let chrom_label = &chrom_list.data[chrom_index].label;
+            regions.add_region(chrom_label, start, end);
         }
         regions
     }

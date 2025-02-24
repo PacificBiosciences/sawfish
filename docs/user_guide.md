@@ -206,7 +206,7 @@ SV haplotype contig alignments are output to `${OUTPUT_DIR}/contig.alignment.bam
 this file can be viewed in alignment browsers such as IGV.
 
 Aligned contigs are provided for all single breakpoint SV calls. To find the contig for a given SV, locate the SV's VCF ID field, such as `sawfish:0:2803:1:2`,
-and take the prefix from this ID that includes the first three digits, in this case `sawfish:0:2803:1` -- this is `QNAME` value of the corresponding SV
+and take the prefix from this ID that includes the first three digits, in this case `sawfish:0:2803:1`. This is the `QNAME` value of the corresponding SV
 haplotype alignment(s) in the contig alignment BAM file.
 
 Contigs are not available for multi-breakpoint events such as inversions. However, contigs are available for each individual breakpoint
