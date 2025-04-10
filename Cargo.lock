@@ -1765,7 +1765,7 @@ dependencies = [
 
 [[package]]
 name = "sawfish"
-version = "0.12.10"
+version = "1.0.0"
 dependencies = [
  "approx",
  "bio",

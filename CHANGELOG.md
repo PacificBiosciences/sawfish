@@ -1,5 +1,20 @@
 # Change Log
 
+## v1.0.0 - 2025-04-10
+
+This release marks the initial stabilization of sawfish with its publication in [Bioinformatics](https://doi.org/10.1093/bioinformatics/btaf136).
+It is functionally identical to v0.12.10 but includes updated in-source documentation for both accuracy
+assessment and methods.
+
+### Added
+
+- CR-467 Add in-source pandoc sawfish methods document.
+
+### Changed
+
+- CR-462 Updated accuracy assessment page from the original sawfish release to match all updated methods
+reported in the sawfish paper.
+
 ## v0.12.10 - 2025-02-24
 
 ### Fixed

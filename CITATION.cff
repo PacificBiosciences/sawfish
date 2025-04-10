@@ -14,6 +14,7 @@ preferred-citation:
     given-names: "Daniel N."
   - family-names: "Lake"
     given-names: "Juniper A."
+    orcid: "https://orcid.org/0000-0001-7628-5645"
   - family-names: "Belyeu"
     given-names: "Jonathan R."
     orcid: "https://orcid.org/0000-0001-5470-8299"
@@ -26,7 +27,7 @@ preferred-citation:
   - family-names: "Eberle"
     given-names: "Michael A."
     orcid: "https://orcid.org/0000-0001-8965-1253"
-  doi: "10.1101/2024.08.19.608674"
-  journal: "bioRxiv"
+  doi: "10.1093/bioinformatics/btaf136"
+  journal: "Bioinformatics"
   title: "Sawfish: Improving long-read structural variant discovery and genotyping with local haplotype modeling"
-  year: 2024
+  year: 2025

@@ -24,15 +24,13 @@ See the [getting started](docs/user_guide.md#getting-started) section in the [us
 
 ## Citation
 
-Sawfish is detailed in the following pre-print:
+Sawfish is published in *Bioinformatics*, this can be cited as:
 
-[Saunders, C. T., Holt, J. M., Baker, D. N., Lake, J. A., Belyeu, J. R. Kronenberg, Z., Rowell, W. J., & Eberle, M. (2024). Sawfish: Improving long-read structural variant discovery and genotyping with local haplotype modeling. *bioRxiv*](https://doi.org/10.1101/2024.08.19.608674)
+[Saunders, C. T., Holt, J. M., Baker, D. N., Lake, J. A., Belyeu, J. R. Kronenberg, Z., Rowell, W. J., & Eberle, M. (2025). Sawfish: Improving long-read structural variant discovery and genotyping with local haplotype modeling. *Bioinformatics*](https://doi.org/10.1093/bioinformatics/btaf136)
 
 ## Support
 
 Create a new [issue ticket](https://github.com/PacificBiosciences/sawfish/issues) on this repo for support with current capabilities or new feature requests.
-
-Note that this is a research method in early development. The interface and behaviors are still being refined and may change in subsequent feature releases.
 
 ## DISCLAIMER
 THIS WEBSITE AND CONTENT AND ALL SITE-RELATED SERVICES, INCLUDING ANY DATA, ARE PROVIDED "AS IS," WITH ALL FAULTS, WITH NO REPRESENTATIONS OR WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO, ANY WARRANTIES OF MERCHANTABILITY, SATISFACTORY QUALITY, NON-INFRINGEMENT OR FITNESS FOR A PARTICULAR PURPOSE. YOU ASSUME TOTAL RESPONSIBILITY AND RISK FOR YOUR USE OF THIS SITE, ALL SITE-RELATED SERVICES, AND ANY THIRD PARTY WEBSITES OR APPLICATIONS. NO ORAL OR WRITTEN INFORMATION OR ADVICE SHALL CREATE A WARRANTY OF ANY KIND. ANY REFERENCES TO SPECIFIC PRODUCTS OR SERVICES ON THE WEBSITES DO NOT CONSTITUTE OR IMPLY A RECOMMENDATION OR ENDORSEMENT BY PACIFIC BIOSCIENCES.

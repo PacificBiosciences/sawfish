@@ -26,7 +26,7 @@ All SVs are modeled internally as breakpoints, but will be reported as deletions
 
 ## Accuracy Evaluation
 
-Recommended methods for SV accuracy assessment and benchmarking results are described in the [sawfish preprint](https://doi.org/10.1101/2024.08.19.608674). An earlier simplified assessment and benchmarking approach is described in [accuracy](accuracy.md).
+Recommended methods for SV accuracy assessment and benchmarking results are described in the [sawfish App Note in *Bioinformatics*](https://doi.org/10.1093/bioinformatics/btaf136). A step-by-step overview of these benchmarking methods is provided on the [accuracy assessment page](accuracy.md).
 
 ## Getting Started
 
