@@ -1,14 +1,17 @@
 use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
 
-use log::info;
+use log::{info, log_enabled, Level};
 use rust_vc_utils::ProgressReporter;
 
 use super::{SampleJointCallData, SharedJointCallData};
 use crate::cli::{JointCallSettings, SharedSettings};
+use crate::log_utils::debug_msg;
 use crate::refine_sv::SVFilterType;
 use crate::run_stats::ScoreStats;
-use crate::score_sv::{score_and_assess_refined_sv_group, SampleScoreData, ScoreSVSettings};
+use crate::score_sv::{
+    score_and_assess_refined_sv_group, SampleScoreData, ScoreDebugSettings, ScoreSVSettings,
+};
 use crate::sv_group::SVGroup;
 use crate::worker_thread_data::{get_bam_reader_worker_thread_data, BamReaderWorkerThreadDataSet};
 
@@ -31,6 +34,27 @@ fn score_sv_candidate_cluster_wrapper(
     let bam_readers = &mut worker_thread_dataset[worker_id].lock().unwrap().bam_readers;
     let bam_readers_ref = &mut bam_readers.iter_mut().collect::<Vec<_>>();
 
+    let debug_settings = ScoreDebugSettings {
+        debug: false,
+        debug_sample_index: None,
+        debug_sv_index: None,
+    };
+
+    let any_debug = debug_settings.debug;
+    if any_debug || log_enabled!(Level::Debug) {
+        debug_msg!(
+            any_debug,
+            "Starting score for new SVGroup on worker {}",
+            worker_id
+        );
+        for (region_index, group_region) in sv_group.group_regions.iter().enumerate() {
+            debug_msg!(any_debug, "Group region {region_index}: {group_region:?}");
+        }
+        for (rsv_index, refined_sv) in sv_group.refined_svs.iter().enumerate() {
+            debug_msg!(any_debug, "Refined SV {rsv_index}: {:?}", refined_sv.bp);
+        }
+    }
+
     score_and_assess_refined_sv_group(
         score_settings,
         &shared_data.genome_ref,
@@ -39,6 +63,7 @@ fn score_sv_candidate_cluster_wrapper(
         all_sample_data,
         bam_readers_ref,
         &mut sv_group,
+        &debug_settings,
     );
 
     let duration = cluster_start_time.elapsed();
@@ -77,11 +102,14 @@ pub(super) fn joint_genotype_all_samples(
         .unwrap();
 
     info!("Starting SV candidate cluster genotyping");
+
+    // Turn off the progress bar if we're logging debug info during genotyping:
+    let force_periodic_updates = shared_settings.debug;
     let progress_reporter = ProgressReporter::new(
         merged_sv_groups.len() as u64,
         "Genotyped",
         "SV candidate clusters",
-        false,
+        force_periodic_updates,
     );
     let progress_reporter = &progress_reporter;
 

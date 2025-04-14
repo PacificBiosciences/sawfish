@@ -256,10 +256,10 @@ fn parse_bnd_alt_allele(chrom_list: &ChromList, alt_allele: &[u8], homlen: i64) 
     };
 
     let insert_seq = match breakend1_direction {
-        BreakendDirection::LeftAnchor => words[0][1..].as_bytes().to_vec(),
+        BreakendDirection::LeftAnchor => words[0].as_bytes()[1..].to_vec(),
         BreakendDirection::RightAnchor => {
             let len = words[2].len();
-            words[2][..len - 1].as_bytes().to_vec()
+            words[2].as_bytes()[..len - 1].to_vec()
         }
     };
 

@@ -1597,7 +1597,7 @@ fn get_overlapping_haplotype_indexes(
 
 /// Capture support information between different reads and SV alleles at a given locus for one
 /// sample
-type LocusSupportScores = HashMap<String, ReadSupportScores>;
+type LocusSupportScores = BTreeMap<String, ReadSupportScores>;
 
 /// Get read support scores for a single sample and a single SV allele, but considered in the context of
 /// other overlapping SV haplotypes in the same sv_group
@@ -2405,20 +2405,19 @@ fn set_allele_depth_counts_for_sv_group(
     }
 }
 
-#[derive(Default)]
-struct ScoreDebugSettings {
-    debug: bool,
+pub struct ScoreDebugSettings {
+    pub debug: bool,
 
     // If debug is true, this provides a way to narrow the scope of debug output to a specific
     // sample. Setting to None will print all samples.
-    debug_sample_index: Option<usize>,
+    pub debug_sample_index: Option<usize>,
 
     // Same as above but for SVs in the sv_group
-    debug_sv_index: Option<usize>,
+    pub debug_sv_index: Option<usize>,
 }
 
 impl ScoreDebugSettings {
-    fn focused(&self, sample_index: usize, sv_index: usize) -> bool {
+    pub fn focused(&self, sample_index: usize, sv_index: usize) -> bool {
         self.debug
             && match self.debug_sample_index {
                 Some(x) => x == sample_index,
@@ -2430,7 +2429,7 @@ impl ScoreDebugSettings {
             }
     }
 
-    fn sample(&self, sample_index: usize) -> bool {
+    pub fn sample(&self, sample_index: usize) -> bool {
         self.debug
             && match self.debug_sample_index {
                 Some(x) => x == sample_index,
@@ -2519,22 +2518,8 @@ fn score_refined_sv_group(
     all_sample_genome_max_sv_depth_regions: &[&[ChromRegions]],
     bam_readers: &mut [&mut bam::IndexedReader],
     sv_group: &mut SVGroup,
+    debug_settings: &ScoreDebugSettings,
 ) {
-    let debug_settings = ScoreDebugSettings {
-        debug: false,
-        debug_sample_index: None,
-        debug_sv_index: None,
-    };
-
-    if debug_settings.debug {
-        for (region_index, group_region) in sv_group.group_regions.iter().enumerate() {
-            eprintln!("Group region {region_index}: {group_region:?}");
-        }
-        for (rsv_index, refined_sv) in sv_group.refined_svs.iter().enumerate() {
-            eprintln!("Refined SV {rsv_index}: {:?}", refined_sv.bp);
-        }
-    }
-
     let sample_count = sv_group.sample_haplotype_list.len();
 
     // Initialize a scoring structure for each sample:
@@ -2555,7 +2540,7 @@ fn score_refined_sv_group(
         bam_readers,
         sv_group,
         &sample_sv_order,
-        &debug_settings,
+        debug_settings,
     );
 
     if debug_settings.debug {
@@ -2566,7 +2551,7 @@ fn score_refined_sv_group(
         sv_group,
         &sample_sv_order,
         &all_sample_locus_scores,
-        &debug_settings,
+        debug_settings,
     );
 
     if debug_settings.debug {
@@ -2584,7 +2569,7 @@ fn score_refined_sv_group(
         sv_group,
         &sample_sv_order,
         &all_sample_locus_scores,
-        &debug_settings,
+        debug_settings,
     );
 
     resolve_cross_sample_replicate_svs(&mut sv_group.refined_svs);
@@ -2600,7 +2585,7 @@ fn score_refined_sv_group(
             sv_index,
             &sv_group.sample_ploidy,
             &mut refined_sv.score,
-            &debug_settings,
+            debug_settings,
         );
     }
 
@@ -2611,7 +2596,7 @@ fn score_refined_sv_group(
             sv_group,
             &haplotype_to_sv_map,
             sample_index,
-            &debug_settings,
+            debug_settings,
         );
     }
 
@@ -2643,6 +2628,7 @@ pub fn score_and_assess_refined_sv_group(
     all_sample_data: &[SampleScoreData],
     bam_readers: &mut [&mut bam::IndexedReader],
     sv_group: &mut SVGroup,
+    debug_settings: &ScoreDebugSettings,
 ) {
     sv_group.assert_validity();
 
@@ -2665,6 +2651,7 @@ pub fn score_and_assess_refined_sv_group(
         &all_sample_genome_max_sv_depth_regions,
         bam_readers,
         sv_group,
+        debug_settings,
     );
 
     assess_sv_depth_support(

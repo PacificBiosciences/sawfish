@@ -482,7 +482,7 @@ fn get_sample_gc_correction(
 /// # Arguments
 ///
 /// * `depth_bin_gc_content` - Count of GC and AT reference bases in a window centered on each depth
-///    bin
+///   bin
 ///
 /// * `coverage_est_regex` - Regex used to select chromosomes for mean haploid coverage estimation.
 ///   All selected chromosomes are assumed diploid.

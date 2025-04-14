@@ -1,5 +1,15 @@
 # Change Log
 
+## v1.0.1 - 2025-04-13
+
+### Fixed
+
+- CR-468 Fix high memory usage when joint-genotyping from CRAM (github #15)
+  - This issue only impacts analysis from CRAM, all BAM-input analysis is unaffected.
+  - The excess memory usage had only a minor effect on single-sample analysis, but could become very large at higher sample and thread counts.
+- CR-469 Fix very low-frequency non-deterministic genotyping result
+  - This also fixes non-deterministic read order in the optional supporting reads output
+
 ## v1.0.0 - 2025-04-10
 
 This release marks the initial stabilization of sawfish with its publication in [Bioinformatics](https://doi.org/10.1093/bioinformatics/btaf136).

@@ -206,10 +206,16 @@ impl SVSampleScoreInfo {
         self.allele_depth.iter().map(|x| x.any_strand).sum()
     }
 
+    /// Clears all allele counts and items associated with allele count, like supporting read names
+    ///
+    /// This should be called for certain cases where the allele count loop is run twice to resolve read to haplotype
+    /// assignment in the first pass
+    ///
     pub fn clear_allele_depth(&mut self) {
         for x in self.allele_depth.iter_mut() {
             x.clear();
         }
+        self.supporting_read_names.clear();
     }
 }
 
