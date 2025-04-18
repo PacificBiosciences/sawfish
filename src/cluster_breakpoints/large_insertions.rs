@@ -15,7 +15,7 @@ struct LargeInsertionAssemblyData {
 fn get_large_insertion_info(
     cluster_index: usize,
     bp: &Breakpoint,
-    last_anchor_data: &Option<LargeInsertionAssemblyData>,
+    last_anchor_data: Option<&LargeInsertionAssemblyData>,
     max_pairing_dist: i64,
 ) -> Option<LargeInsertionInfo> {
     if let Some(large_insertion_data) = last_anchor_data {
@@ -83,7 +83,7 @@ fn discover_large_insertion_candidates(
             };
 
         let large_insertion_info =
-            get_large_insertion_info(cluster_index, bp, other_anchor, max_dist);
+            get_large_insertion_info(cluster_index, bp, other_anchor.as_ref(), max_dist);
         *other_anchor = None;
         if let Some(large_insertion_info) = large_insertion_info {
             large_insertion_candidates.push(large_insertion_info);

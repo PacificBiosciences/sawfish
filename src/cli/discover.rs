@@ -1,5 +1,4 @@
-use std::path::{Path, PathBuf};
-
+use camino::{Utf8Path, Utf8PathBuf};
 use clap::Args;
 use const_format::concatcp;
 use rust_vc_utils::ChromList;
@@ -14,7 +13,7 @@ use crate::discover::SETTINGS_FILENAME;
 pub struct DiscoverSettings {
     /// Directory for all discover command output (must not already exist)
     #[arg(long, value_name = "DIR", default_value = concatcp!(env!("CARGO_PKG_NAME"), "_discover_output"))]
-    pub output_dir: PathBuf,
+    pub output_dir: Utf8PathBuf,
 
     /// Alignment file for query sample in BAM or CRAM format.
     #[arg(long = "bam", value_name = "FILE")]
@@ -27,32 +26,51 @@ pub struct DiscoverSettings {
     /// Expected copy number values by genomic interval, in BED format.
     ///
     /// Copy number will be read from column 5 of the input BED file. Column 4 is ignored and can
-    /// be used as a region label. The default copy number is 2 for unspecified regions.
+    /// be used as a region label. The default copy number is 2 for unspecified regions. These copy
+    /// number values will be stored in discover output for each samplme and automatically selected
+    /// for the given sample during joint-calling.
     ///
-    /// This option is especially useful to clarify expected sex chromosome counts in the sample.
-    /// The SV caller interprets expected copy number into expected allele count, by calling all
-    /// SVs in single copy regions as haploid.
+    /// Note this option is especially useful to clarify expected sex chromosome copy number in the sample.
+    ///
+    /// By default, the expected copy number only affects CNV calling behavior. If the option
+    /// "treat-single-copy-as-haploid" is given during joint calling, then SV genotyping is updated for
+    /// single copy regions as well.
     ///
     #[arg(long = "expected-cn", value_name = "FILE")]
     pub expected_copy_number_filename: Option<String>,
 
-    /// Variant file used to generate minor allele frequency track, in VCF or BCF format.
-    #[arg(hide = true, long = "maf", value_name = "FILE")]
+    /// Regions of the genome to exclude from CNV analysis, in BED format.
+    ///
+    /// Note this does not impact SV breakpoint analysis
+    ///
+    #[arg(long = "cnv-excluded-regions", value_name = "FILE")]
+    pub cnv_excluded_regions_filename: Option<String>,
+
+    /// Variant file used to generate minor allele frequency track for this sample, in VCF or BCF format.
+    ///
+    /// The bigwig track file will be output for each sample in the joint-call step as 'maf.bw' in each
+    /// sample directory. The frequences may also be used to improve copy-number segmentation in a future
+    /// update.
+    ///
+    #[arg(long = "maf", value_name = "FILE")]
     pub maf_filename: Option<String>,
 
-    /// Regions of the genome to exclude from CNV analysis, in BED format.
-    #[arg(hide = true, long = "exclude", value_name = "FILE")]
-    pub exclude_filename: Option<String>,
-
     /// Size of bins used for CNV depth track. The segmentation parameters are highly dependent on
-    /// this value so it cannot be changed independently.
-    #[arg(hide = true, long, default_value_t = 2000)]
+    /// this value so it cannot be changed independently of the transition probability and
+    /// dependency correction factors
+    #[arg(hide = true, long, default_value_t = 1000)]
     pub depth_bin_size: u32,
 
     /// The transition probability for going away from the current copy number.
     /// Stay probability is derived from this value.
-    #[arg(hide = true, long = "transition-probability", default_value_t = 1e-50)]
+    #[arg(hide = true, long = "transition-probability", default_value_t = 0.02)]
     pub transition_prob: f64,
+
+    /// Depth bin Poisson emision probabilities are raised to this power to help correct
+    /// for their having dependencies on neighboring bins, even though they ar treated as
+    /// independent for segmentation and quality scoring.
+    #[arg(hide = true, long = "dependency-correction", default_value_t = 0.02)]
+    pub bin_dependency_correction_factor: f64,
 
     /// Threshold for the gap-compressed identity filter, to filter out reads with identity to the
     /// reference so low that they are likely to reflect a reference compression or other form
@@ -89,6 +107,7 @@ pub struct DiscoverSettings {
     /// Co-linear SVs must have either an insertion or deletion of this size or greater to be
     /// included in the output. All other SV evidence patterns such as those consistent with
     /// duplications, inversions and translocations will always be included in the output.
+    ///
     #[arg(long, default_value_t = 35)]
     pub min_indel_size: u32,
 
@@ -107,6 +126,7 @@ pub struct DiscoverSettings {
 
     /// Minimum MAPQ value for reads to be used in SV breakend finding. This does not change depth
     /// analysis.
+    ///
     #[arg(long, default_value_t = MIN_SV_MAPQ)]
     pub min_sv_mapq: u32,
 
@@ -180,7 +200,7 @@ pub fn validate_and_fix_discovery_settings(
         Ok(())
     }
 
-    fn check_optional_filename(filename_opt: &Option<String>, label: &str) -> SimpleResult<()> {
+    fn check_optional_filename(filename_opt: Option<&String>, label: &str) -> SimpleResult<()> {
         if let Some(filename) = filename_opt {
             if !std::path::Path::new(&filename).exists() {
                 bail!("Can't find specified {label} file: '{filename}'");
@@ -193,13 +213,16 @@ pub fn validate_and_fix_discovery_settings(
 
     check_required_filename(&settings.bam_filename, "alignment")?;
 
-    check_optional_filename(&settings.maf_filename, "minor allele frequency")?;
-
-    check_optional_filename(&settings.exclude_filename, "excluded regions")?;
+    check_optional_filename(settings.maf_filename.as_ref(), "minor allele frequency")?;
 
     check_optional_filename(
-        &settings.expected_copy_number_filename,
-        "expected cn filename",
+        settings.cnv_excluded_regions_filename.as_ref(),
+        "CNV excluded regions",
+    )?;
+
+    check_optional_filename(
+        settings.expected_copy_number_filename.as_ref(),
+        "expected copy number",
     )?;
 
     if settings.gc_level_count == 0 {
@@ -215,10 +238,8 @@ pub fn validate_and_fix_discovery_settings(
 
     // Canonicalize file paths:
     fn canonicalize_string_path(s: &str) -> String {
-        PathBuf::from(s)
-            .canonicalize()
-            .unwrap()
-            .to_str()
+        Utf8PathBuf::from(s)
+            .canonicalize_utf8()
             .unwrap()
             .to_string()
     }
@@ -228,8 +249,8 @@ pub fn validate_and_fix_discovery_settings(
         settings.ref_filename = canonicalize_string_path(&settings.ref_filename);
         settings.bam_filename = canonicalize_string_path(&settings.bam_filename);
 
-        settings.exclude_filename = settings
-            .exclude_filename
+        settings.cnv_excluded_regions_filename = settings
+            .cnv_excluded_regions_filename
             .map(|x| canonicalize_string_path(&x));
         settings.expected_copy_number_filename = settings
             .expected_copy_number_filename
@@ -310,40 +331,34 @@ pub fn validate_discover_settings_data(settings: &DiscoverSettings) {
 }
 
 /// Write discover settings out in json format
-pub fn write_discover_settings(output_dir: &Path, settings: &DiscoverSettings) {
+pub fn write_discover_settings(output_dir: &Utf8Path, settings: &DiscoverSettings) {
     use log::info;
 
     let filename = output_dir.join(SETTINGS_FILENAME);
 
-    info!(
-        "Writing discover settings to file: '{}'",
-        filename.display()
-    );
+    info!("Writing discover settings to file: '{filename}'");
 
     let f = unwrap!(
         std::fs::File::create(&filename),
-        "Unable to create discover settings json file: '{}'",
-        filename.display()
+        "Unable to create discover settings json file: '{filename}'"
     );
 
     serde_json::to_writer_pretty(&f, &settings).unwrap();
 }
 
-pub fn read_discover_settings(discover_dir: &Path) -> DiscoverSettings {
+pub fn read_discover_settings(discover_dir: &Utf8Path) -> DiscoverSettings {
     use std::fs::File;
     use std::io::BufReader;
 
     let filename = discover_dir.join(SETTINGS_FILENAME);
     let file = unwrap!(
         File::open(&filename),
-        "Unable to read discover-mode settings json file: `{}`",
-        filename.display()
+        "Unable to read discover-mode settings json file: `{filename}`"
     );
     let reader = BufReader::new(file);
     unwrap!(
         serde_json::from_reader(reader),
-        "Unable to parse discover-mode settings from json file: `{}`",
-        filename.display()
+        "Unable to parse discover-mode settings from json file: `{filename}`"
     )
 }
 

@@ -119,6 +119,23 @@ pub fn get_int_range_dir_distance(ir1: &IntRange, ir2: &IntRange) -> (bool, usiz
     (dir, max(dist, 0) as usize)
 }
 
+pub fn get_recip_overlap(r1: &IntRange, r2: &IntRange) -> f64 {
+    let min_span = 100;
+
+    let r1_min_end = std::cmp::max(r1.end, r1.start + min_span);
+    let r2_min_end = std::cmp::max(r2.end, r2.start + min_span);
+
+    let olap = std::cmp::max(
+        std::cmp::min(r1_min_end, r2_min_end) - std::cmp::max(r2.start, r1.start),
+        0,
+    );
+    let span1 = r1_min_end - r1.start;
+    let span2 = r2_min_end - r2.start;
+    let span = std::cmp::max(span1, span2);
+
+    olap as f64 / span as f64
+}
+
 #[allow(dead_code)]
 pub fn get_overlap_range(r1: &IntRange, r2: &IntRange) -> Option<IntRange> {
     if !r1.intersect_range(r2) {
@@ -162,5 +179,30 @@ mod tests {
         assert_eq!(get_int_range_dir_distance(&r3, &r2), (true, 0));
         assert_eq!(get_int_range_dir_distance(&r2, &r4), (true, 0));
         assert_eq!(get_int_range_dir_distance(&r4, &r2), (true, 0));
+    }
+
+    #[test]
+    fn test_get_recip_overlap() {
+        let r1 = IntRange::from_pair(1000, 2000);
+
+        let r2 = IntRange::from_pair(0, 1000);
+        let ro = get_recip_overlap(&r1, &r2);
+        approx::assert_ulps_eq!(ro as f32, 0_f32, max_ulps = 4);
+
+        let r2 = IntRange::from_pair(500, 1500);
+        let ro = get_recip_overlap(&r1, &r2);
+        approx::assert_ulps_eq!(ro as f32, 0.5_f32, max_ulps = 4);
+
+        let r2 = IntRange::from_pair(1000, 2000);
+        let ro = get_recip_overlap(&r1, &r2);
+        approx::assert_ulps_eq!(ro as f32, 1.0_f32, max_ulps = 4);
+
+        let r2 = IntRange::from_pair(1500, 2500);
+        let ro = get_recip_overlap(&r1, &r2);
+        approx::assert_ulps_eq!(ro as f32, 0.5_f32, max_ulps = 4);
+
+        let r2 = IntRange::from_pair(1500, 2000);
+        let ro = get_recip_overlap(&r1, &r2);
+        approx::assert_ulps_eq!(ro as f32, 0.5_f32, max_ulps = 4);
     }
 }

@@ -10,7 +10,7 @@ use rust_htslib::bam::{
     record::{Cigar, CigarString},
 };
 use rust_vc_utils::bam_utils::cigar::{
-    get_hard_clipped_read_clip_positions, update_ref_and_hard_clipped_read_pos,
+    get_hard_clipped_read_clip_positions, update_ref_and_hard_clipped_read_pos, update_ref_pos,
 };
 use rust_vc_utils::{bam_utils::aux::is_aux_tag_found, cigar::compress_cigar};
 
@@ -580,6 +580,42 @@ pub fn has_aligned_segments(cigar: &[Cigar]) -> bool {
     false
 }
 
+/// Parse all ref-ranges from cigar alignment with gaps no larger than min_gap_size
+///
+pub fn get_alignment_ref_segments(
+    mut ref_pos: i64,
+    cigar: &[Cigar],
+    min_gap_size: u32,
+) -> Vec<IntRange> {
+    use Cigar::*;
+
+    let mut ref_segments = Vec::new();
+    let mut begin_pos = ref_pos;
+
+    for c in cigar.iter() {
+        match c {
+            Del(d) | RefSkip(d) => {
+                if *d >= min_gap_size {
+                    let ref_range = IntRange::from_pair(begin_pos, ref_pos);
+                    if ref_range.size() > 0 {
+                        ref_segments.push(ref_range)
+                    }
+                    begin_pos = ref_pos + *d as i64;
+                }
+            }
+            _ => {}
+        }
+        update_ref_pos(c, &mut ref_pos);
+    }
+
+    let ref_range = IntRange::from_pair(begin_pos, ref_pos);
+    if ref_range.size() > 0 {
+        ref_segments.push(ref_range)
+    }
+
+    ref_segments
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -655,7 +691,7 @@ mod tests {
         {
             let mut test_record = bam::Record::new();
             test_record.set(
-                "test_qname".as_bytes(),
+                b"test_qname",
                 Some(test_cigar),
                 test_sequence.as_bytes(),
                 &vec![20; test_sequence.len()],
@@ -903,5 +939,20 @@ mod tests {
             );
             assert_eq!(ref_shift, 0);
         }
+    }
+
+    #[test]
+    fn test_get_alignment_ref_segments() {
+        let cigar = vec![
+            Cigar::Match(10),
+            Cigar::Del(2),
+            Cigar::Match(10),
+            Cigar::Del(10),
+            Cigar::Match(10),
+        ];
+        let ref_segs = get_alignment_ref_segments(100, &cigar, 10);
+        assert_eq!(ref_segs.len(), 2);
+        assert_eq!(ref_segs[0], IntRange::from_pair(100, 122));
+        assert_eq!(ref_segs[1], IntRange::from_pair(132, 142));
     }
 }

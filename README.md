@@ -2,21 +2,23 @@
 
 <h1 align="center">Sawfish</h1>
 
-<h4 align="center">Structural variant caller for HiFi sequencing data based on local haplotype assembly</h3>
+<h4 align="center">Joint structural variant and copy number variant caller for HiFi sequencing data</h3>
 
-Sawfish calls structural variants from mapped HiFi sequencing reads. It discovers germline variants from local sequence assembly and jointly genotypes variants across multiple samples.
+Sawfish is a joint structural variant (SV) and copy number variant (CNV) caller for mapped HiFi sequencing reads. It discovers germline structural variants from local sequence assembly and jointly genotypes these variants across multiple samples. Sawfish additionally applies copy number segmentation on each sample's sequencing coverage levels, synchronizing structural variant breakpoints with copy number change boundaries in the process to improve classification of breakpoint-based structural variant calls, in addition to calling copy number variants.
 
 Key features:
+- Combined assessment of all large variants in each sample.
+  - Sawfish provides a unified view of both SVs and CNVs in each sample, with redundant calls merged into single variants describing both breakpoint and copy number detail.
 - High SV discovery and genotyping accuracy
-  - All variants are modeled and genotyped as local haplotypes, yielding substantial accuracy gains on modern SV truth sets such as the GIAB HG002 T2T SVs. 
+  - All breakpoint-based structural variants are modeled and genotyped as local haplotypes, yielding substantial accuracy gains on modern SV truth sets such as the GIAB HG002 T2T SVs. 
 - High resolution
-  - All structural variants are assembled to basepair resolution and reported with breakpoint homology and insertion details.
-- Integrated depth assessment
-  - Integrated depth estimation with GC-bias correction is used to classify large deletion and duplication calls for higher precision.
+  - All breakpoint-based structural variants are assembled to basepair resolution and reported with breakpoint homology and insertion details.
+- Integrated copy number segmentation
+  - Integrated copy number segmentation with GC-bias correction is used to: (1) call CNVs independent of any breakpoint support, and (2) improve the classification of large structural variant deletion and duplication calls, any such calls lacking consistent depth support are reclassified as breakends.
 - Simple multi-threaded workflow
-  - A single command-line is used for each of the discover and joint-genotyping steps
+  - A single command-line is used for each of the discover and joint-call steps
 
-All SVs are modeled internally as breakpoints, but will be reported as deletions, insertions, duplications and inversions when supported by the corresponding breakpoint and depth pattern, otherwise the breakpoint itself is reported. The minimum variant size is 35 bases (configurable). A maximum size is only applied to inversions (100kb).
+Breakpoint-based SVs are reported as deletions, insertions, duplications and inversions when supported by the corresponding breakpoint and depth pattern, otherwise the breakpoint itself is reported. Copy number variants are reported as deletions and duplications. The minimum variant size is 35 bases (configurable). A maximum size is only applied to inversions (100kb).
 
 ## Getting started
 

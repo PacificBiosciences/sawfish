@@ -294,8 +294,8 @@ mod tests {
     #[test]
     fn test_consensus_aligner() {
         let mut aligner = PairwiseAligner::new_consensus_aligner();
-        aligner.set_text("AACTGTATAA".as_bytes());
-        let (score, alignment) = aligner.align("ACTTAT".as_bytes());
+        aligner.set_text(b"AACTGTATAA");
+        let (score, alignment) = aligner.align(b"ACTTAT");
 
         // Expect:
         // AACTGTATAA

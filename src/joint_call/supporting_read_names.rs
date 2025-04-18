@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::io::Write;
-use std::path::Path;
 
+use camino::Utf8Path;
 use flate2::{write::GzEncoder, Compression};
 use log::info;
 use unwrap::unwrap;
@@ -64,18 +64,17 @@ fn get_supporting_read_names_from_sv_groups(
     supporting_read_names
 }
 
-fn write_supporting_read_names_file(output_dir: &Path, supporting_read_names: SupportingReadNames) {
+fn write_supporting_read_names_file(
+    output_dir: &Utf8Path,
+    supporting_read_names: SupportingReadNames,
+) {
     let filename = output_dir.join("supporting_reads.json.gz");
 
-    info!(
-        "Writing supporting read names to file: '{}'",
-        filename.display()
-    );
+    info!("Writing supporting read names to file: '{filename}'");
 
     let fp = unwrap::unwrap!(
         std::fs::File::create(&filename),
-        "Unable to create supporting read names json file: '{}'",
-        filename.display()
+        "Unable to create supporting read names json file: '{filename}'"
     );
 
     let srn_string = unwrap!(
@@ -90,7 +89,7 @@ fn write_supporting_read_names_file(output_dir: &Path, supporting_read_names: Su
 
 /// Write supporting read list for each variant
 pub fn write_supporting_read_names(
-    output_dir: &Path,
+    output_dir: &Utf8Path,
     sample_names: &[&str],
     sv_groups: &[SVGroup],
 ) {

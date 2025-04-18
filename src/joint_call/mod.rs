@@ -1,26 +1,44 @@
 mod find_inversions;
 mod get_refined_svs;
 mod joint_call_all_samples;
+mod merge_cnv;
 mod merge_haplotypes;
 mod read_sample_data;
+mod sample_output;
 mod supporting_read_names;
 mod write_merged_contigs;
 
 use self::find_inversions::find_inversions;
 use self::joint_call_all_samples::joint_genotype_all_samples;
+use self::merge_cnv::merge_sv_with_depth_info;
 use self::merge_haplotypes::merge_haplotypes;
 pub use self::read_sample_data::SampleJointCallData;
 use self::read_sample_data::{read_all_sample_data, SharedJointCallData};
+use self::sample_output::setup_sample_output;
 
 use crate::cli::{JointCallSettings, SharedSettings};
+use crate::globals::PROGRAM_VERSION;
 use crate::large_variant_output::{write_indexed_sv_vcf_file, VcfSettings};
-use crate::run_stats::{write_joint_call_run_stats, JointCallRunStats};
+use crate::run_stats::{delete_run_stats, write_joint_call_run_stats, JointCallRunStats, RunStep};
 
 pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSettings) {
+    // Now that we're committed to a run, remove any possible older run stats file that could be present in case this is a clobber run
+    //
+    // The run stats file is used as a marker of a successfully finished run, so removing it here allows run completion to be determined
+    // from whether the new file is written at the end of this discover step.
+    //
+    delete_run_stats(&settings.output_dir);
+
     let (shared_data, all_sample_data) = read_all_sample_data(shared_settings, settings);
 
+    setup_sample_output(
+        &settings.output_dir,
+        &shared_data.chrom_list,
+        &all_sample_data,
+    );
+
     let (merged_sv_groups, merge_stats) =
-        merge_haplotypes(shared_settings, &shared_data.chrom_list, &all_sample_data);
+        merge_haplotypes(shared_settings, settings, &shared_data, &all_sample_data);
 
     write_merged_contigs::write_merged_contig_alignments(
         shared_settings,
@@ -30,7 +48,7 @@ pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSett
     );
 
     let enable_phasing = true;
-    let (mut scored_svs, mut score_stats) = joint_genotype_all_samples(
+    let (mut sv_groups, mut score_stats) = joint_genotype_all_samples(
         shared_settings,
         settings,
         enable_phasing,
@@ -39,7 +57,10 @@ pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSett
         merged_sv_groups,
     );
 
-    find_inversions(&mut scored_svs);
+    find_inversions(&mut sv_groups);
+
+    let refined_cnvs =
+        merge_sv_with_depth_info(settings, &shared_data, &all_sample_data, &mut sv_groups);
 
     let vcf_settings = VcfSettings::new(
         &shared_data.ref_filename,
@@ -47,6 +68,7 @@ pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSett
         settings.min_qual,
         settings.no_vcf_dedup,
         enable_phasing,
+        settings.treat_single_copy_as_haploid,
     );
 
     let sample_names = all_sample_data
@@ -59,26 +81,32 @@ pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSett
         &shared_data.genome_ref,
         &shared_data.chrom_list,
         &sample_names,
-        &scored_svs,
+        &sv_groups,
+        &refined_cnvs,
         false,
     );
 
     score_stats.vcf_output_record_count = vcf_stats.output_record_count;
     score_stats.vcf_duplicate_record_count = vcf_stats.duplicate_record_count;
 
-    write_joint_call_run_stats(
-        &settings.output_dir,
-        &JointCallRunStats {
-            merge_stats,
-            score_stats,
-        },
-    );
-
     if settings.report_supporting_reads {
         supporting_read_names::write_supporting_read_names(
             &settings.output_dir,
             &sample_names,
-            &scored_svs,
+            &sv_groups,
         );
     }
+
+    // In addition to useful statistics this file acts as a marker for a successfully completed run, so it must be written last.
+    write_joint_call_run_stats(
+        &settings.output_dir,
+        &JointCallRunStats {
+            run_step: RunStep {
+                name: "joint-call".to_string(),
+                version: PROGRAM_VERSION.to_string(),
+            },
+            merge_stats,
+            score_stats,
+        },
+    );
 }

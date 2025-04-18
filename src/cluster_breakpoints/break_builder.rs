@@ -92,7 +92,10 @@ impl BreakpointObservationMap {
     }
 }
 
-/// BreakBuider exported type
+/// Genome breakend observations
+///
+/// Raw breakend evidence prior to clustering and refinement. Exported by BreakBuider.
+///
 pub struct BreakObservations {
     /// The minimum observations to create a breakpoint cluster
     pub min_cluster_evidence_count: usize,
@@ -184,8 +187,8 @@ impl<'a> BreakBuilder<'a> {
     /// Check if candidate indel meets the minimum size, and if so return a breakpoint observation
     ///
     /// # Arguments
-    /// * record - bam record for error/debug messages
-    /// * read_pos - Position in read coordinates on the alignment strand for the position immediately after the indel
+    /// * `record` - bam record for error/debug messages
+    /// * `read_pos` - Position in read coordinates on the alignment strand for the position immediately after the indel
     ///
     fn process_cand_indel_impl(
         &self,
@@ -254,8 +257,8 @@ impl<'a> BreakBuilder<'a> {
     /// Check if candidate indel meets the minimum size, and if so push it into `all_bpo`
     ///
     /// # Arguments
-    /// * record - bam record for error/debug messages
-    /// * read_pos - Position in read coordinates on the alignment strand for the position immediately after the indel
+    /// * `record` - bam record for error/debug messages
+    /// * `read_pos` - Position in read coordinates on the alignment strand for the position immediately after the indel
     ///
     fn process_cand_indel(
         &self,

@@ -1,13 +1,13 @@
-use std::path::Path;
 use std::sync::mpsc::channel;
 
+use camino::Utf8Path;
 use log::info;
 use rust_vc_utils::{bigwig_utils, genome_ref, ArraySegmenter, ChromList};
 use serde::{Deserialize, Serialize};
 use unwrap::unwrap;
 
 use crate::bam_scanner::SampleAlignmentScanResult;
-use crate::depth_bins::{self, DepthBin, GenomeDepthBins};
+use crate::depth_bins::{self, ChromDepthBins, DepthBin};
 use crate::discover::{GENOME_GC_LEVELS_MESSAGEPACK_FILENAME, SAMPLE_GC_BIAS_MESSAGEPACK_FILENAME};
 
 /// GC content information for a region
@@ -241,16 +241,13 @@ pub fn get_depth_bin_gc_content(
 /// Write gc fraction per depth bin to a bigwig file
 ///
 pub fn write_gc_fraction_per_bin_bigwig_file(
-    filename: &Path,
+    filename: &Utf8Path,
     depth_bin_gc_content: &GenomeGCBins,
     chrom_list: &ChromList,
 ) {
-    info!(
-        "Writing gc fraction per bin to bigwig file: '{}'",
-        filename.display()
-    );
+    info!("Writing gc fraction per bin to bigwig file: '{filename}'");
 
-    let mut bigwig_writer = bigwig_utils::get_new_writer(filename.to_str().unwrap(), chrom_list);
+    let mut bigwig_writer = bigwig_utils::get_new_writer(filename.as_str(), chrom_list);
 
     for (chrom_index, chrom_gc_bins) in depth_bin_gc_content.chroms.iter().enumerate() {
         let chrom_name = chrom_list.data[chrom_index].label.as_str();
@@ -303,6 +300,7 @@ impl SampleGCBiasCorrectionData {
         }
     }
 
+    #[allow(unused)]
     pub fn to_gc_depth_correction(&self) -> Vec<f64> {
         self.gc_depth_reduction
             .iter()
@@ -373,7 +371,7 @@ fn get_sample_gc_correction(
     // Walk through depth and gc level bins together:
     for (chrom_index, (chrom_depth_bins, chrom_gc_levels)) in sample_scan_result
         .genome_depth_bins
-        .chroms
+        .depth_bins
         .iter()
         .zip(genome_gc_levels.iter())
         .enumerate()
@@ -518,21 +516,17 @@ pub fn get_gc_correction(
 /// This version of the GC correction table is intended to be simple to work with in methods
 /// debugging scenarios.
 ///
-fn write_gc_depth_reduction_debug_output(output_dir: &Path, gc_depth_reduction: &[f64]) {
+fn write_gc_depth_reduction_debug_output(output_dir: &Utf8Path, gc_depth_reduction: &[f64]) {
     use std::fs::File;
     use std::io::{BufWriter, Write};
 
     let filename = output_dir.join("gc_correction_table.tsv");
 
-    info!(
-        "Writing gc correction table to file: '{}'",
-        filename.display()
-    );
+    info!("Writing gc correction table to file: '{filename}'");
 
     let f = unwrap!(
         File::create(&filename),
-        "Unable to create gc correction table file: '{}'",
-        filename.display()
+        "Unable to create gc correction table file: '{filename}'"
     );
     let mut f = BufWriter::new(f);
 
@@ -558,10 +552,10 @@ fn write_gc_depth_reduction_debug_output(output_dir: &Path, gc_depth_reduction: 
 /// debugging aid for humans.
 ///
 fn gc_scale_sample_depth(
-    depth_bins: &GenomeDepthBins,
+    depth_bins: &[ChromDepthBins],
     sample_gc_bias_data: &SampleGCBiasCorrectionData,
     gc_levels: &GenomeGCLevels,
-) -> GenomeDepthBins {
+) -> Vec<ChromDepthBins> {
     // This application requires the reciprocal of the depth reduction factor used for the
     // emission prob correction, so go ahead and setup the reciprocal value array here:
     let gc_depth_correction = sample_gc_bias_data
@@ -570,12 +564,8 @@ fn gc_scale_sample_depth(
         .map(|x| 1.0 / x)
         .collect::<Vec<_>>();
 
-    let mut gc_scaled_depth_bins = GenomeDepthBins {
-        bin_size: depth_bins.bin_size,
-        chroms: Vec::new(),
-    };
-
-    for (chrom_index, chrom_depth_bins) in depth_bins.chroms.iter().enumerate() {
+    let mut gc_scaled_depth_bins = Vec::new();
+    for (chrom_index, chrom_depth_bins) in depth_bins.iter().enumerate() {
         let chrom_gc_levels = &gc_levels[chrom_index];
 
         let bin_count = chrom_depth_bins.len();
@@ -591,7 +581,7 @@ fn gc_scale_sample_depth(
             });
         }
 
-        gc_scaled_depth_bins.chroms.push(gc_scaled_chrom_depth_bins);
+        gc_scaled_depth_bins.push(gc_scaled_chrom_depth_bins);
     }
 
     gc_scaled_depth_bins
@@ -600,7 +590,7 @@ fn gc_scale_sample_depth(
 /// Scale depth by gc correction factors and write these scaled depths out to bigwig format
 ///
 fn write_gc_scaled_depth_track_files(
-    output_dir: &Path,
+    output_dir: &Utf8Path,
     chrom_list: &ChromList,
     gc_bias_data: &GCBiasCorrectionData,
     sample_scan_result: &SampleAlignmentScanResult,
@@ -608,15 +598,16 @@ fn write_gc_scaled_depth_track_files(
     let sample_gc_correction = &gc_bias_data.sample_gc_bias_data;
     let gc_scaled_depth_filename = output_dir.join("gc_scaled_depth.bw");
 
-    let gc_scaled_depth = gc_scale_sample_depth(
-        &sample_scan_result.genome_depth_bins,
+    let gc_scaled_depth_bins = gc_scale_sample_depth(
+        &sample_scan_result.genome_depth_bins.depth_bins,
         sample_gc_correction,
         &gc_bias_data.genome_gc_levels,
     );
 
     depth_bins::write_depth_bigwig_file(
         &gc_scaled_depth_filename,
-        &gc_scaled_depth,
+        sample_scan_result.genome_depth_bins.bin_size,
+        &gc_scaled_depth_bins,
         chrom_list,
         "gc scaled depth",
     );
@@ -627,17 +618,13 @@ fn write_gc_scaled_depth_track_files(
 /// To save time, result is written to depth bins even though these are not depths
 ///
 fn get_gc_reduction_factor_track(
-    depth_bins: &GenomeDepthBins,
+    depth_bins: &[ChromDepthBins],
     sample_gc_bias_data: &SampleGCBiasCorrectionData,
     gc_levels: &GenomeGCLevels,
-) -> GenomeDepthBins {
-    // Hack result into depth bins structure just to make output easier
-    let mut rc_reduction_factor = GenomeDepthBins {
-        bin_size: depth_bins.bin_size,
-        chroms: Vec::new(),
-    };
+) -> Vec<ChromDepthBins> {
+    let mut rc_reduction_factor = Vec::new();
 
-    for (chrom_index, chrom_depth_bins) in depth_bins.chroms.iter().enumerate() {
+    for (chrom_index, chrom_depth_bins) in depth_bins.iter().enumerate() {
         let chrom_gc_levels = &gc_levels[chrom_index];
 
         let bin_count = chrom_depth_bins.len();
@@ -655,7 +642,7 @@ fn get_gc_reduction_factor_track(
             });
         }
 
-        rc_reduction_factor.chroms.push(gc_scaled_chrom_depth_bins);
+        rc_reduction_factor.push(gc_scaled_chrom_depth_bins);
     }
 
     rc_reduction_factor
@@ -664,7 +651,7 @@ fn get_gc_reduction_factor_track(
 /// Write out gc reduction factors for each depth bin, over all samples
 ///
 fn write_gc_reduction_track_files(
-    output_dir: &Path,
+    output_dir: &Utf8Path,
     chrom_list: &ChromList,
     gc_bias_data: &GCBiasCorrectionData,
     sample_scan_result: &SampleAlignmentScanResult,
@@ -673,13 +660,14 @@ fn write_gc_reduction_track_files(
     let gc_scaled_depth_filename = output_dir.join("gc_reduction_factor.bw");
 
     let gc_reduction_factor = get_gc_reduction_factor_track(
-        &sample_scan_result.genome_depth_bins,
+        &sample_scan_result.genome_depth_bins.depth_bins,
         sample_gc_bias_data,
         &gc_bias_data.genome_gc_levels,
     );
 
     depth_bins::write_depth_bigwig_file(
         &gc_scaled_depth_filename,
+        sample_scan_result.genome_depth_bins.bin_size,
         &gc_reduction_factor,
         chrom_list,
         "gc reduction factor",
@@ -695,7 +683,7 @@ fn write_gc_reduction_track_files(
 /// 4. Tsv file of GC-correction factors as a function of gc-content, one per sample
 ///
 pub fn write_gc_correction_debug_output(
-    output_dir: &Path,
+    output_dir: &Utf8Path,
     chrom_list: &ChromList,
     depth_bin_gc_content: &GenomeGCBins,
     sample_scan_result: &SampleAlignmentScanResult,
@@ -715,7 +703,10 @@ pub fn write_gc_correction_debug_output(
 }
 
 /// Serialize the two parts of GC bias correction table into two separate files
-pub fn serialize_gc_bias_correction_data(discover_dir: &Path, gc_bias_data: &GCBiasCorrectionData) {
+pub fn serialize_gc_bias_correction_data(
+    discover_dir: &Utf8Path,
+    gc_bias_data: &GCBiasCorrectionData,
+) {
     // serialize gc levels
     {
         let mut buf = Vec::new();
@@ -725,15 +716,11 @@ pub fn serialize_gc_bias_correction_data(discover_dir: &Path, gc_bias_data: &GCB
             .unwrap();
 
         let filename = discover_dir.join(GENOME_GC_LEVELS_MESSAGEPACK_FILENAME);
-        info!(
-            "Writing genome gc levels to binary file: '{}'",
-            filename.display()
-        );
+        info!("Writing genome gc levels to binary file: '{filename}'");
 
         unwrap!(
             std::fs::write(&filename, buf.as_slice()),
-            "Unable to open and write genome gc levels to binary file: '{}'",
-            filename.display()
+            "Unable to open and write genome gc levels to binary file: '{filename}'"
         );
     }
 
@@ -746,35 +733,29 @@ pub fn serialize_gc_bias_correction_data(discover_dir: &Path, gc_bias_data: &GCB
             .unwrap();
 
         let filename = discover_dir.join(SAMPLE_GC_BIAS_MESSAGEPACK_FILENAME);
-        info!(
-            "Writing sample gc bias data to binary file: '{}'",
-            filename.display()
-        );
+        info!("Writing sample gc bias data to binary file: '{filename}'");
 
         unwrap!(
             std::fs::write(&filename, buf.as_slice()),
-            "Unable to open and write sample gc bias data to binary file: '{}'",
-            filename.display()
+            "Unable to open and write sample gc bias data to binary file: '{filename}'"
         );
     }
 }
 
-pub fn deserialize_genome_gc_levels(discover_dir: &Path) -> GenomeGCLevels {
+pub fn deserialize_genome_gc_levels(discover_dir: &Utf8Path) -> GenomeGCLevels {
     let filename = discover_dir.join(GENOME_GC_LEVELS_MESSAGEPACK_FILENAME);
     let buf = unwrap!(
         std::fs::read(&filename),
-        "Unable to open and read genome gc levels binary file: '{}'",
-        filename.display()
+        "Unable to open and read genome gc levels binary file: '{filename}'"
     );
     rmp_serde::from_slice(&buf).unwrap()
 }
 
-pub fn deserialize_sample_gc_bias_data(discover_dir: &Path) -> SampleGCBiasCorrectionData {
+pub fn deserialize_sample_gc_bias_data(discover_dir: &Utf8Path) -> SampleGCBiasCorrectionData {
     let filename = discover_dir.join(SAMPLE_GC_BIAS_MESSAGEPACK_FILENAME);
     let buf = unwrap!(
         std::fs::read(&filename),
-        "Unable to open and read sample gc bias binary file: '{}'",
-        filename.display()
+        "Unable to open and read sample gc bias binary file: '{filename}'"
     );
     rmp_serde::from_slice(&buf).unwrap()
 }

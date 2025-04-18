@@ -1,11 +1,12 @@
 //! Track stats for the whole sawfish run
 //!
 
-use std::fs::File;
-use std::path::Path;
+use std::fs::{remove_file, File};
 
+use camino::Utf8Path;
 use log::info;
 use serde::{Deserialize, Serialize};
+use simple_error::{try_with, SimpleResult};
 use unwrap::unwrap;
 
 use crate::discover::RUN_STATS_FILENAME;
@@ -60,6 +61,12 @@ impl MultiSampleCategoryMergeStats {
 }
 
 #[derive(Default, Deserialize, Serialize)]
+pub struct RunStep {
+    pub name: String,
+    pub version: String,
+}
+
+#[derive(Default, Deserialize, Serialize)]
 pub struct MultiSampleMergeStats {
     pub multi_region: MultiSampleCategoryMergeStats,
     pub single_region: MultiSampleCategoryMergeStats,
@@ -78,6 +85,10 @@ pub struct ScoreStats {
 
 #[derive(Deserialize, Serialize)]
 pub struct DiscoverRunStats {
+    // Temporarily allow the run_step to be missing when parsing the run stats file:
+    #[serde(default)]
+    pub run_step: RunStep,
+
     pub sample_name: String,
     pub cluster_stats: ClusterStats,
     pub refine_stats: RefineStats,
@@ -85,53 +96,69 @@ pub struct DiscoverRunStats {
 
 #[derive(Deserialize, Serialize)]
 pub struct JointCallRunStats {
+    pub run_step: RunStep,
     pub merge_stats: MultiSampleMergeStats,
     pub score_stats: ScoreStats,
 }
 
 /// Write run_stats structure out in json format
-pub fn write_discover_run_stats(discover_dir: &Path, run_stats: &DiscoverRunStats) {
+pub fn write_discover_run_stats(discover_dir: &Utf8Path, run_stats: &DiscoverRunStats) {
     let filename = discover_dir.join(RUN_STATS_FILENAME);
 
-    info!("Writing run statistics to file: '{}'", filename.display());
+    info!("Writing run statistics to file: '{filename}'");
 
     let f = unwrap!(
         File::create(&filename),
-        "Unable to create run statistics json file: '{}'",
-        filename.display()
+        "Unable to create run statistics json file: '{filename}'"
     );
 
     serde_json::to_writer_pretty(&f, &run_stats).unwrap();
 }
 
-pub fn read_discover_run_stats(discover_dir: &Path) -> DiscoverRunStats {
+pub fn read_discover_run_stats(discover_dir: &Utf8Path) -> SimpleResult<DiscoverRunStats> {
     use std::io::BufReader;
 
     let filename = discover_dir.join(RUN_STATS_FILENAME);
-    let file = unwrap!(
+    let file = try_with!(
         File::open(&filename),
-        "Unable to read discover-mode run stats json file: `{}`",
-        filename.display()
+        "Unable to read discover-mode run stats json file: `{filename}`"
     );
+
     let reader = BufReader::new(file);
-    unwrap!(
+    let run_stats = try_with!(
         serde_json::from_reader(reader),
-        "Unable to parse discover-mode settings from json file: `{}`",
-        filename.display()
-    )
+        "Unable to parse discover-mode settings from json file: `{filename}`"
+    );
+
+    Ok(run_stats)
 }
 
 /// Write run_stats structure out in json format
-pub fn write_joint_call_run_stats(output_dir: &Path, run_stats: &JointCallRunStats) {
-    let filename = output_dir.join("run_stats.json");
+pub fn write_joint_call_run_stats(output_dir: &Utf8Path, run_stats: &JointCallRunStats) {
+    let filename = output_dir.join(RUN_STATS_FILENAME);
 
-    info!("Writing run statistics to file: '{}'", filename.display());
+    info!("Writing run statistics to file: '{filename}'");
 
     let f = unwrap::unwrap!(
         std::fs::File::create(&filename),
-        "Unable to create run statistics json file: '{}'",
-        filename.display()
+        "Unable to create run statistics json file: '{filename}'"
     );
 
     serde_json::to_writer_pretty(&f, &run_stats).unwrap();
+}
+
+/// Delete run stats file
+///
+/// Delete a run stats file if one exists. This is typically done during a clobber run,
+/// to prevent the old run stats file from being misinterpreted in the event of a crash.
+///
+pub fn delete_run_stats(output_dir: &Utf8Path) {
+    let filename = output_dir.join(RUN_STATS_FILENAME);
+
+    if filename.exists() {
+        unwrap!(
+            remove_file(&filename),
+            "Can't remove original run stats file {filename}"
+        );
+    }
 }

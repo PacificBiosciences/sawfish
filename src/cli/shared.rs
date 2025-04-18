@@ -39,6 +39,13 @@ pub struct SharedSettings {
     ///
     #[arg(hide = true, long, global = true)]
     pub disable_small_indels: bool,
+
+    /// Disable SVs and run sawfish as a CNV caller
+    ///
+    /// This is currently for debug only.
+    ///
+    #[arg(hide = true, long, global = true)]
+    pub disable_svs: bool,
 }
 
 pub fn validate_and_fix_shared_settings(

@@ -1,7 +1,7 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::Path;
 
+use camino::Utf8Path;
 use log::info;
 use rust_vc_utils::ChromList;
 use unwrap::unwrap;
@@ -45,7 +45,7 @@ struct AssemblyRegionRecord {
 }
 
 pub fn write_assembly_regions_to_bed(
-    output_dir: &Path,
+    output_dir: &Utf8Path,
     chrom_list: &ChromList,
     clusters: &[BreakpointCluster],
 ) {
@@ -77,15 +77,11 @@ pub fn write_assembly_regions_to_bed(
 
     let filename = output_dir.join(ASSEMBLY_REGIONS_FILENAME);
 
-    info!(
-        "Writing debug assembly region bed file: '{}'",
-        filename.display()
-    );
+    info!("Writing debug assembly region bed file: '{filename}'");
 
     let f = unwrap!(
         File::create(&filename),
-        "Unable to create debug assembly region bed file: '{}'",
-        filename.display()
+        "Unable to create debug assembly region bed file: '{filename}'"
     );
     let mut f = BufWriter::new(f);
     writeln!(f, "#gffTags").unwrap();
@@ -112,7 +108,7 @@ pub fn write_assembly_regions_to_bed(
 /// get_assembly_regions_from_breakpoint_cluster() function for the given cluster index
 ///
 pub fn read_assembly_regions_from_bed(
-    discover_dir: &Path,
+    discover_dir: &Utf8Path,
     chrom_list: &ChromList,
 ) -> Vec<Vec<GenomeSegment>> {
     use rust_htslib::bgzf;
@@ -129,15 +125,13 @@ pub fn read_assembly_regions_from_bed(
 
     let mut reader = unwrap!(
         bgzf::Reader::from_path(&filename),
-        "Unable to open assembly regions file: '{}'",
-        filename.display()
+        "Unable to open assembly regions file: '{filename}'"
     );
 
     let mut content = String::new();
     unwrap!(
         reader.read_to_string(&mut content),
-        "Can't parse text from assembly regions file: '{}'",
-        filename.display()
+        "Can't parse text from assembly regions file: '{filename}'"
     );
 
     let mut regions = Vec::new();
@@ -166,8 +160,7 @@ pub fn read_assembly_regions_from_bed(
             last_chrom = chrom;
             last_chrom_index = *unwrap!(
                 chrom_list.label_to_index.get(chrom),
-                "assembly regions include unknown chromosome name` `{chrom}` in file: '{}'",
-                filename.display()
+                "assembly regions include unknown chromosome name` `{chrom}` in file: '{filename}'"
             );
         }
 

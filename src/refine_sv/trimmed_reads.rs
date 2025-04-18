@@ -86,6 +86,8 @@ fn sort_large_insertion_reads(a: &TrimmedReadInfo, b: &TrimmedReadInfo) -> Order
 }
 
 fn get_large_del_candidate_read_range(record: &bam::Record, bp: &Breakpoint) -> Option<IntRange> {
+    let debug = false;
+
     // As a pre-condition of this method, we already know that bp has an indel-type pattern, so see
     // if (a) the read supports the bp in the cigar string and (b) if the corresponding ref
     // coordinates can be parsed out
@@ -94,7 +96,7 @@ fn get_large_del_candidate_read_range(record: &bam::Record, bp: &Breakpoint) -> 
     // The criteria to match the expected del will be very loose, the idea being that a FP inclusion
     // will just be pushed back out at the assembly stage.
     //
-    // Require the that size and start position is within 50% of the target del size, up to a max
+    // Require that the size and start position is within 50% of the target del size, up to a max
     // of MAX_DEL_DIST bases
     //
     const DEL_MATCH_FACTOR: f32 = 0.5;
@@ -102,6 +104,10 @@ fn get_large_del_candidate_read_range(record: &bam::Record, bp: &Breakpoint) -> 
     let del_start_range = &bp.breakend1.segment.range;
     let del_size = bp.breakend2.as_ref().unwrap().segment.range.center() - del_start_range.center();
     let del_match_dist = std::cmp::min(MAX_DEL_DIST, (del_size as f32 * DEL_MATCH_FACTOR) as i64);
+
+    if debug {
+        eprintln!("del_start_range: {del_start_range:?} del_size: {del_size} del_match_dist: {del_match_dist}");
+    }
 
     let mut read_pos = 0usize;
     let mut ref_pos = record.pos();
@@ -114,6 +120,12 @@ fn get_large_del_candidate_read_range(record: &bam::Record, bp: &Breakpoint) -> 
             // Is this del close to the expected breakpoint position and size?
             let is_del_close = (del_start_dist <= del_match_dist)
                 && ((*len as i64 - del_size).abs() <= del_match_dist);
+
+            if debug {
+                eprintln!(
+                    "del_start_dist; {del_start_dist} len: {len} is_del_close: {is_del_close}"
+                );
+            }
 
             if is_del_close {
                 return Some(IntRange::from_pair(read_pos as i64 - 1, read_pos as i64));
@@ -259,9 +271,9 @@ fn get_split_candidate_read_range(
         record.seq_len() - (seq_order_read_end + 1)
     } else {
         seq_order_read_start
-    };
+    } as i64;
 
-    Some(IntRange::from_int(read_start as i64))
+    Some(IntRange::from_int(read_start))
 }
 
 #[derive(Clone)]
@@ -694,6 +706,7 @@ pub fn get_sv_breakpoint_candidate_trimmed_reads(
     );
 
     if debug {
+        eprintln!("Starting trimmed read search for bp {:?}", bp);
         eprintln!(
             "Expanded trimmed read search segment: {:?}",
             trimmed_reads_search_segment

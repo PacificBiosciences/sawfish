@@ -59,7 +59,6 @@ fn score_sv_candidate_cluster_wrapper(
         score_settings,
         &shared_data.genome_ref,
         &shared_data.chrom_list,
-        &shared_data.genome_gc_levels,
         all_sample_data,
         bam_readers_ref,
         &mut sv_group,
@@ -116,8 +115,10 @@ pub(super) fn joint_genotype_all_samples(
     let score_settings = &ScoreSVSettings::new(
         settings.min_sv_mapq,
         settings.min_gap_compressed_identity,
+        settings.max_qscore,
         settings.report_supporting_reads,
         enable_phasing,
+        settings.treat_single_copy_as_haploid,
     );
 
     let (tx, rx) = channel();

@@ -21,7 +21,7 @@ fn missing_aux_tag_err(record: &bam::Record, aux_tag: &[u8]) -> ! {
 
 /// Retrieve an aux tag int value from bam record, if the tag exists.
 ///
-/// In this version the the tag itself is optional, but the function will still panic if the tag is present but has a non-int value
+/// In this version the tag itself is optional, but the function will still panic if the tag is present but has a non-int value
 ///
 pub fn get_optional_int_aux_tag(record: &bam::Record, aux_tag: &[u8]) -> Option<i32> {
     match record.aux(aux_tag) {
@@ -49,7 +49,7 @@ pub fn get_int_aux_tag(record: &bam::Record, aux_tag: &[u8]) -> i32 {
 
 /// Retrieve an aux tag float value from bam record, if the tag exists.
 ///
-/// In this version the the tag itself is optional, but the function will still panic if the tag is present but has a non-float value
+/// In this version the tag itself is optional, but the function will still panic if the tag is present but has a non-float value
 ///
 pub fn get_optional_float_aux_tag(record: &bam::Record, aux_tag: &[u8]) -> Option<f32> {
     match record.aux(aux_tag) {
@@ -72,7 +72,7 @@ pub fn get_float_aux_tag(record: &bam::Record, aux_tag: &[u8]) -> f32 {
 
 /// Retrieve an aux tag string value from bam record, if the tag exists.
 ///
-/// In this version the the tag itself is optional, but the function will still panic if the tag is present but has a non-string value
+/// In this version the tag itself is optional, but the function will still panic if the tag is present but has a non-string value
 ///
 pub fn get_optional_string_aux_tag(record: &bam::Record, aux_tag: &[u8]) -> Option<String> {
     match record.aux(aux_tag) {

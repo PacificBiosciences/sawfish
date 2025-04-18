@@ -1,5 +1,5 @@
 /// Details used to generate a unique ID for every SV in the sample
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct SVUniqueIdData {
     /// Index of sample in this analysis
     ///

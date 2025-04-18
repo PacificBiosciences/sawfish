@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use std::path::Path;
 
 use bio::data_structures::interval_tree::{IntervalTree, IntervalTreeIterator};
+use camino::Utf8Path;
 use log::info;
 use rust_vc_utils::ChromList;
 use unwrap::unwrap;
@@ -87,17 +87,12 @@ impl GenomeRegions {
         overlaps_allowed: bool,
         payload_required: bool,
     ) -> Self {
-        let mut regions = GenomeRegions::new(overlaps_allowed);
-        if filename.is_empty() {
-            return regions;
-        }
-
-        info!("Reading {} regions from file '{}'", label, filename);
-
+        use rust_htslib::bgzf;
         use std::io::Read;
 
-        use rust_htslib::bgzf;
+        info!("Reading {label} regions from file '{filename}'");
 
+        let mut regions = GenomeRegions::new(overlaps_allowed);
         let mut reader = unwrap!(
             bgzf::Reader::from_path(filename),
             "Unable to open {label} regions file: '{filename}'"
@@ -195,6 +190,7 @@ impl GenomeRegions {
     /// * `chrom` - the contig string
     /// * `start` - the start coordinate (included)
     /// * `end` - the end coordinates (excluded)
+    #[allow(unused)]
     pub fn find_overlaps(
         &self,
         chrom: &str,
@@ -209,22 +205,18 @@ impl GenomeRegions {
 
 pub fn write_genome_regions_to_bed(
     label: &str,
-    filename: &Path,
+    filename: &Utf8Path,
     chrom_list: &ChromList,
     genome_regions: &[ChromRegions],
 ) {
     use std::fs::File;
     use std::io::{BufWriter, Write};
 
-    info!(
-        "Writing {label} genome regions to bed file: '{}'",
-        filename.display()
-    );
+    info!("Writing {label} genome regions to bed file: '{filename}'");
 
     let f = unwrap!(
         File::create(filename),
-        "Unable to create {label} genome regions bed file: '{}'",
-        filename.display()
+        "Unable to create {label} genome regions bed file: '{filename}'"
     );
     let mut f = BufWriter::new(f);
 
@@ -247,7 +239,7 @@ pub fn write_genome_regions_to_bed(
 ///
 pub fn read_genome_regions_from_bed(
     label: &str,
-    filename: &Path,
+    filename: &Utf8Path,
     chrom_list: &ChromList,
     quiet: bool,
     payload_required: bool,
@@ -256,23 +248,18 @@ pub fn read_genome_regions_from_bed(
     use std::io::Read;
 
     if !quiet {
-        info!(
-            "Reading {label} genome regions from bed file: '{}'",
-            filename.display()
-        );
+        info!("Reading {label} genome regions from bed file: '{filename}'");
     }
 
     let mut reader = unwrap!(
         bgzf::Reader::from_path(filename),
-        "Unable to open {label} genome regions file: '{}'",
-        filename.display()
+        "Unable to open {label} genome regions file: '{filename}'"
     );
 
     let mut content = String::new();
     unwrap!(
         reader.read_to_string(&mut content),
-        "Can't parse text from {label} genome regions file: '{}'",
-        filename.display()
+        "Can't parse text from {label} genome regions file: '{filename}'"
     );
 
     let mut chrom_regions = vec![ChromRegions::new(); chrom_list.data.len()];
@@ -296,8 +283,7 @@ pub fn read_genome_regions_from_bed(
             last_chrom = chrom;
             last_chrom_index = *unwrap!(
                 chrom_list.label_to_index.get(chrom),
-                "{label} genome regions include unknown chromosome name` `{chrom}` in file: '{}'",
-                filename.display()
+                "{label} genome regions include unknown chromosome name` `{chrom}` in file: '{filename}'"
             );
         }
         let regions = &mut chrom_regions[last_chrom_index];
@@ -366,6 +352,24 @@ mod tests {
         assert!(!regions.intersect_pos(99));
         assert!(!regions.intersect_pos(101));
     }
+
+    /*
+    #[test]
+    fn test_find() {
+        let mut regions = ChromRegions::new();
+
+        regions.add_region_value(100, 200, 0);
+        regions.add_region_value(200, 250, 1);
+        regions.add_region_value(250, 300, 2);
+        for x in regions.find_overlaps(175, 275) {
+            let i = x.interval().clone();
+            let s = i.end - i.start;
+            eprintln!("{x:?}");
+            eprintln!("{}", s);
+        }
+        assert!(false);
+    }
+    */
 
     #[test]
     fn test_overlap_nopanic() {

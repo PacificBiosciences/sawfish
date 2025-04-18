@@ -5,7 +5,6 @@ mod bio_align_utils;
 mod breakpoint;
 mod cli;
 mod cluster_breakpoints;
-mod cnv_output;
 mod contig_output;
 mod copy_number_segmentation;
 mod depth_bins;
@@ -22,8 +21,10 @@ mod large_variant_output;
 mod log_utils;
 mod logger;
 mod maf_utils;
+mod os_utils;
 mod prob_utils;
 mod refine_sv;
+mod refined_cnv;
 mod run_stats;
 mod score_sv;
 mod simple_alignment;
@@ -41,7 +42,6 @@ use hhmmss::Hhmmss;
 use log::info;
 
 use crate::cli::Commands;
-use crate::copy_number_segmentation::*;
 use crate::discover::run_discover;
 use crate::globals::{PROGRAM_NAME, PROGRAM_VERSION};
 use crate::joint_call::run_joint_call;
@@ -50,7 +50,7 @@ use crate::logger::setup_output_dir_and_logger;
 /// Run system configuration steps prior to starting any other program logic
 ///
 fn system_configuration_prelude() {
-    utils::attempt_max_open_file_limit();
+    os_utils::attempt_max_open_file_limit();
 }
 
 fn run(settings: &cli::Settings) -> Result<(), Box<dyn error::Error>> {

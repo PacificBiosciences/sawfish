@@ -2,8 +2,7 @@ use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use std::path::Path;
-
+use camino::Utf8Path;
 use log::info;
 use rust_vc_utils::ChromList;
 use unwrap::unwrap;
@@ -15,14 +14,13 @@ use crate::cli;
 use crate::genome_segment::{get_segment_distance, GenomeSegment};
 use crate::run_stats::ClusterStats;
 
-fn debug_bpos(output_dir: &Path, bpos: &BreakpointObservationMap, num: usize) {
+fn debug_bpos(output_dir: &Utf8Path, bpos: &BreakpointObservationMap, num: usize) {
     let filename = output_dir.join("debug.bpos.txt");
-    info!("Writing debug bpos to file: '{}'", filename.display());
+    info!("Writing debug bpos to file: '{filename}'");
 
     let f = unwrap!(
         File::create(&filename),
-        "Unable to create debug bpos file: '{}'",
-        filename.display()
+        "Unable to create debug bpos file: '{filename}'"
     );
     let mut f = BufWriter::new(f);
 
@@ -38,17 +36,13 @@ fn debug_bpos(output_dir: &Path, bpos: &BreakpointObservationMap, num: usize) {
     }
 }
 
-fn debug_clusters(output_dir: &Path, breakpoint_clusters: &[BreakpointCluster], num: usize) {
+fn debug_clusters(output_dir: &Utf8Path, breakpoint_clusters: &[BreakpointCluster], num: usize) {
     let filename = output_dir.join("debug.breakpoint_clusters.txt");
-    info!(
-        "Writing breakpoint clusters debug file: '{}'",
-        filename.display()
-    );
+    info!("Writing breakpoint clusters debug file: '{filename}'");
 
     let f = unwrap!(
         File::create(&filename),
-        "Unable to create breakpoint clusters debug file: '{}'",
-        filename.display()
+        "Unable to create breakpoint clusters debug file: '{filename}'"
     );
     let mut f = BufWriter::new(f);
 
@@ -74,7 +68,7 @@ struct ClusterBedRecord {
 /// display of multiple key/value pairs in column #4
 ///
 fn write_breakpoint_clusters_to_bed(
-    output_dir: &Path,
+    output_dir: &Utf8Path,
     chrom_list: &ChromList,
     clusters: &[BreakpointCluster],
 ) {
@@ -126,15 +120,11 @@ fn write_breakpoint_clusters_to_bed(
     brecs.sort_by(|a, b| a.segment.partial_cmp(&b.segment).unwrap());
 
     let filename = output_dir.join("debug.breakpoint_clusters.bed");
-    info!(
-        "Writing breakpoint_cluster debug bed file: '{}'",
-        filename.display()
-    );
+    info!("Writing breakpoint_cluster debug bed file: '{filename}'");
 
     let f = unwrap!(
         File::create(&filename),
-        "Unable to create breakpoint cluster debug bed file: '{}'",
-        filename.display()
+        "Unable to create breakpoint cluster debug bed file: '{filename}'"
     );
     let mut f = BufWriter::new(f);
     writeln!(f, "#gffTags").unwrap();
@@ -194,7 +184,10 @@ mod cluster {
         let debug = false;
 
         if debug {
-            eprintln!("Breakpoint obs: {:?}", bpo);
+            eprintln!(
+                "add_breakpoint_observation_to_clusters: New Breakpoint obs: {:?}",
+                bpo
+            );
         }
         let dir_type_index = bpo.breakpoint.get_dir_type_index();
         let dir_type_clusters = &mut cluster_buffer[dir_type_index];
@@ -205,13 +198,14 @@ mod cluster {
         let mut min_cluster_index = 0;
         for (cluster_index, cluster) in dir_type_clusters.iter().enumerate() {
             if debug {
-                eprintln!("cluster: {:?}", cluster);
+                eprintln!("checking cluster_index: {cluster_index} cluster: {cluster:?}");
             }
-            // check distance between this breakend and the cluster (this is a tmp approx)
+
+            // check distance between this breakend and the cluster
             let dist = get_breakpoint_manhattan_distance(&cluster.breakpoint, &bpo.breakpoint);
 
             if debug {
-                eprintln!("bp dist: {:?}", dist);
+                eprintln!("bp dist to cluster: {:?}", dist);
             }
 
             // Only keep the minimum cluster distance:
@@ -225,6 +219,12 @@ mod cluster {
                     min_cluster_dist = dist;
                     min_cluster_index = cluster_index;
                 }
+            }
+
+            if debug {
+                eprintln!(
+                    "min_cluster_index: {min_cluster_index} min_cluster_dist: {min_cluster_dist:?}"
+                );
             }
         }
 
@@ -685,6 +685,11 @@ fn annotate_close_breakends(
 }
 
 /// Run additional operations on the initial cluster set to prepare for refinement
+///
+/// This includes:
+/// 1. a secondary clustering of overlapping single-region clusters
+/// 2. a large insertion candidate routine
+///
 fn process_clusters(
     settings: &cli::DiscoverSettings,
     cluster_settings: &ClusterSettings,
@@ -799,9 +804,10 @@ pub fn process_breakpoint_clusters(
     cluster_stats.total_breakpoint_observation_count = genome_break_observations.singles.len();
 
     if debug {
-        // write first N bpos to a debug output file:
+        // Write first debug_output breakpoint observations to a debug output file:
+        let debug_output = 100;
         let breaks = &genome_break_observations.singles;
-        debug_bpos(&settings.output_dir, breaks, 100);
+        debug_bpos(&settings.output_dir, breaks, debug_output);
     }
 
     let mut breakpoint_clusters =
@@ -810,8 +816,9 @@ pub fn process_breakpoint_clusters(
     cluster_stats.total_breakpoint_cluster_count = breakpoint_clusters.len();
 
     if debug {
-        // write first N clusters to a debug output file:
-        debug_clusters(&settings.output_dir, &breakpoint_clusters, 100);
+        // Write first debug_output clusters to a debug output file:
+        let debug_output = 100;
+        debug_clusters(&settings.output_dir, &breakpoint_clusters, debug_output);
     }
 
     process_clusters(

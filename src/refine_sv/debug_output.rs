@@ -1,12 +1,12 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::path::Path;
 use std::sync::{
     atomic::{self, AtomicBool},
     Arc, Mutex,
 };
 use std::time::{Duration, Instant};
 
+use camino::Utf8Path;
 use unwrap::unwrap;
 
 use crate::breakpoint::{Breakpoint, ConsolidatedAssemblySegmentInfo};
@@ -25,7 +25,7 @@ pub struct ClusterDebugInfo {
 }
 
 /// Sort by processing duration and report out the N slowest clusters:
-pub fn write_debug_cluster_info(output_dir: &Path, mut debug_info: Vec<ClusterDebugInfo>) {
+pub fn write_debug_cluster_info(output_dir: &Utf8Path, mut debug_info: Vec<ClusterDebugInfo>) {
     let cluster_debug_report_cases = 100;
     debug_info.sort_by_key(|x| std::cmp::Reverse(x.duration.total));
     debug_info.truncate(cluster_debug_report_cases);
@@ -33,8 +33,7 @@ pub fn write_debug_cluster_info(output_dir: &Path, mut debug_info: Vec<ClusterDe
     let filename = output_dir.join("debug.cluster.refinement.txt");
     let f = unwrap!(
         File::create(&filename),
-        "Unable to create cluster refinement debug file: '{}'",
-        filename.display()
+        "Unable to create cluster refinement debug file: '{filename}'"
     );
     let mut f = BufWriter::new(f);
 

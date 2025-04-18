@@ -19,7 +19,7 @@ use crate::utils::get_seq_pos_flanks;
 /// min_assembly_edge_anchor on each side, with the assembly_high_quality_range region.
 ///
 /// # Arguments
-/// * alt_hap_alignment - Start position and cigar alignment of the contig to the alt hap sequence
+/// * `alt_hap_alignment` - Start position and cigar alignment of the contig to the alt hap sequence
 ///
 /// Returns true if the alignment is anchored on both sides of the alt haplotype
 ///
@@ -116,7 +116,7 @@ pub struct AltHapLeftRightComponentAlignmentInfo {
 ///
 /// # Arguments
 ///
-/// * assembly_contig_to_alt_hap_alignment - Start position and cigar alignment of the contig to the
+/// * `assembly_contig_to_alt_hap_alignment` - Start position and cigar alignment of the contig to the
 ///   alt hap sequence
 ///
 /// Return AltHapLeftRightComponentAlignmentInfo describing how the alignment is distributed over
@@ -369,7 +369,7 @@ mod tests {
     use crate::genome_segment::GenomeSegment;
 
     fn get_test_alt_hap_info() -> TwoRegionAltHapInfo {
-        let alt_hap_seq = "TTTTACTGACTGTTTNNNNTTTACTGACTGTTTT".as_bytes().to_vec();
+        let alt_hap_seq = b"TTTTACTGACTGTTTNNNNTTTACTGACTGTTTT".to_vec();
         TwoRegionAltHapInfo {
             ref_segment1: GenomeSegment {
                 chrom_index: 0,
@@ -398,7 +398,7 @@ mod tests {
             cigar: get_cigar_from_string("8=10D8="),
         };
         let alt_hap_info = get_test_alt_hap_info();
-        let contig = "ACTGACTGACTGACTG".as_bytes();
+        let contig = b"ACTGACTGACTGACTG";
 
         let result = transform_alt_hap_alignment_into_left_right_components(
             10,
@@ -441,9 +441,9 @@ mod tests {
             cigar: get_cigar_from_string("8=10D8="),
         };
         let mut alt_hap_info = get_test_alt_hap_info();
-        alt_hap_info.alt_hap_seq = "TTTTACTGACTGACCNNNNTTTACTGACTGTTTT".as_bytes().to_vec();
+        alt_hap_info.alt_hap_seq = b"TTTTACTGACTGACCNNNNTTTACTGACTGTTTT".to_vec();
         alt_hap_info.extended_alt_hap_seq = alt_hap_info.alt_hap_seq.clone();
-        let contig = "ACTGACTGACTGACTG".as_bytes();
+        let contig = b"ACTGACTGACTGACTG";
 
         let result = transform_alt_hap_alignment_into_left_right_components(
             3,
@@ -481,7 +481,7 @@ mod tests {
             cigar: get_cigar_from_string("8=10D4I8="),
         };
         let alt_hap_info = get_test_alt_hap_info();
-        let contig = "ACTGACTGCCCCACTGACTG".as_bytes();
+        let contig = b"ACTGACTGCCCCACTGACTG";
 
         let result = transform_alt_hap_alignment_into_left_right_components(
             3,
@@ -515,7 +515,7 @@ mod tests {
             cigar: get_cigar_from_string("8=4I10D8="),
         };
         let alt_hap_info = get_test_alt_hap_info();
-        let contig = "ACTGACTGCCCCACTGACTG".as_bytes();
+        let contig = b"ACTGACTGCCCCACTGACTG";
 
         let result = transform_alt_hap_alignment_into_left_right_components(
             3,
@@ -548,7 +548,7 @@ mod tests {
             ref_offset: 4,
             cigar: get_cigar_from_string("8=7D8="),
         };
-        let alt_hap_seq = "TTTTACTGACTGNNNNTTTACTGACTGTTTT".as_bytes().to_vec();
+        let alt_hap_seq = b"TTTTACTGACTGNNNNTTTACTGACTGTTTT".to_vec();
         let mut alt_hap_info = TwoRegionAltHapInfo {
             ref_segment1: GenomeSegment {
                 chrom_index: 0,
@@ -569,7 +569,7 @@ mod tests {
             alt_hap_seq,
         };
 
-        let contig = "ACTGACTGACTGACTG".as_bytes();
+        let contig = b"ACTGACTGACTGACTG";
 
         let result = transform_alt_hap_alignment_into_left_right_components(
             3,
@@ -612,7 +612,7 @@ mod tests {
             ref_offset: 4,
             cigar: get_cigar_from_string("8=7D8="),
         };
-        let alt_hap_seq = "TTTTACTGACTGTTTNNNNACTGACTGTTTT".as_bytes().to_vec();
+        let alt_hap_seq = b"TTTTACTGACTGTTTNNNNACTGACTGTTTT".to_vec();
         let alt_hap_info = TwoRegionAltHapInfo {
             ref_segment1: GenomeSegment {
                 chrom_index: 0,
@@ -633,7 +633,7 @@ mod tests {
             alt_hap_seq,
         };
 
-        let contig = "ACTGACTGACTGACTG".as_bytes();
+        let contig = b"ACTGACTGACTGACTG";
 
         let result = transform_alt_hap_alignment_into_left_right_components(
             3,

@@ -2,8 +2,7 @@ mod discover;
 mod joint_call;
 mod shared;
 
-use std::path::Path;
-
+use camino::Utf8Path;
 use chrono::Datelike;
 use clap::{Parser, Subcommand};
 use simple_error::{bail, SimpleResult};
@@ -53,7 +52,7 @@ pub struct Settings {
 }
 
 impl Settings {
-    pub fn get_output_dir(&self) -> &Path {
+    pub fn get_output_dir(&self) -> &Utf8Path {
         match &self.command {
             Commands::Discover(x) => &x.output_dir,
             Commands::JointCall(x) => &x.output_dir,
@@ -63,9 +62,9 @@ impl Settings {
 
 /// Checks if a directory does not exist
 ///
-pub fn check_novel_dirname(dirname: &Path, label: &str) -> SimpleResult<()> {
+pub fn check_novel_dirname(dirname: &Utf8Path, label: &str) -> SimpleResult<()> {
     if dirname.exists() {
-        bail!("{} already exists: \"{}\"", label, dirname.display());
+        bail!("{label} already exists: \"{dirname}\"");
     }
     Ok(())
 }
