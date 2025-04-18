@@ -61,7 +61,7 @@ The diploid genotypes are $G = \{\text{ref}, \text{het}, \text{hom}\}$ represent
 
 $$
 P(G)= 
-\left\{
+\left\lbrace
   \begin{array}{rl}
 \theta      & \mbox{ if het} \\
 \theta / 2  & \mbox{ if hom} \\
@@ -84,7 +84,7 @@ $$
 P(d \vert G) = \sum_{a \in A} P(d \vert a) P(a|G)
 $$
 
-where $A = \{\text{ref}, \text{alt}\}$ are the SV alleles in the model representing the reference and SV haplotypes. As previously discussed, support for any overlapping SV haplotypes is counted towards the reference allele for the purpose of the genotype quality model, which is intentionally simplified to represent only one SV haplotype at a time.
+where $A = \lbrace\text{ref}, \text{alt}\rbrace$ are the SV alleles in the model representing the reference and SV haplotypes. As previously discussed, support for any overlapping SV haplotypes is counted towards the reference allele for the purpose of the genotype quality model, which is intentionally simplified to represent only one SV haplotype at a time.
 
 Considering the terms in the read likelihood, the allele likelihood $P(d \vert a)$ is set from the read allele support counts using a single erroneous read support count probability $e = 1 \times 10^{-5}$ for all cases. The allele probabilities $P(a \vert G)$ are the simple allele fractions (0, 0.5, 1) associated with each genotype.
 
