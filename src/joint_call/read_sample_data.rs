@@ -3,6 +3,7 @@ use std::sync::mpsc::channel;
 
 use log::info;
 use rust_vc_utils::{get_genome_ref_from_fasta, ChromList, GenomeRef};
+use unwrap::unwrap;
 
 use super::get_refined_svs::get_sample_sv_groups;
 
@@ -81,7 +82,7 @@ fn get_sample_joint_call_data(
         );
     }
 
-    let disovery_run_stats = read_discover_run_stats(discover_dir);
+    let disover_run_stats = unwrap!(read_discover_run_stats(discover_dir));
 
     let genome_max_sv_depth_regions = {
         let filename = discover_dir.join(discover::MAX_SV_DEPTH_FILENAME);
@@ -102,7 +103,7 @@ fn get_sample_joint_call_data(
     let sample_gc_bias_data = deserialize_sample_gc_bias_data(discover_dir);
 
     SampleJointCallData {
-        sample_name: disovery_run_stats.sample_name,
+        sample_name: disover_run_stats.sample_name,
         discover_settings,
         genome_max_sv_depth_regions,
         sv_groups,

@@ -1,5 +1,18 @@
 # Change Log
 
+## v1.0.2 - 2025-04-25
+
+### Changed
+
+- CR-480 Convert large deletions and duplications to breakends
+  - Deletions and duplications larger than 100kb are now converted to breakend records by default, can be changed with `--max-deldup-size`
+  argument in the joint-call step.
+
+### Fixed
+
+- CR-470 Improve validation of sample discover step input
+  - Provide clear usage error if any input samples to the joint-call step do not appear to be complete sawfish discover step results
+
 ## v1.0.1 - 2025-04-13
 
 ### Fixed

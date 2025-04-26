@@ -115,6 +115,7 @@ pub(super) fn joint_genotype_all_samples(
 
     let score_settings = &ScoreSVSettings::new(
         settings.min_sv_mapq,
+        settings.max_deldup_size,
         settings.min_gap_compressed_identity,
         settings.report_supporting_reads,
         enable_phasing,

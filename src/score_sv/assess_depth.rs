@@ -236,15 +236,17 @@ pub(super) fn assess_sv_depth_support(
 ) {
     let debug = false;
 
-    assert!(!all_sample_data.is_empty());
-    assert!(!refined_svs.is_empty());
-
     for refined_sv in refined_svs.iter_mut().filter(|x| !x.filter_sv()) {
         if debug {
             eprintln!(
                 "Starting depth assessment process for SV id: {:?}",
                 refined_sv.id
             );
+        }
+
+        // Don't run assessment if the SV has been forced to BND format already
+        if refined_sv.ext.force_breakpoint_representation {
+            continue;
         }
 
         // Determine if the refined SV pattern is a candidate for depth assessment:

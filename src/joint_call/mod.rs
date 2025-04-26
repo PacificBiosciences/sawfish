@@ -13,10 +13,18 @@ pub use self::read_sample_data::SampleJointCallData;
 use self::read_sample_data::{read_all_sample_data, SharedJointCallData};
 
 use crate::cli::{JointCallSettings, SharedSettings};
+use crate::globals::PROGRAM_VERSION;
 use crate::large_variant_output::{write_indexed_sv_vcf_file, VcfSettings};
-use crate::run_stats::{write_joint_call_run_stats, JointCallRunStats};
+use crate::run_stats::{delete_run_stats, write_joint_call_run_stats, JointCallRunStats, RunStep};
 
 pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSettings) {
+    // Now that we're committed to a run, remove any possible older run stats file that could be present in case this is a clobber run
+    //
+    // The run stats file is used as a marker of a successfully finished run, so removing it here allows run completion to be determined
+    // from whether the new file is written at the end of this discover step.
+    //
+    delete_run_stats(&settings.output_dir);
+
     let (shared_data, all_sample_data) = read_all_sample_data(shared_settings, settings);
 
     let (merged_sv_groups, merge_stats) =
@@ -66,14 +74,6 @@ pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSett
     score_stats.vcf_output_record_count = vcf_stats.output_record_count;
     score_stats.vcf_duplicate_record_count = vcf_stats.duplicate_record_count;
 
-    write_joint_call_run_stats(
-        &settings.output_dir,
-        &JointCallRunStats {
-            merge_stats,
-            score_stats,
-        },
-    );
-
     if settings.report_supporting_reads {
         supporting_read_names::write_supporting_read_names(
             &settings.output_dir,
@@ -81,4 +81,17 @@ pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSett
             &scored_svs,
         );
     }
+
+    // In addition to useful statistics this file acts as a marker for a successfully completed run, so it must be written last.
+    write_joint_call_run_stats(
+        &settings.output_dir,
+        &JointCallRunStats {
+            run_step: RunStep {
+                name: "joint-call".to_string(),
+                version: PROGRAM_VERSION.to_string(),
+            },
+            merge_stats,
+            score_stats,
+        },
+    );
 }

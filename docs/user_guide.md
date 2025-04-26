@@ -128,7 +128,7 @@ Notes on formatting and representation of SVs are listed below for each major ty
 
 ##### Deletions
 
-All deletions of 100kb or smaller are represented by directly writing the deleted sequence in the VCF `REF` field and any breakpoint insertion sequence in `ALT`. Deletions larger than 100kb are written as symbolic alleles using the ALT value of `<DEL>`. All candidate deletions at least 50kb in length will be checked for a supporting depth signature, if this support is not found the candidate deletion will be reported in the VCF output as a breakend (`BND`) pair instead.
+All deletions of 100kb or smaller are represented by directly writing the deleted sequence in the VCF `REF` field and any breakpoint insertion sequence in `ALT`. Deletions larger than 100kb are written as symbolic alleles using the ALT value of `<DEL>`. All candidate deletions at least 50kb in length will be checked for a supporting depth signature, if this support is not found the candidate deletion will be reported in the VCF output as a breakend (`BND`) pair instead. By default, all candidate deletions above 100kb will be reported in the VCF output as a breakend (`BND`) pair regardless of supporting depth signature, this behavior can be adjusted with the `--max-deldup-size` option in the joint-call step.
 
 ###### Insertions
 
@@ -136,7 +136,7 @@ Any indel-like SVs where the length of sequence inserted at the breakpoint excee
 
 ##### Duplications
 
-Very large insertions with long breakpoint homology will be represented as duplications in the VCF output only if they cannot be output as insertions. These will be written to the VCF output using the symbolic ALT value of `<DUP:TANDEM>`. All candidate duplications at least 50kb in length will be checked for a supporting depth signature, if this support is not found the candidate duplication will be reported in the VCF output as a breakend (`BND`) pair instead.
+Very large insertions with long breakpoint homology will be represented as duplications in the VCF output only if they cannot be output as insertions. These will be written to the VCF output using the symbolic ALT value of `<DUP:TANDEM>`. All candidate duplications at least 50kb in length will be checked for a supporting depth signature, if this support is not found the candidate duplication will be reported in the VCF output as a breakend (`BND`) pair instead. By default, all candidate duplications above 100kb will be reported in the VCF output as a breakend (`BND`) pair regardless of supporting depth signature, this behavior can be adjusted with the `--max-deldup-size` option in the joint-call step.
 
 ##### Breakpoints
 

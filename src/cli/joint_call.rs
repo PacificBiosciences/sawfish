@@ -5,6 +5,8 @@ use clap::Args;
 use const_format::concatcp;
 use simple_error::{bail, SimpleResult};
 
+use crate::run_stats::read_discover_run_stats;
+
 use super::defaults::{MIN_GAP_COMPRESSED_IDENTITY, MIN_SV_MAPQ};
 
 #[derive(Args)]
@@ -26,6 +28,11 @@ pub struct JointCallSettings {
     /// Minimum MAPQ value for reads to be used in joint-genotyping.
     #[arg(long, default_value_t = MIN_SV_MAPQ)]
     pub min_sv_mapq: u32,
+
+    /// Maximum size for deletions and duplications. Longer variants will be
+    /// be reported as breakend (BND) records
+    #[arg(long, default_value_t = 100_000)]
+    pub max_deldup_size: u32,
 
     /// Threshold for the gap-compressed identity filter, to filter out reads with identity to the
     /// reference so low that they are likely to reflect a reference compression or other form
@@ -54,6 +61,49 @@ pub struct JointCallSettings {
     pub no_contig_cleanup: bool,
 }
 
+/// Check that every sample path represents a completed sawfish discover run
+///
+/// To do this we rely on the last file written in the discover step 'run.stats.json'
+///
+fn check_valid_sample_discover_paths(settings: &JointCallSettings) -> SimpleResult<()> {
+    use crate::discover::RUN_STATS_FILENAME;
+
+    for sample in settings.sample.iter() {
+        let sample_discover_run_stats_filename = sample.join(RUN_STATS_FILENAME);
+        if !sample_discover_run_stats_filename.exists()
+            || !sample_discover_run_stats_filename.is_file()
+        {
+            bail!(
+                "Sample path: '{}' does not contain completed sawfish discover step output",
+                sample.display()
+            );
+        }
+
+        let discover_stats = match read_discover_run_stats(sample) {
+            Ok(x) => x,
+            Err(_) => {
+                bail!(
+                    "Sample path: '{}' does not contain completed sawfish discover step output",
+                    sample.display()
+                );
+            }
+        };
+
+        if !(discover_stats.run_step.name.is_empty() || discover_stats.run_step.name == "discover")
+        {
+            bail!(
+                "Sample path: '{}' does not contain completed sawfish discover step output",
+                sample.display()
+            );
+        }
+
+        // add check on discover step version here later:
+        //discover_stats.run_step.version
+    }
+
+    Ok(())
+}
+
 /// Validate settings and update to parameters that can't be processed automatically by clap.
 ///
 /// Assumes that the logger is not setup
@@ -64,13 +114,10 @@ pub fn validate_and_fix_joint_call_settings(
     // Check that all sample paths exist and correspond to directories:
     for sample in settings.sample.iter() {
         if !sample.exists() {
-            bail!("--sample argument does not exist: '{}'", sample.display());
+            bail!("sample argument does not exist: '{}'", sample.display());
         }
         if !sample.is_dir() {
-            bail!(
-                "--sample argument is not a directory: '{}'",
-                sample.display()
-            );
+            bail!("sample argument is not a directory: '{}'", sample.display());
         }
     }
 
@@ -85,9 +132,11 @@ pub fn validate_and_fix_joint_call_settings(
     let mut check_paths = HashSet::new();
     for sample in settings.sample.iter() {
         if !check_paths.insert(sample.to_str().unwrap()) {
-            bail!("Duplicated --sample path: '{}'", sample.display());
+            bail!("Duplicated sample path: '{}'", sample.display());
         }
     }
+
+    check_valid_sample_discover_paths(&settings)?;
 
     Ok(settings)
 }

@@ -19,7 +19,9 @@ use crate::bam_utils::{
     get_bam_alignment_closest_to_target_ref_pos, get_gap_compressed_identity, is_split_read,
     TargetMatchType,
 };
-use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint};
+use crate::breakpoint::{
+    get_breakpoint_vcf_sv_type, Breakend, BreakendDirection, Breakpoint, VcfSVType,
+};
 use crate::depth_bins::GenomeDepthBins;
 use crate::expected_ploidy::SVLocusPloidy;
 use crate::gc_correction::GenomeGCLevels;
@@ -2009,7 +2011,13 @@ pub struct ScoreSVSettings {
     min_sv_mapq: u32,
 
     /// Copied from cli settings
+    max_deldup_size: u32,
+
+    /// Copied from cli settings
     min_gap_compressed_identity: f64,
+
+    /// Copied from cli settings
+    report_supporting_read_names: bool,
 
     /// Length of sequence aligned between reads and candidate alleles during scoring
     ///
@@ -2033,9 +2041,6 @@ pub struct ScoreSVSettings {
     ///
     min_sv_depth_assess_size: usize,
 
-    /// parallels command-line debug option to enumerate all read-names supporting the SV allele for each VCF record output
-    report_supporting_read_names: bool,
-
     /// If true, enable local phased genotype output
     enable_phasing: bool,
 }
@@ -2043,6 +2048,7 @@ pub struct ScoreSVSettings {
 impl ScoreSVSettings {
     pub fn new(
         min_sv_mapq: u32,
+        max_deldup_size: u32,
         min_gap_compressed_identity: f64,
         report_supporting_read_names: bool,
         enable_phasing: bool,
@@ -2054,6 +2060,7 @@ impl ScoreSVSettings {
 
         Self {
             min_sv_mapq,
+            max_deldup_size,
             min_gap_compressed_identity,
             read_support_flank_size,
             min_read_support_flank_size,
@@ -2607,6 +2614,32 @@ fn score_refined_sv_group(
     }
 }
 
+/// Prior to depth assessment, decide if any SVs will be filtered to SVs based on size alone
+///
+fn convert_large_deldup_to_bnd(max_deldup_size: u32, refined_svs: &mut [RefinedSV]) {
+    for refined_sv in refined_svs.iter_mut().filter(|x| !x.filter_sv()) {
+        let is_large_deldup = {
+            let bp = &refined_sv.bp;
+            let sv_type = get_breakpoint_vcf_sv_type(bp);
+            match sv_type {
+                VcfSVType::Deletion | VcfSVType::Duplication => {
+                    let be1 = &bp.breakend1;
+                    let be2 = bp.breakend2.as_ref().unwrap();
+                    let sv_size =
+                        std::cmp::max(be2.segment.range.start - be1.segment.range.start, 0)
+                            as usize;
+                    sv_size > max_deldup_size as usize
+                }
+                _ => false,
+            }
+        };
+
+        if is_large_deldup {
+            refined_sv.ext.force_breakpoint_representation = true;
+        }
+    }
+}
+
 pub struct SampleScoreData<'a> {
     pub genome_max_sv_depth_regions: &'a [ChromRegions],
     pub genome_depth_bins: &'a GenomeDepthBins,
@@ -2653,6 +2686,8 @@ pub fn score_and_assess_refined_sv_group(
         sv_group,
         debug_settings,
     );
+
+    convert_large_deldup_to_bnd(score_settings.max_deldup_size, &mut sv_group.refined_svs);
 
     assess_sv_depth_support(
         score_settings,

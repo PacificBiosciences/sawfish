@@ -9,10 +9,11 @@ use crate::copy_number_segmentation::{segment_sample_copy_number, write_copy_num
 use crate::depth_bins;
 use crate::gc_correction::*;
 use crate::genome_regions::{write_genome_regions_to_bed, GenomeRegions};
+use crate::globals::PROGRAM_VERSION;
 use crate::large_variant_output::{write_indexed_sv_vcf_file, VcfSettings};
 use crate::maf_utils;
 use crate::refine_sv;
-use crate::run_stats::{write_discover_run_stats, DiscoverRunStats};
+use crate::run_stats::{delete_run_stats, write_discover_run_stats, DiscoverRunStats, RunStep};
 use crate::worker_thread_data::get_bam_reader_worker_thread_data;
 
 pub const ASSEMBLY_REGIONS_FILENAME: &str = "assembly.regions.bed";
@@ -44,6 +45,14 @@ impl StaticDiscoverSettings {
 
 pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::DiscoverSettings) {
     cli::validate_discover_settings_data(settings);
+
+    // Now that we're committed to a run, remove any possible older run stats file that could be present in case this is a clobber run
+    //
+    // The run stats file is used as a marker of a successfully finished run, so removing it here allows run completion to be determined
+    // from whether the new file is written at the end of this discover step.
+    //
+    delete_run_stats(&settings.output_dir);
+
     cli::write_discover_settings(&settings.output_dir, settings);
 
     let static_settings = StaticDiscoverSettings::new();
@@ -227,9 +236,14 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         );
     }
 
+    // In addition to useful statistics this file acts as a marker for a successfully completed run, so it must be written last.
     write_discover_run_stats(
         &settings.output_dir,
         &DiscoverRunStats {
+            run_step: RunStep {
+                name: "discover".to_string(),
+                version: PROGRAM_VERSION.to_string(),
+            },
             sample_name: sample_scan_result.sample_name.clone(),
             cluster_stats,
             refine_stats,

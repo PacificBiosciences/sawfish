@@ -16,7 +16,7 @@ Key features:
 - Simple multi-threaded workflow
   - A single command-line is used for each of the discover and joint-genotyping steps
 
-All SVs are modeled internally as breakpoints, but will be reported as deletions, insertions, duplications and inversions when supported by the corresponding breakpoint and depth pattern, otherwise the breakpoint itself is reported. The minimum variant size is 35 bases (configurable). A maximum size is only applied to inversions (100kb).
+All SVs are modeled internally as breakpoints, but will be reported as deletions, insertions, duplications and inversions when supported by the corresponding breakpoint and depth pattern, otherwise the breakpoint itself is reported. The minimum variant size is 35 bases (configurable). A maximum size of 100kb is applied to deletions, duplications and inversions.
 
 ## Getting started
 
