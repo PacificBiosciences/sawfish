@@ -1,7 +1,35 @@
 //! Shared haplotype merging code for both single-region and multi-region cases
 //!
 
+use crate::expected_ploidy::get_max_haplotype_count_for_regions;
+use crate::joint_call::SampleJointCallData;
 use crate::sv_group::SVGroup;
+
+/// Fill in the expected copy-number related values for sv_group
+///
+pub(super) fn set_sv_group_expected_cn_info(
+    treat_single_copy_as_haploid: bool,
+    all_sample_data: &[SampleJointCallData],
+    sv_groups: &mut [SVGroup],
+) {
+    for sv_group in sv_groups.iter_mut() {
+        sv_group.sample_expected_cn_info.clear();
+        for (sample_index, sample_data) in all_sample_data.iter().enumerate() {
+            let (max_haplotype_count, expected_cn_info) = get_max_haplotype_count_for_regions(
+                treat_single_copy_as_haploid,
+                sample_data.expected_copy_number_regions.as_ref(),
+                &sv_group.group_regions,
+            );
+            sv_group.sample_expected_cn_info.push(expected_cn_info);
+
+            // Trim sample_haplotype_list to be no more than max_haplotype_count if necessary.
+            //
+            // Technically this shouldn't be needed here, because the genotyping routine should account for
+            // haplotype count to, but seems good to be consistent about handling throught the full pipe.
+            sv_group.sample_haplotype_list[sample_index].truncate(max_haplotype_count);
+        }
+    }
+}
 
 #[derive(Debug)]
 pub(super) struct AnnoSVGroup<'a> {

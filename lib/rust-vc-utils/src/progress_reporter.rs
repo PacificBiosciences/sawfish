@@ -103,7 +103,7 @@ impl ProgressReporter {
         // Determine whether this will be reported as a tty progress bar, or periodic log updates.
         //
         // For consistent tty determination we reuse the criteria from indicatif, ie. "bar.is_hidden()", so
-        // that the the periodic update is always provided when the progress bar is not.
+        // that the periodic update is always provided when the progress bar is not.
         let use_periodic_updates = force_periodic_updates || progress_bar.is_hidden();
         if use_periodic_updates {
             let log_info = LogInfo {

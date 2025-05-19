@@ -2,11 +2,12 @@ use std::collections::BinaryHeap;
 
 use rust_vc_utils::ChromList;
 
-use super::merge_sv_shared::{clone_sv_group_as_multisample, AnnoSVGroup};
+use super::merge_sv_shared::{
+    clone_sv_group_as_multisample, set_sv_group_expected_cn_info, AnnoSVGroup,
+};
 use super::{get_duplicate_stats, CandidateSVGroupInfo};
 use crate::bio_align_utils::{print_pairwise_alignment, PairwiseAligner};
 use crate::breakpoint::Breakpoint;
-use crate::expected_ploidy::{get_max_haplotype_count_for_regions, SVLocusPloidy};
 use crate::genome_segment::GenomeSegment;
 use crate::joint_call::SampleJointCallData;
 use crate::run_stats::MultiSampleCategoryMergeStats;
@@ -66,7 +67,7 @@ fn test_for_duplicate_haplotypes_with_alignment(
 
     if debug_duptest {
         eprintln!(
-            "Multi-Merge: Contig base/query length: {}/{}",
+            "Multi-Merge: Contig base/query length: {}/{} norm_score: {norm_score}",
             base_contig.len(),
             query_contig.len()
         );
@@ -223,6 +224,7 @@ fn merge_duplicated_candidates(
 /// 2. Multi-region SV merge stats
 ///
 pub(super) fn process_duplicate_candidate_pool(
+    treat_single_copy_as_haploid: bool,
     all_sample_data: &[SampleJointCallData],
     duplicate_candidate_pool: &Vec<CandidateSVGroupInfo>,
     debug: bool,
@@ -232,21 +234,11 @@ pub(super) fn process_duplicate_candidate_pool(
     let mut sv_groups =
         merge_duplicated_candidates(all_sample_data, duplicate_candidate_pool, debug);
 
-    // Fill in the new sample_ploidy value
-    let sample_count = all_sample_data.len();
-    for sv_group in sv_groups.iter_mut() {
-        sv_group.sample_ploidy = vec![SVLocusPloidy::Diploid; sample_count];
-        for (sample_index, sample_data) in all_sample_data.iter().enumerate() {
-            let (max_haplotype_count, ploidy) = get_max_haplotype_count_for_regions(
-                sample_data.expected_copy_number_regions.as_ref(),
-                &sv_group.group_regions,
-            );
-            sv_group.sample_ploidy[sample_index] = ploidy;
-
-            // shouldn't be needed at this point but for consistency trim sample_haplotype_list if necessary:
-            sv_group.sample_haplotype_list[sample_index].truncate(max_haplotype_count);
-        }
-    }
+    set_sv_group_expected_cn_info(
+        treat_single_copy_as_haploid,
+        all_sample_data,
+        &mut sv_groups,
+    );
 
     // Reformat SV group info for stats routine:
     let input_sv_groups = duplicate_candidate_pool

@@ -261,6 +261,32 @@ impl Breakpoint {
         }
     }
 
+    /// If true, both breakends are defined, on the same chromosome and with a breakend direction
+    /// pattern consistent with an indel or duplication
+    pub fn is_indel_or_dup(&self) -> bool {
+        assert!(self.is_standardized());
+        if self.breakend2.is_none() {
+            return false;
+        }
+        let bnd1 = &self.breakend1;
+        let bnd2 = self.breakend2.as_ref().unwrap();
+        if bnd1.segment.chrom_index != bnd2.segment.chrom_index {
+            return false;
+        }
+        bnd1.dir != bnd2.dir
+    }
+
+    pub fn deldup_size(&self) -> Option<usize> {
+        if !self.is_indel_or_dup() {
+            None
+        } else {
+            let be1 = &self.breakend1;
+            let be2 = self.breakend2.as_ref().unwrap();
+            let size = std::cmp::max(be2.segment.range.start - be1.segment.range.start, 0) as usize;
+            Some(size)
+        }
+    }
+
     /// Test for standardized order of breakends 1 and 2
     ///
     /// If breakend2 is defined,
@@ -495,6 +521,7 @@ pub struct LargeInsertionInfo {
     pub paired_cluster_index: usize,
 }
 
+#[derive(Clone)]
 pub struct NeighborBreakend {
     pub cluster_index: usize,
     pub breakend_index: usize,
@@ -505,17 +532,20 @@ pub struct NeighborBreakend {
 ///
 /// A cluster aggregates multiple similar breakpoint observations.
 ///
+#[derive(Clone)]
 pub struct BreakpointCluster {
     pub breakpoint: Breakpoint,
+
+    /// Count the types of direct read-based breakpoint observations supporting this breakpoint candidate
     pub evidence: [usize; BreakpointEvidenceType::COUNT],
 
     /// qnames for a subset of the evidence reads
     ///
-    /// qnames are only stored for reads which have multiple breakpoint observations (currently ignoreing softclip breakends)
+    /// qnames are only stored for reads which have multiple breakpoint observations (currently ignoring softclip breakends)
     ///
-    /// These are used for:
-    /// (1) prevent double counting these observations as independent support of the same haplotype
-    /// (2) some forms of early hapltoype phasing, such as modifying the alt allele model based on a close
+    /// These are used:
+    /// (1) to prevent double-counting of these observations as independent support of the same haplotype
+    /// (2) for some forms of early hapltoype phasing, such as modifying the alt allele model based on a close
     /// neighboring breakend
     ///
     pub evidence_qnames: BTreeSet<Vec<u8>>,
@@ -617,6 +647,9 @@ pub enum VcfSVType {
     Inversion,
     Breakpoint,
     SingleBreakend,
+
+    /// This type is only used for a variant that can't be described as a deletion or duplication
+    CopyNumberVariant,
 }
 
 /// Get chromosome span from breakend 1 to 2, if it can be defined for this breakpoint

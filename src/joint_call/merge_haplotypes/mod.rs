@@ -3,13 +3,14 @@ mod multi_region;
 mod single_region;
 
 use log::info;
-use rust_vc_utils::ChromList;
 use std::sync::mpsc::channel;
 
-use crate::cli::SharedSettings;
+use crate::cli::{JointCallSettings, SharedSettings};
 use crate::joint_call::SampleJointCallData;
 use crate::run_stats::{MultiSampleCategoryMergeStats, MultiSampleMergeStats};
 use crate::sv_group::SVGroup;
+
+use super::read_sample_data::SharedJointCallData;
 
 #[derive(Clone, Debug)]
 struct CandidateSVGroupInfo {
@@ -53,18 +54,25 @@ fn get_duplicate_stats(
     duplicate_stats
 }
 
-/// Identify and merge similar haplotypes across samples
+/// Identify and merge similar haplotypes
+///
+/// This is primarily intended to merge haplotypes accross samples. We've found some cases where merging within samples can
+/// help, but ideally this would be moved back to the discover step instead.
 ///
 pub fn merge_haplotypes(
     shared_settings: &SharedSettings,
-    chrom_list: &ChromList,
+    settings: &JointCallSettings,
+    shared_data: &SharedJointCallData,
     all_sample_data: &[SampleJointCallData],
 ) -> (Vec<SVGroup>, MultiSampleMergeStats) {
-    info!("Merging SV haplotypes across samples");
+    info!("Merging SV haplotypes");
     let debug = false;
 
-    let multi_region_duplicate_candidate_pools =
-        multi_region::get_duplicate_candidate_pools(chrom_list, all_sample_data, debug);
+    let multi_region_duplicate_candidate_pools = multi_region::get_duplicate_candidate_pools(
+        &shared_data.chrom_list,
+        all_sample_data,
+        debug,
+    );
     let single_region_duplicate_candidate_pools =
         single_region::get_duplicate_candidate_pools(all_sample_data, debug);
 
@@ -80,6 +88,7 @@ pub fn merge_haplotypes(
             let tx = tx.clone();
             scope.spawn(move |_| {
                 let (sv_groups, duplicate_stats) = multi_region::process_duplicate_candidate_pool(
+                    settings.treat_single_copy_as_haploid,
                     all_sample_data,
                     &duplicate_candidate_pool,
                     debug,
@@ -92,6 +101,7 @@ pub fn merge_haplotypes(
             let tx = tx.clone();
             scope.spawn(move |_| {
                 let (sv_groups, duplicate_stats) = single_region::process_duplicate_candidate_pool(
+                    settings.treat_single_copy_as_haploid,
                     all_sample_data,
                     &duplicate_candidate_pool,
                     debug,

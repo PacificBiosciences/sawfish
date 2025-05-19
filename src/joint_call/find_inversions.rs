@@ -1,26 +1,9 @@
 use crate::breakpoint::{BreakendDirection, InsertInfo};
 use crate::genome_segment::GenomeSegment;
-use crate::int_range::IntRange;
+use crate::int_range::get_recip_overlap;
 use crate::refine_sv::Genotype;
 use crate::sv_group::SVGroup;
 use crate::sv_id::{get_sv_id_label, SVUniqueIdData};
-
-fn get_recip_overlap(mut r1: IntRange, mut r2: IntRange) -> f64 {
-    let min_span = 100;
-
-    r1.end = std::cmp::max(r1.end, r1.start + min_span);
-    r2.end = std::cmp::max(r2.end, r2.start + min_span);
-
-    let olap = std::cmp::max(
-        std::cmp::min(r1.end, r2.end) - std::cmp::max(r2.start, r1.start),
-        0,
-    );
-    let span1 = r1.end - r1.start;
-    let span2 = r2.end - r2.start;
-    let span = std::cmp::min(span1, span2);
-
-    olap as f64 / span as f64
-}
 
 struct CandBpInfo {
     /// Index of SV group in the current sorting of sv_group list
@@ -36,9 +19,9 @@ struct CandBpInfo {
 /// Require:
 /// 1. On same chromosome
 /// 2. Complementary anchor directions
-/// 3. Reciprical overlap >= 0.8
+/// 3. Reciprical overlap >= min_inv_span_recip_overlap
 ///
-fn is_inversion(c1: &CandBpInfo, c2: &CandBpInfo) -> bool {
+fn is_inversion(min_inv_span_recip_overlap: f64, c1: &CandBpInfo, c2: &CandBpInfo) -> bool {
     if c1.dir == c2.dir {
         return false;
     }
@@ -46,9 +29,7 @@ fn is_inversion(c1: &CandBpInfo, c2: &CandBpInfo) -> bool {
         return false;
     }
 
-    let min_inv_span_recip_overlap = 0.8;
-
-    let recip_overlap = get_recip_overlap(c1.segment.range.clone(), c2.segment.range.clone());
+    let recip_overlap = get_recip_overlap(&c1.segment.range, &c2.segment.range);
     recip_overlap >= min_inv_span_recip_overlap
 }
 
@@ -94,11 +75,19 @@ fn mark_inv_bnd(sv_group: &mut SVGroup, inv_index: usize) {
 /// Assumes sv_groups are not sorted
 ///
 pub fn find_inversions(sv_groups: &mut Vec<SVGroup>) {
+    // Summary of ops:
     // Store list of candidate breakpoints
     // Sort list
     // Walk sorted list to find simple pairs meeting all criteria.
+
+    // Hard code parameters here for now:
+
     //
     let max_bp_span = 100_000;
+
+    // The 'innie-innie' span and 'outie-outie' spans need to have at least this recip overlap to be classified
+    // as an inversion event:
+    let min_inv_span_recip_overlap = 0.6;
 
     let mut inv_cand_bps = Vec::new();
 
@@ -132,7 +121,7 @@ pub fn find_inversions(sv_groups: &mut Vec<SVGroup>) {
             .iter()
             .map(|x| {
                 if x.on_sample_haplotype {
-                    x.gt.clone()
+                    x.shared.gt.clone()
                 } else {
                     None
                 }
@@ -191,7 +180,7 @@ pub fn find_inversions(sv_groups: &mut Vec<SVGroup>) {
     let mut last_cand: Option<CandBpInfo> = None;
     for cand in inv_cand_bps {
         if let Some(base_cand) = &last_cand {
-            if is_inversion(base_cand, &cand) {
+            if is_inversion(min_inv_span_recip_overlap, base_cand, &cand) {
                 let is_conflicting_gt = !do_most_inversion_genotypes_match(base_cand, &cand);
 
                 // Join cand and last cand into an inversion:

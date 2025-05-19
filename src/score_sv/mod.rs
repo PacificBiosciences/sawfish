@@ -1,5 +1,3 @@
-mod assess_depth;
-
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::default::Default;
@@ -12,19 +10,14 @@ use rust_vc_utils::{ChromList, GenomeRef};
 use strum::EnumCount;
 use unwrap::unwrap;
 
-use self::assess_depth::assess_sv_depth_support;
 use crate::bam_sa_parser::get_seq_order_read_split_segments;
 use crate::bam_utils::{
     bam_fetch_segment, get_alignment_closest_to_target_ref_pos,
     get_bam_alignment_closest_to_target_ref_pos, get_gap_compressed_identity, is_split_read,
     TargetMatchType,
 };
-use crate::breakpoint::{
-    get_breakpoint_vcf_sv_type, Breakend, BreakendDirection, Breakpoint, VcfSVType,
-};
-use crate::depth_bins::GenomeDepthBins;
-use crate::expected_ploidy::SVLocusPloidy;
-use crate::gc_correction::GenomeGCLevels;
+use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint};
+use crate::expected_ploidy::{SVLocusExpectedCNInfo, SVLocusPloidy};
 use crate::genome_ref_utils::get_ref_segment_seq;
 use crate::genome_regions::ChromRegions;
 use crate::genome_segment::GenomeSegment;
@@ -241,7 +234,7 @@ fn convert_breakend_to_haplotype_contig_flank_seq<'a>(
 ///
 /// # Arguments
 ///
-/// * assembly_segment - Reference coordinate bounds of interesting read evidence that lead to this
+/// * `assembly_segment` - Reference coordinate bounds of interesting read evidence that lead to this
 ///   region being nominated for SV calling. This is used to pull back to the left or right end of the
 ///   entire SV affected region to more accurately extract the correct segment.
 ///
@@ -761,11 +754,11 @@ fn get_read_flank_align_score_option(
 ///
 /// # Arguments
 ///
-/// * assembly_segment - The original assembly segment associated with this SV
+/// * `assembly_segment` - The original assembly segment associated with this SV
 ///
-/// * search_segment - An expansion of target_segment, intended for setting the range of read scanning
+/// * `search_segment` - An expansion of target_segment, intended for setting the range of read scanning
 ///
-/// * scores - All read support information indexed on read qname, all read scores are appended to this structure.
+/// * `scores` - All read support information indexed on read qname, all read scores are appended to this structure.
 ///
 #[allow(clippy::too_many_arguments)]
 fn get_read_support_scores_from_segment(
@@ -1430,12 +1423,15 @@ const ALLELE_GENOTYPE_PROBS: [[f64; QualityModelAlleles::COUNT]; Genotype::COUNT
 ///
 fn get_sv_sample_qualities_from_allele_counts(
     settings: &ScoreSVSettings,
-    ploidy: SVLocusPloidy,
+    expected_cn_info: SVLocusExpectedCNInfo,
     sample_score: &mut SVSampleScoreInfo,
 ) -> f64 {
-    sample_score.ploidy = ploidy;
+    sample_score.expected_cn_info = expected_cn_info;
 
-    let is_haploid = sample_score.ploidy == SVLocusPloidy::Haploid;
+    let is_haploid = sample_score
+        .expected_cn_info
+        .ploidy(settings.treat_single_copy_as_haploid)
+        == SVLocusPloidy::Haploid;
 
     // Hardcode allele likelihood for each read matched to an allele
     let wrong_read_allele_lhood = 1e-5;
@@ -1489,11 +1485,11 @@ fn get_sv_sample_qualities_from_allele_counts(
 
     // Get phred ln_lhood value to use for PL outputs:
     for genotype_index in 0..Genotype::COUNT {
-        sample_score.gt_lhood_qscore[genotype_index] = std::cmp::min(
+        sample_score.shared.gt_lhood_qscore[genotype_index] = std::cmp::min(
             ln_error_prob_to_qphred(
                 gt_ln_lhoods[genotype_index] - gt_ln_lhoods[max_gt_lhood_index],
             ),
-            settings.max_qscore,
+            settings.max_qscore as i32,
         );
     }
 
@@ -1506,11 +1502,12 @@ fn get_sv_sample_qualities_from_allele_counts(
 
         // If the allele count is zero, GT remains None and will be output as './.' (or '.') in VCF
         if total_allele_depth != 0 {
-            sample_score.gt = Genotype::from_repr(max_gt_lhood_index);
+            sample_score.shared.gt = Genotype::from_repr(max_gt_lhood_index);
         }
     }
 
     let gt_qscore = sample_score
+        .shared
         .gt_lhood_qscore
         .iter()
         .enumerate()
@@ -1519,7 +1516,7 @@ fn get_sv_sample_qualities_from_allele_counts(
         .map(|(_, a)| a)
         .unwrap();
 
-    sample_score.gt_qscore = *gt_qscore;
+    sample_score.shared.gt_qscore = *gt_qscore;
 
     gt_pprob[Genotype::Ref as usize]
 }
@@ -1531,7 +1528,7 @@ fn get_sv_sample_qualities_from_allele_counts(
 fn get_sv_qualities_from_allele_counts(
     settings: &ScoreSVSettings,
     sv_index: usize,
-    sample_ploidy: &[SVLocusPloidy],
+    sample_expected_cn_info: &[SVLocusExpectedCNInfo],
     sv_score: &mut SVScoreInfo,
     debug_settings: &ScoreDebugSettings,
 ) {
@@ -1540,7 +1537,7 @@ fn get_sv_qualities_from_allele_counts(
         let _debug = debug_settings.focused(sample_index, sv_index);
         let sample_ref_prob = get_sv_sample_qualities_from_allele_counts(
             settings,
-            sample_ploidy[sample_index],
+            sample_expected_cn_info[sample_index],
             sample_score,
         );
         joint_ref_prob *= sample_ref_prob;
@@ -1894,7 +1891,7 @@ fn refine_sample_overlapping_haplotype_scoring(
         let is_homozygous_gt = {
             let refined_sv = &sv_group.refined_svs[refined_sv_index];
             let sample_score = &refined_sv.score.samples[sample_index];
-            sample_score.gt == Some(Genotype::Hom)
+            sample_score.shared.gt == Some(Genotype::Hom)
         };
 
         if !is_homozygous_gt {
@@ -1912,7 +1909,7 @@ fn refine_sample_overlapping_haplotype_scoring(
             get_sv_qualities_from_allele_counts(
                 score_settings,
                 refined_sv_index,
-                &sv_group.sample_ploidy,
+                &sv_group.sample_expected_cn_info,
                 &mut refined_sv.score,
                 debug_settings,
             );
@@ -1959,7 +1956,7 @@ fn refine_sample_overlapping_haplotype_scoring(
             get_sv_qualities_from_allele_counts(
                 score_settings,
                 overlap_sv_index,
-                &sv_group.sample_ploidy,
+                &sv_group.sample_expected_cn_info,
                 &mut overlap_sv.score,
                 debug_settings,
             );
@@ -2011,13 +2008,7 @@ pub struct ScoreSVSettings {
     min_sv_mapq: u32,
 
     /// Copied from cli settings
-    max_deldup_size: u32,
-
-    /// Copied from cli settings
     min_gap_compressed_identity: f64,
-
-    /// Copied from cli settings
-    report_supporting_read_names: bool,
 
     /// Length of sequence aligned between reads and candidate alleles during scoring
     ///
@@ -2029,29 +2020,28 @@ pub struct ScoreSVSettings {
     /// Min allowed distance from the read edge to the anchoring position used for read support
     read_support_anchor_min_edge_distance: i64,
 
-    max_qscore: i32,
+    max_qscore: u32,
 
     /// Additional scoring parameters precomputed from sv_prior
     derived_score_parameters: DerivedScoreParameters,
 
-    /// Size above which deletions and duplications are assessed by depth signature in addition to breakpoint
-    /// quality.
-    ///
-    /// SVs failing the depth assessment will be reported as breakends
-    ///
-    min_sv_depth_assess_size: usize,
+    /// parallels command-line debug option to enumerate all read-names supporting the SV allele for each VCF record output
+    report_supporting_read_names: bool,
 
     /// If true, enable local phased genotype output
     enable_phasing: bool,
+
+    treat_single_copy_as_haploid: bool,
 }
 
 impl ScoreSVSettings {
     pub fn new(
         min_sv_mapq: u32,
-        max_deldup_size: u32,
         min_gap_compressed_identity: f64,
+        max_qscore: u32,
         report_supporting_read_names: bool,
         enable_phasing: bool,
+        treat_single_copy_as_haploid: bool,
     ) -> Self {
         // Prior SV prob (theta)
         let sv_prior = 5e-4;
@@ -2060,31 +2050,30 @@ impl ScoreSVSettings {
 
         Self {
             min_sv_mapq,
-            max_deldup_size,
             min_gap_compressed_identity,
             read_support_flank_size,
             min_read_support_flank_size,
             read_support_anchor_min_edge_distance: 200,
-            max_qscore: 999,
+            max_qscore,
             derived_score_parameters: DerivedScoreParameters::new(sv_prior),
-            min_sv_depth_assess_size: 50_000,
             report_supporting_read_names,
             enable_phasing,
+            treat_single_copy_as_haploid,
         }
     }
 }
 
-/// New SV terminology added for multi-sample analysis:
-/// - A 'native' haplotype/SV is one already assigned to the sample.
-/// - A 'guest' haplotype/SV is a non-native item from another sample. This is currently allowed
-///   when a sample has less than two native haplotypes.
-/// - A ''blocked' haplotype/SV is a non-native item from another sample, when the sample in
-///   question already has 2 native haplotypes.
+/// SV state terminology used to original SV/sample relationships during multi-sample analysis
 ///
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum SampleSVRelation {
+    /// A haplotype/SV already assigned to/discovered from at least one sample
     Native,
+
+    /// A non-native haplotype/SV being trialed on another sample, when the sample has less than 2 native haplotypes
     Guest,
+
+    /// A haplotype/SV is a non-native item from another sample, when the sample in question already has 2 native haplotypes.
     Blocked,
 }
 
@@ -2094,9 +2083,14 @@ struct SampleSVInfo {
     relation: SampleSVRelation,
 }
 
-/// Build an SV order for each sample, to ensure that native haplotypes are evaluated first
+/// Build an order for SV evaluation, which can be different for each sample
 ///
-fn get_sample_sv_order(sv_group: &SVGroup) -> Vec<Vec<SampleSVInfo>> {
+/// The sample-specific SV order is currently designed to ensure that native haplotypes are evaluated first
+///
+fn get_sample_sv_order(
+    treat_single_copy_as_haploid: bool,
+    sv_group: &SVGroup,
+) -> Vec<Vec<SampleSVInfo>> {
     let sv_count = sv_group.refined_svs.len();
     let haplotype_to_sv_map = sv_group.haplotype_to_sv_map();
     let mut sample_sv_order = Vec::new();
@@ -2121,7 +2115,9 @@ fn get_sample_sv_order(sv_group: &SVGroup) -> Vec<Vec<SampleSVInfo>> {
 
         {
             // Step 2: Add all remaining SVs:
-            let max_haplotype_count = match sv_group.sample_ploidy[sample_index] {
+            let max_haplotype_count = match sv_group.sample_expected_cn_info[sample_index]
+                .ploidy(treat_single_copy_as_haploid)
+            {
                 SVLocusPloidy::Diploid => 2,
                 SVLocusPloidy::Haploid => 1,
             };
@@ -2142,12 +2138,12 @@ fn get_sample_sv_order(sv_group: &SVGroup) -> Vec<Vec<SampleSVInfo>> {
 /// Get read alignment scores to each allele in each sample
 ///
 /// # Arguments
-/// * sample_sv_order - Specify the order in which SV alleles should be processed in each sample. This enables SV alleles 'native' to the sample to be processed first.
+/// * `sample_sv_order` - Specify the order in which SV alleles should be processed in each sample. This enables SV alleles 'native' to the sample to be processed first.
 ///
 /// Returns:
 /// - A vector over all samples of:
-/// - A vector over all SVs containing:
-/// - All read alignment scores to the SV for that sample, or None
+///   - A vector over all SVs of:
+///     - All read alignment scores to the SV for that sample, or None
 ///
 #[allow(clippy::too_many_arguments)]
 fn get_sv_group_read_alignment_scores(
@@ -2203,16 +2199,18 @@ fn get_sv_group_read_alignment_scores(
 /// every score for the overlaps of one sv in the haplotype, and pick the highest avg
 ///
 fn select_overlapping_guest_haplotype_index(
+    treat_single_copy_as_haploid: bool,
     sv_group: &SVGroup,
     sample_sv_order: &[Vec<SampleSVInfo>],
     all_sv_locus_scores_for_sample: &[Option<LocusSupportScores>],
     sample_index: usize,
 ) -> Option<usize> {
     let sample_haplotype_list = &sv_group.sample_haplotype_list[sample_index];
-    let max_haplotype_count = match sv_group.sample_ploidy[sample_index] {
-        SVLocusPloidy::Diploid => 2,
-        SVLocusPloidy::Haploid => 1,
-    };
+    let max_haplotype_count =
+        match sv_group.sample_expected_cn_info[sample_index].ploidy(treat_single_copy_as_haploid) {
+            SVLocusPloidy::Diploid => 2,
+            SVLocusPloidy::Haploid => 1,
+        };
     let sv_group_haplotype_count = sv_group.group_haplotypes.len();
     if sample_haplotype_list.len() == 1 && max_haplotype_count > 1 && sv_group_haplotype_count > 1 {
         for sample_sv_info in sample_sv_order[sample_index]
@@ -2291,9 +2289,10 @@ fn select_overlapping_guest_haplotype_index(
 }
 
 /// After scoring but before enumerating AD counts, we determine if additional, 'guest' haplotypes
-/// can be assigned to any samples with less than max assembled haplotype count
+/// can be assigned to any samples with less than max assembled haplotype count (ussually this is 2)
 ///
 fn add_guest_haplotypes(
+    treat_single_copy_as_haploid: bool,
     sv_group: &mut SVGroup,
     sample_sv_order: &[Vec<SampleSVInfo>],
     all_sample_locus_scores: &[Vec<Option<LocusSupportScores>>],
@@ -2303,6 +2302,7 @@ fn add_guest_haplotypes(
     {
         let debug = debug_settings.sample(sample_index);
         let overlapping_guest_haplotype_index = select_overlapping_guest_haplotype_index(
+            treat_single_copy_as_haploid,
             sv_group,
             sample_sv_order,
             all_sv_locus_scores_for_sample,
@@ -2456,7 +2456,7 @@ fn set_local_phasing(sv_group: &mut SVGroup) {
             let sample_het_count = sv_group
                 .refined_svs
                 .iter()
-                .map(|x| x.score.samples[sample_index].gt.as_ref())
+                .map(|x| x.score.samples[sample_index].shared.gt.as_ref())
                 .filter(|x| *x == Some(&Genotype::Het))
                 .count();
             x.push(sample_het_count > 1);
@@ -2537,7 +2537,8 @@ fn score_refined_sv_group(
             .resize(sample_count, SVSampleScoreInfo::default());
     }
 
-    let sample_sv_order = get_sample_sv_order(sv_group);
+    let sample_sv_order =
+        get_sample_sv_order(score_settings.treat_single_copy_as_haploid, sv_group);
 
     let all_sample_locus_scores = get_sv_group_read_alignment_scores(
         score_settings,
@@ -2555,6 +2556,7 @@ fn score_refined_sv_group(
     }
 
     add_guest_haplotypes(
+        score_settings.treat_single_copy_as_haploid,
         sv_group,
         &sample_sv_order,
         &all_sample_locus_scores,
@@ -2566,7 +2568,8 @@ fn score_refined_sv_group(
     }
 
     // Redo sample_sv_order after add_guest_haplotypes
-    let sample_sv_order = get_sample_sv_order(sv_group);
+    let sample_sv_order =
+        get_sample_sv_order(score_settings.treat_single_copy_as_haploid, sv_group);
 
     // These marks are used by the AD counting routine
     mark_within_sample_replicate_svs(sv_group);
@@ -2590,7 +2593,7 @@ fn score_refined_sv_group(
         get_sv_qualities_from_allele_counts(
             score_settings,
             sv_index,
-            &sv_group.sample_ploidy,
+            &sv_group.sample_expected_cn_info,
             &mut refined_sv.score,
             debug_settings,
         );
@@ -2614,41 +2617,11 @@ fn score_refined_sv_group(
     }
 }
 
-/// Prior to depth assessment, decide if any SVs will be filtered to SVs based on size alone
-///
-fn convert_large_deldup_to_bnd(max_deldup_size: u32, refined_svs: &mut [RefinedSV]) {
-    for refined_sv in refined_svs.iter_mut().filter(|x| !x.filter_sv()) {
-        let is_large_deldup = {
-            let bp = &refined_sv.bp;
-            let sv_type = get_breakpoint_vcf_sv_type(bp);
-            match sv_type {
-                VcfSVType::Deletion | VcfSVType::Duplication => {
-                    let be1 = &bp.breakend1;
-                    let be2 = bp.breakend2.as_ref().unwrap();
-                    let sv_size =
-                        std::cmp::max(be2.segment.range.start - be1.segment.range.start, 0)
-                            as usize;
-                    sv_size > max_deldup_size as usize
-                }
-                _ => false,
-            }
-        };
-
-        if is_large_deldup {
-            refined_sv.ext.force_breakpoint_representation = true;
-        }
-    }
-}
-
 pub struct SampleScoreData<'a> {
     pub genome_max_sv_depth_regions: &'a [ChromRegions],
-    pub genome_depth_bins: &'a GenomeDepthBins,
-
-    /// Reciprocal of the depth reduction factor used for the emission prob correction
-    pub gc_depth_correction: Vec<f64>,
 }
 
-/// Run breakpoint scoring and depth assessment on all refined_svs from a single group
+/// Run breakpoint scoring on all refined_svs from a single group
 ///
 /// Each SV candidate is evaluated in the context of all other SVs in the same group
 ///
@@ -2657,13 +2630,12 @@ pub fn score_and_assess_refined_sv_group(
     score_settings: &ScoreSVSettings,
     reference: &GenomeRef,
     chrom_list: &ChromList,
-    genome_gc_levels: &GenomeGCLevels,
     all_sample_data: &[SampleScoreData],
     bam_readers: &mut [&mut bam::IndexedReader],
     sv_group: &mut SVGroup,
     debug_settings: &ScoreDebugSettings,
 ) {
-    sv_group.assert_validity();
+    sv_group.assert_validity(score_settings.treat_single_copy_as_haploid);
 
     let sample_count = all_sample_data.len();
     assert_ne!(sample_count, 0);
@@ -2685,15 +2657,6 @@ pub fn score_and_assess_refined_sv_group(
         bam_readers,
         sv_group,
         debug_settings,
-    );
-
-    convert_large_deldup_to_bnd(score_settings.max_deldup_size, &mut sv_group.refined_svs);
-
-    assess_sv_depth_support(
-        score_settings,
-        genome_gc_levels,
-        all_sample_data,
-        &mut sv_group.refined_svs,
     );
 }
 

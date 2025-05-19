@@ -2,14 +2,16 @@ use std::sync::mpsc::channel;
 
 use log::{error, info};
 use rust_htslib::bam::{self, Read};
-use rust_vc_utils::bam_utils::{filter_out_alignment_record, get_sample_name};
-use rust_vc_utils::{get_region_segments, ChromList, GenomeRef, ProgressReporter};
+use rust_vc_utils::{
+    filter_out_alignment_record, get_region_segments, ChromList, GenomeRef, MeanTracker,
+    ProgressReporter,
+};
 use unwrap::unwrap;
 
 use crate::bam_utils;
 use crate::cli;
 use crate::cluster_breakpoints::{BreakBuilder, BreakObservations};
-use crate::depth_bins::{ChromDepthBins, DepthBinsBuilder, GenomeDepthBins};
+use crate::depth_bins::{AllChromDepthBinInfo, ChromDepthBins, DepthBinsBuilder, GenomeDepthBins};
 use crate::genome_regions::{ChromRegions, GenomeRegions};
 use crate::worker_thread_data::BamReaderWorkerThreadDataSet;
 
@@ -25,7 +27,7 @@ fn scan_chromosome_segment(
     is_targeted_scan: bool,
     progress_reporter: &ProgressReporter,
 ) -> (BreakObservations, DepthBinsBuilder) {
-    let mut depth_builder = DepthBinsBuilder::new();
+    let mut depth_builder = DepthBinsBuilder::new(scan_settings.depth_bin_size);
     let mut break_builder = BreakBuilder::new(
         scan_settings.min_evidence_indel_size,
         scan_settings.min_sv_mapq,
@@ -122,7 +124,6 @@ fn get_chrom_worker_segments(
 #[allow(clippy::too_many_arguments)]
 fn scan_chromosome_segments(
     worker_thread_dataset: BamReaderWorkerThreadDataSet,
-    chrom_excluded_regions: Option<&ChromRegions>,
     scan_settings: &ScanSettings,
     chrom_list: &ChromList,
     chrom_index: usize,
@@ -130,7 +131,7 @@ fn scan_chromosome_segments(
     chrom_sequence: &[u8],
     chrom_target_regions: Option<&ChromRegions>,
     progress_reporter: &ProgressReporter,
-) -> (BreakObservations, ChromDepthBins, ChromRegions) {
+) -> (BreakObservations, AllChromDepthBinInfo, ChromRegions) {
     let (tx, rx) = channel();
 
     let is_targeted_scan = chrom_target_regions.is_some();
@@ -171,11 +172,7 @@ fn scan_chromosome_segments(
         chrom_break_observations.merge(&mut other_break_observations);
         depth_builder.merge(&other_depth_builder);
     }
-    let chrom_depth_bins = depth_builder.get_depth_bins(
-        scan_settings.depth_bin_size,
-        chrom_size,
-        chrom_excluded_regions,
-    );
+    let chrom_depth_bins = depth_builder.get_depth_bins(scan_settings.depth_bin_size, chrom_size);
     let chrom_max_sv_depth_regions =
         depth_builder.get_regions_over_max_depth(chrom_size, scan_settings.max_sv_depth);
 
@@ -214,11 +211,11 @@ struct ScanSettings {
     max_sv_depth: u32,
 }
 
-/// Read single alignment file and translate into raw SV evidence data structures
+/// Read single alignment file and translate into raw SV evidence and depth data structures
 ///
 /// # Arguments
 ///
-/// * `excluded_regions` - Object specifying which genomic regions to exclude from scanning
+/// * `target_regions` - Optional regions for targetted genome scanning.(supported for debug only)
 ///
 /// Returns all scanned sample data
 ///
@@ -227,10 +224,10 @@ pub fn scan_sample_bam_for_sv_evidence(
     shared_settings: &cli::SharedSettings,
     settings: &cli::DiscoverSettings,
     worker_thread_dataset: &BamReaderWorkerThreadDataSet,
+    sample_name: String,
     chrom_list: &ChromList,
-    excluded_regions: &GenomeRegions,
     reference: &GenomeRef,
-    target_regions: &GenomeRegions,
+    target_regions: Option<&GenomeRegions>,
 ) -> SampleAlignmentScanResult {
     let scan_settings = &ScanSettings {
         depth_bin_size: settings.depth_bin_size,
@@ -245,16 +242,6 @@ pub fn scan_sample_bam_for_sv_evidence(
     assert!(shared_settings.thread_count > 0);
 
     info!("Processing alignment file '{}'", settings.bam_filename);
-
-    let sample_name = {
-        // Temporarily access the first bam_reader to extract sample name from the header
-        //
-        // Hard-code for one sample in discover mode:
-        let sample_index = 0;
-        let bam_reader = &worker_thread_dataset[0].lock().unwrap().bam_readers[sample_index];
-        let default_sample_name = "UnknownSampleName";
-        get_sample_name(bam_reader.header(), default_sample_name)
-    };
 
     let worker_pool = rayon::ThreadPoolBuilder::new()
         .num_threads(shared_settings.thread_count)
@@ -276,13 +263,13 @@ pub fn scan_sample_bam_for_sv_evidence(
             let chrom_info = &chrom_list_ref.data[chrom_index];
             let chrom_size = chrom_info.length;
             let chrom_label = &chrom_info.label;
-            let mut chrom_target_regions = None;
+            let chrom_target_regions = match target_regions {
+                Some(x) => x.chroms.get(chrom_label),
+                None => None,
+            };
 
-            if !target_regions.is_empty() {
-                chrom_target_regions = target_regions.chroms.get(chrom_label);
-                if chrom_target_regions.is_none() {
-                    continue;
-                }
+            if target_regions.is_some() && chrom_target_regions.is_none() {
+                continue;
             }
 
             let worker_thread_dataset = worker_thread_dataset.clone();
@@ -296,12 +283,11 @@ pub fn scan_sample_bam_for_sv_evidence(
                     std::process::exit(exitcode::DATAERR);
                 }
             };
-            let chrom_excluded_regions = excluded_regions.chroms.get(&chrom_info.label);
+
             let tx = tx.clone();
             scope.spawn(move |_| {
                 let results = scan_chromosome_segments(
                     worker_thread_dataset,
-                    chrom_excluded_regions,
                     scan_settings,
                     chrom_list_ref,
                     chrom_index,
@@ -316,18 +302,21 @@ pub fn scan_sample_bam_for_sv_evidence(
     });
 
     let mut genome_break_observations = BreakObservations::new();
-    let mut chroms = vec![ChromDepthBins::new(); chrom_count];
+    let mut depth_bins = vec![ChromDepthBins::new(); chrom_count];
+    let mut read_length = MeanTracker::default();
     let mut genome_max_sv_depth_regions = vec![ChromRegions::new(); chrom_count];
     for (chrom_index, (mut break_observations, chrom_depth_bins, chrom_max_sv_depth_regions)) in rx
     {
         genome_break_observations.merge(&mut break_observations);
-        chroms[chrom_index] = chrom_depth_bins;
+        depth_bins[chrom_index] = chrom_depth_bins.depth_bins;
+        read_length.merge(&chrom_depth_bins.read_length);
         genome_max_sv_depth_regions[chrom_index] = chrom_max_sv_depth_regions;
     }
 
     let genome_depth_bins = GenomeDepthBins {
         bin_size: scan_settings.depth_bin_size,
-        chroms,
+        depth_bins,
+        mean_read_length: read_length.mean(),
     };
 
     progress_reporter.clear();

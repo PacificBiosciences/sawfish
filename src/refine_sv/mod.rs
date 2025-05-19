@@ -33,10 +33,11 @@ use crate::breakpoint::{Breakpoint, BreakpointCluster};
 use crate::cli;
 use crate::contig_output::{write_contig_alignments, ContigAlignmentInfo};
 use crate::discover::StaticDiscoverSettings;
-use crate::expected_ploidy::{get_max_haplotype_count_for_regions, SVLocusPloidy};
+use crate::expected_ploidy::{get_max_haplotype_count_for_regions, SVLocusExpectedCNInfo};
 use crate::genome_segment::{GenomeSegment, IntRange};
 use crate::log_utils::debug_msg;
 use crate::refine_sv::SVFilterType::{GTExcluded, NoFilter, Replicated};
+use crate::refined_cnv::SharedSampleScoreInfo;
 use crate::run_stats::RefineStats;
 use crate::sv_group::SVGroup;
 use crate::sv_id::{get_sv_id_label, SVUniqueIdData};
@@ -134,7 +135,7 @@ pub struct SVSampleScoreInfo {
     ///
     /// Note the haplotypes may still be different otherwise (either biologically or due to assembly
     /// noise), so we still keep both assemblies and evaluate both in the scoring process. Note also
-    /// that the the variant may still be a het for the case where one haplotype is split due to
+    /// that the variant may still be a het for the case where one haplotype is split due to
     /// assembly noise.
     ///
     /// This item is used as part of the scoring process but not part of SV reporting output
@@ -161,22 +162,16 @@ pub struct SVSampleScoreInfo {
     ///
     pub allele_depth: Vec<AlleleCounts>,
 
-    /// Ploidy of sample at the SV locus
-    pub ploidy: SVLocusPloidy,
-
-    /// Most likely genotype (per sample)
-    pub gt: Option<Genotype>,
+    /// Expected copy number info/ploidy of the SV locus
+    pub expected_cn_info: SVLocusExpectedCNInfo,
 
     pub phase: SVPhaseStatus,
 
-    /// Genotype quality score
-    pub gt_qscore: i32,
-
-    /// Likelihood for each genotype expressed as a quality score (following the VCF PL format)
-    pub gt_lhood_qscore: Vec<i32>,
-
     /// Optional list of read names supporting the alt allele, used for debugging
     pub supporting_read_names: Vec<String>,
+
+    /// All shared per-sample scoring information for any variant type
+    pub shared: SharedSampleScoreInfo,
 }
 
 impl Default for SVSampleScoreInfo {
@@ -188,12 +183,12 @@ impl Default for SVSampleScoreInfo {
             is_filtered_sv_replicate_within_sample: false,
             is_gt_excluded: false,
             allele_depth: Vec::new(),
-            ploidy: SVLocusPloidy::Diploid,
-            gt: None,
+            expected_cn_info: SVLocusExpectedCNInfo {
+                expected_copy_number: 2,
+            },
             phase: SVPhaseStatus::Unknown,
-            gt_qscore: 0,
-            gt_lhood_qscore: vec![0; Genotype::COUNT],
             supporting_read_names: Vec::new(),
+            shared: SharedSampleScoreInfo::default(),
         };
         x.allele_depth
             .resize_with(AlleleType::COUNT, Default::default);
@@ -283,8 +278,14 @@ pub struct RefinedSVExt {
 
     /// True for inversions where the GT of the two breakends dissagree in the majority of cases
     pub is_conflicting_gt: bool,
+
+    /// True for SVs with CNV support
+    pub is_cnv_match: bool,
 }
 
+/// Structural variants including all detailed breakpoint analysis and scoring information
+///
+/// This is the final format for SVs in preperation for VCF output
 #[derive(Clone)]
 pub struct RefinedSV {
     pub id: SVUniqueIdData,
@@ -359,11 +360,6 @@ pub fn get_rsv_id_label(rsv: &RefinedSV) -> String {
     }
 }
 
-/// Run refinement procedure on a single candidate breakpoint cluster
-///
-/// * genome_max_sv_depth_regions - Regions exceeding the max SV depth. SV calling is modified in
-///   these regions to control runtime (and to a lesser extent, FP rates).
-///
 #[allow(clippy::too_many_arguments)]
 fn refine_sv_candidate_breakpoint(
     refine_settings: &RefineSVSettings,
@@ -379,21 +375,22 @@ fn refine_sv_candidate_breakpoint(
     Option<SVGroup>,
     ClusterDurationInfo,
 ) {
-    debug_msg!(
-        debug,
-        "Cluster {cluster_index}: Starting refine_sv_candidate_breakpoint on worker thread {worker_thread_index}. Regions: {}",
-        bpc.assembly_segments.iter().map(|x| x.to_region_str(chrom_list)).join(", "));
-
     // Get the reference regions from which to take reads for breakpoint assembly
     //
     let assembly_segments = get_assembly_regions_from_breakpoint_cluster(bpc);
+
+    debug_msg!(
+        debug,
+        "Cluster {cluster_index}: Starting refine_sv_candidate_breakpoint on worker thread {worker_thread_index}. Regions: {}",
+        assembly_segments.iter().map(|x| x.to_region_str(chrom_list)).join(", "));
 
     // Don't use expected copy number regions at this point (here we change expected copy number regions to None)
     //
     // Punting on this and preserving up to 2 haplotypes per locus allows sex to be changed downstream during joint genotyping.
     //
-    let (max_assembly_count, ploidy) =
-        get_max_haplotype_count_for_regions(None, &assembly_segments);
+    let treat_single_copy_as_haploid = false;
+    let (max_assembly_count, expected_cn_info) =
+        get_max_haplotype_count_for_regions(treat_single_copy_as_haploid, None, &assembly_segments);
 
     let trimmed_reads = if assembly_segments.len() == 1 {
         get_sv_candidate_region_trimmed_reads(
@@ -504,7 +501,7 @@ fn refine_sv_candidate_breakpoint(
             chrom_list,
             &assembly_segments,
             &assemblies,
-            ploidy,
+            expected_cn_info,
             bpc,
             cluster_index,
             is_large_insertion,
@@ -740,13 +737,9 @@ fn get_cluster_job_order(clusters: &[BreakpointCluster]) -> Vec<(usize, &Breakpo
     job_order
 }
 
+/// Refine all SV candidates
 ///
-/// # Arguments
-/// * depth_bin_gc_content - GC content details for each depth bin (used for DEL and DUP depth
-///   assessment)
-/// * gc_bias_data - GC bias correction data (used for DEL and DUP depth
-///   assessment)
-/// * include_scoring - include genotyping and quality scoring inline with the refinement process
+/// SV candidate refinement is distributed over a threadpool
 ///
 #[allow(clippy::too_many_arguments)]
 pub fn refine_sv_candidates(
@@ -787,7 +780,8 @@ pub fn refine_sv_candidates(
     let cluster_job_order = cluster_job_order
         .into_iter()
         .filter(|(_, bpc)| {
-            !shared_settings.disable_small_indels || (bpc.assembly_segments.len() > 1)
+            !shared_settings.disable_svs
+                && (!shared_settings.disable_small_indels || (bpc.assembly_segments.len() > 1))
         })
         .collect::<Vec<_>>();
 

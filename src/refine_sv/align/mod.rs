@@ -24,12 +24,12 @@ use crate::breakpoint::{
     Breakend, BreakendDirection, Breakpoint, BreakpointCluster, InsertInfo, NeighborBreakend,
 };
 use crate::contig_output::{ContigAlignmentInfo, ContigAlignmentSegment};
-use crate::expected_ploidy::SVLocusPloidy;
+use crate::expected_ploidy::SVLocusExpectedCNInfo;
 use crate::genome_ref_utils::get_ref_segment_seq;
 use crate::genome_segment::GenomeSegment;
 use crate::int_range::{get_overlap_range, IntRange};
 use crate::log_utils::debug_msg;
-use crate::refine_sv::{AnnotatedOverlappingHaplotype, RefinedSVExt, SVScoreInfo};
+use crate::refine_sv::AnnotatedOverlappingHaplotype;
 use crate::simple_alignment::{clip_alignment_ref_edges, SimpleAlignment};
 use crate::sv_group::{
     ClusterAssembly, ClusterAssemblyAlignment, GroupHaplotypeId, SVGroup, SVGroupHaplotype,
@@ -70,7 +70,7 @@ fn get_chrom_info_from_target_segment(
 /// candidate SV set
 ///
 /// # Arguments
-/// * contig_pos - position in contig coordinates immediately after the start of the indel
+/// * `contig_pos` - position in contig coordinates immediately after the start of the indel
 ///
 #[allow(clippy::too_many_arguments)]
 fn create_indel_refined_sv_candidate(
@@ -147,8 +147,8 @@ fn create_indel_refined_sv_candidate(
         single_region_refinement: true,
         contig_pos_before_breakend1,
         assembly_regions: target_segments.to_vec(),
-        ext: RefinedSVExt::default(),
-        score: SVScoreInfo::default(),
+        ext: Default::default(),
+        score: Default::default(),
     }
 }
 
@@ -379,7 +379,7 @@ fn align_single_ref_region_assemblies(
     chrom_list: &ChromList,
     target_segments: &[GenomeSegment],
     assemblies: &[AssemblyResult],
-    ploidy: SVLocusPloidy,
+    expected_cn_info: SVLocusExpectedCNInfo,
     cluster_index: usize,
     is_large_insertion: bool,
 ) -> (Vec<ContigAlignmentInfo>, Option<SVGroup>) {
@@ -578,13 +578,13 @@ fn align_single_ref_region_assemblies(
             .iter()
             .map(|x| x.assembly_index)
             .collect()];
-        let sample_ploidy = vec![ploidy];
+        let sample_expected_cn_info = vec![expected_cn_info];
         let sv_haplotype_map = refined_svs.iter().map(|x| x.id.assembly_index).collect();
         let sv_group = SVGroup {
             group_regions: refined_svs[0].assembly_regions.clone(),
             group_haplotypes,
             sample_haplotype_list,
-            sample_ploidy,
+            sample_expected_cn_info,
             sv_haplotype_map,
             refined_svs,
         };
@@ -1810,7 +1810,7 @@ fn get_two_region_refined_sv_candidate(
         be
     };
     let breakend2 = {
-        let mut be = bp.breakend2.clone();
+        let mut be = bp.breakend2.clone().unwrap();
         let hom_range_adjustment = if bp.same_orientation() {
             -ref1_homology_range.end
         } else {
@@ -1819,18 +1819,16 @@ fn get_two_region_refined_sv_candidate(
         let start =
             alt_hap_info.ref_segment2.range.start + ref_segment2_offset + hom_range_adjustment;
         let end = start + breakend_homology_length + 1;
-        be.as_mut().unwrap().segment.range = IntRange::from_pair(start, end);
+        be.segment.range = IntRange::from_pair(start, end);
         be
     };
 
-    // Sanity check that each breakend has a valid range on its contig
+    // Sanity check that each breakend has a valid range on its chromosome
     //
     // Anything skipped here should represent an upstream bug in the contig alignment
     // procedure, this final filtration process helps to protect overall stability of
     // the SV caller.
-    if !(breakend1.is_valid_range(chrom_list)
-        && breakend2.as_ref().unwrap().is_valid_range(chrom_list))
-    {
+    if !(breakend1.is_valid_range(chrom_list) && breakend2.is_valid_range(chrom_list)) {
         if debug {
             eprintln!(
                 "Cluster/Assembly ID: {}/{} - bp: {:?}",
@@ -1841,21 +1839,23 @@ fn get_two_region_refined_sv_candidate(
         return None;
     }
 
-    let contig_pos = (insert_range.start as i64) + ref1_homology_range.start - 1;
-    if contig_pos < 0 {
-        if debug {
-            eprintln!(
-                "Cluster/Assembly ID: {}/{} - bp: {:?}",
-                cluster_index, assembly_index, bp
-            );
-            eprintln!(
-                "Invalid contig_pos value {contig_pos}. ir {:?} r1hr {:?}",
-                insert_range, ref1_homology_range
-            );
+    let contig_pos_before_breakend1 = {
+        let contig_pos = (insert_range.start as i64) + ref1_homology_range.start - 1;
+        if contig_pos < 0 {
+            if debug {
+                eprintln!(
+                    "Cluster/Assembly ID: {}/{} - bp: {:?}",
+                    cluster_index, assembly_index, bp
+                );
+                eprintln!(
+                    "Invalid contig_pos value {contig_pos}. ir {:?} r1hr {:?}",
+                    insert_range, ref1_homology_range
+                );
+            }
+            return None;
         }
-        return None;
-    }
-    let contig_pos_before_breakend1 = contig_pos as usize;
+        contig_pos as usize
+    };
 
     let insert_info = if insert_range.is_empty() {
         InsertInfo::NoInsert
@@ -1863,6 +1863,7 @@ fn get_two_region_refined_sv_candidate(
         InsertInfo::Seq(contig_seq[insert_range].to_vec())
     };
 
+    let breakend2 = Some(breakend2);
     let mut bp = Breakpoint {
         breakend1,
         breakend2,
@@ -1880,8 +1881,8 @@ fn get_two_region_refined_sv_candidate(
         single_region_refinement: false,
         contig_pos_before_breakend1,
         assembly_regions: target_segments.to_vec(),
-        ext: RefinedSVExt::default(),
-        score: SVScoreInfo::default(),
+        ext: Default::default(),
+        score: Default::default(),
     };
 
     Some(rsv)
@@ -1947,6 +1948,10 @@ fn get_group_haplotype(
 /// # Arguments
 /// `bp` - Low resolution breakpoint candidate
 ///
+/// Output is a 2-tuple of:
+/// 1. Contig alignment information, which will be written out to a bam file
+/// 2. Refined SVs produced from contig alignments
+///
 #[allow(clippy::too_many_arguments)]
 fn align_multi_ref_region_assemblies(
     refine_settings: &RefineSVSettings,
@@ -1954,7 +1959,7 @@ fn align_multi_ref_region_assemblies(
     chrom_list: &ChromList,
     target_segments: &[GenomeSegment],
     assemblies: &[AssemblyResult],
-    ploidy: SVLocusPloidy,
+    expected_cn_info: SVLocusExpectedCNInfo,
     cluster_index: usize,
     bpc: &BreakpointCluster,
 ) -> (Vec<ContigAlignmentInfo>, Option<SVGroup>) {
@@ -2154,13 +2159,13 @@ fn align_multi_ref_region_assemblies(
         None
     } else {
         let sample_haplotype_list = vec![vec![0]];
-        let sample_ploidy = vec![ploidy];
+        let sample_expected_cn_info = vec![expected_cn_info];
         let sv_haplotype_map = refined_svs.iter().map(|x| x.id.assembly_index).collect();
         let sv_group = SVGroup {
             group_regions: refined_svs[0].assembly_regions.clone(),
             group_haplotypes,
             sample_haplotype_list,
-            sample_ploidy,
+            sample_expected_cn_info,
             sv_haplotype_map,
             refined_svs,
         };
@@ -2186,7 +2191,7 @@ pub(super) fn align_assemblies(
     chrom_list: &ChromList,
     target_segments: &[GenomeSegment],
     assemblies: &[AssemblyResult],
-    ploidy: SVLocusPloidy,
+    expected_cn_info: SVLocusExpectedCNInfo,
     bpc: &BreakpointCluster,
     cluster_index: usize,
     is_large_insertion: bool,
@@ -2196,8 +2201,6 @@ pub(super) fn align_assemblies(
     //   - More distant breakpoints have to be represented by the reference sequence around each
     //   breakend, plus a low-res model of the breakpoint allele obtained by concatenating the two
     //   regions together, possibly with one of the regions reverse complemented.
-    //    - What about close insertion breakpoints? Should we insert something? Should we use a
-    //     Concave alignment with zero extension cost?
     //
     // 2. Build the corresponding reference target(s)
     //
@@ -2218,7 +2221,7 @@ pub(super) fn align_assemblies(
             chrom_list,
             target_segments,
             assemblies,
-            ploidy,
+            expected_cn_info,
             cluster_index,
             is_large_insertion,
         )
@@ -2229,7 +2232,7 @@ pub(super) fn align_assemblies(
             chrom_list,
             target_segments,
             assemblies,
-            ploidy,
+            expected_cn_info,
             cluster_index,
             bpc,
         )

@@ -1,14 +1,15 @@
 use std::collections::BTreeMap;
-use std::path::Path;
 
+use camino::Utf8Path;
 use log::info;
 use rust_htslib::bam;
-use rust_vc_utils::{bigwig_utils, get_alignment_end, ArraySegmenter, ChromList};
+use rust_vc_utils::{bigwig_utils, ArraySegmenter, ChromList, MeanTracker};
 use serde::{Deserialize, Serialize};
 use unwrap::unwrap;
 
+use crate::bam_utils::get_alignment_ref_segments;
 use crate::discover::DEPTH_BINS_MESSAGEPACK_FILENAME;
-use crate::genome_regions::ChromRegions;
+use crate::genome_regions::{ChromRegions, GenomeRegions};
 
 /// Return the number of complete bins of size `bin_size` in `total_size`
 ///
@@ -30,27 +31,38 @@ pub enum DepthBin {
     Depth(f64),
 }
 
-impl DepthBin {
-    pub fn increment(&mut self, value: f64) {
-        if let DepthBin::Depth(depth) = self {
-            *depth += value;
-        }
-    }
-}
-
 pub type ChromDepthBins = Vec<DepthBin>;
 
-/// Manages intermediate data structures required to produce binned depth bins from bam
-/// records of a single chromosome
+/// All depth bin and related summary info from read scanning
+#[derive(Default, Clone)]
+pub struct AllChromDepthBinInfo {
+    pub depth_bins: ChromDepthBins,
+    pub read_length: MeanTracker,
+}
+
+/// Manages all temporary data structures required to produce depth tracks for a single chromosome
 ///
 pub struct DepthBinsBuilder {
+    /// The smallest alignment CIGAR deletion size that will be accounted for while building the depth track
+    /// (split reads are always accounted for)
+    min_del_size: u32,
+
+    /// Intermediate structure used to build standrd depth bins, which are used for segmetnation and
+    /// most intuitive for visualization outputs for the user.
+    ///
+    /// Key is chrom position, value is depth delta
+    ///
     depth_edges: BTreeMap<u64, i32>,
+
+    read_length: MeanTracker,
 }
 
 impl DepthBinsBuilder {
-    pub fn new() -> Self {
+    pub fn new(min_del_size: u32) -> Self {
         Self {
-            depth_edges: BTreeMap::new(),
+            min_del_size,
+            depth_edges: Default::default(),
+            read_length: Default::default(),
         }
     }
 
@@ -62,25 +74,32 @@ impl DepthBinsBuilder {
     }
 
     pub fn process_bam_record(&mut self, record: &bam::Record) {
-        let begin = record.pos();
-        let end = get_alignment_end(record);
-        assert!(begin <= end);
+        // Update depth edges
+        {
+            let ref_segs =
+                get_alignment_ref_segments(record.pos(), &record.cigar(), self.min_del_size);
+            for ref_seg in ref_segs {
+                assert!(ref_seg.start <= ref_seg.end);
 
-        let begin = std::cmp::max(begin, 0) as u64;
-        let end = std::cmp::max(end, 0) as u64;
+                let start = std::cmp::max(ref_seg.start, 0) as u64;
+                let end = std::cmp::max(ref_seg.end, 0) as u64;
 
-        *self.depth_edges.entry(begin).or_insert(0) += 1;
-        *self.depth_edges.entry(end).or_insert(0) -= 1;
+                *self.depth_edges.entry(start).or_insert(0) += 1;
+                *self.depth_edges.entry(end).or_insert(0) -= 1;
+            }
+        }
+
+        // Update read_length tracker
+        //
+        // Ensure that each split read is only counted once
+        if !record.is_supplementary() {
+            self.read_length.insert(record.seq_len() as f64);
+        }
     }
 
     /// Convert processed bam record data into depth bins
     ///
-    pub fn get_depth_bins(
-        &self,
-        bin_size: u32,
-        chrom_size: u64,
-        excluded_regions: Option<&ChromRegions>,
-    ) -> ChromDepthBins {
+    pub fn get_depth_bins(&self, bin_size: u32, chrom_size: u64) -> AllChromDepthBinInfo {
         /// The fraction of positions in the bin containing `pos` that are not less than `pos`
         ///
         fn get_bin_fraction(pos: u64, bin_size: u32) -> f64 {
@@ -89,27 +108,20 @@ impl DepthBinsBuilder {
         }
 
         let bin_count = get_complete_bin_count(chrom_size, bin_size);
-        let mut depth_bins = vec![DepthBin::Depth(0f64); bin_count];
+        let mut depth_bins = vec![0f64; bin_count];
 
-        // Mark which bins are excluded
-        for (bin_index, depth_bin) in depth_bins.iter_mut().enumerate() {
-            let start = bin_index as i64 * bin_size as i64;
-            let end = start + bin_size as i64;
-            if let Some(r) = excluded_regions {
-                if r.intersect(start, end) {
-                    *depth_bin = DepthBin::Excluded;
-                }
-            }
-        }
-
+        // Index of the lowest bin number that hasn't been processed yet:
         let mut min_unprocessed_bin = 0usize;
         let mut total_depth = 0;
-        for (pos, delta) in self.depth_edges.iter() {
-            let pos_bin = get_bin_index(*pos, bin_size);
+
+        for (&pos, &delta) in self.depth_edges.iter() {
+            let pos_bin = get_bin_index(pos, bin_size);
+
             assert!((pos_bin + 1) >= min_unprocessed_bin);
 
-            // Equality is allowed because any incomplete bin at the end of the chromosome is not
-            // included in bin_count:
+            // Equality is allowed because bin_count does not include any incomplete bin at the end of the chromosome.
+            // For instance if bin_size is 1000, a chromosome 1999 bases long will have a bin_count of 1.
+            //
             assert!(pos_bin <= bin_count);
 
             // Add previous total_depth to all unprocessed bins not greater than pos_bin:
@@ -118,19 +130,25 @@ impl DepthBinsBuilder {
             // is updated.
             //
             while (min_unprocessed_bin <= pos_bin) && (min_unprocessed_bin < bin_count) {
-                depth_bins[min_unprocessed_bin].increment(total_depth as f64);
+                depth_bins[min_unprocessed_bin] += total_depth as f64;
                 min_unprocessed_bin += 1;
             }
 
-            // Add the fractional component of delta to pos_bin:
             if pos_bin < bin_count {
-                depth_bins[pos_bin].increment(*delta as f64 * get_bin_fraction(*pos, bin_size));
+                // Add the fractional component of delta to depth pos_bin:
+                depth_bins[pos_bin] += delta as f64 * get_bin_fraction(pos, bin_size);
             }
             total_depth += delta;
+            assert!(total_depth >= 0);
         }
         assert_eq!(total_depth, 0);
 
-        depth_bins
+        let depth_bins = depth_bins.into_iter().map(DepthBin::Depth).collect();
+
+        AllChromDepthBinInfo {
+            depth_bins,
+            read_length: self.read_length.clone(),
+        }
     }
 
     /// Convert processed bam record data into depth bins
@@ -164,14 +182,41 @@ impl DepthBinsBuilder {
     }
 }
 
-/// Write depth bin data from one sample to a wiggle file
-///
 #[derive(Deserialize, Serialize)]
 pub struct GenomeDepthBins {
     pub bin_size: u32,
-    pub chroms: Vec<ChromDepthBins>,
+    pub depth_bins: Vec<ChromDepthBins>,
+    pub mean_read_length: f64,
 }
 
+/// Mark excluded regions in depth bins track
+///
+pub fn apply_excluded_regions(
+    chrom_list: &ChromList,
+    excluded_regions: Option<&GenomeRegions>,
+    bin_size: u32,
+    depth_bins: &mut [ChromDepthBins],
+) {
+    if let Some(excluded_regions) = excluded_regions {
+        for (chrom_index, chrom_depth_bins) in depth_bins.iter_mut().enumerate() {
+            let chrom_label = &chrom_list.data[chrom_index].label;
+            let chrom_excluded_regions = excluded_regions.chroms.get(chrom_label);
+
+            if let Some(chrom_excluded_regions) = chrom_excluded_regions {
+                for (bin_index, depth_bin) in chrom_depth_bins.iter_mut().enumerate() {
+                    let start = bin_index as i64 * bin_size as i64;
+                    let end = start + bin_size as i64;
+                    if chrom_excluded_regions.intersect(start, end) {
+                        *depth_bin = DepthBin::Excluded;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Write depth bin data from one sample to a wiggle file
+///
 #[allow(dead_code)]
 pub fn write_depth_wig_file(
     filename: &str,
@@ -189,7 +234,7 @@ pub fn write_depth_wig_file(
     );
     let mut f = BufWriter::new(f);
 
-    for (chrom_index, chrom_depth_bins) in genome_depth_bins.chroms.iter().enumerate() {
+    for (chrom_index, chrom_depth_bins) in genome_depth_bins.depth_bins.iter().enumerate() {
         let chrom_name = chrom_list.data[chrom_index].label.as_str();
         for depth_bin_segment_range in
             ArraySegmenter::new(chrom_depth_bins, |v| matches!(v, DepthBin::Excluded))
@@ -220,20 +265,17 @@ pub fn write_depth_wig_file(
 /// Write genome_depth_bins from one sample to a bigwig depth track file
 ///
 pub fn write_depth_bigwig_file(
-    filename: &Path,
-    genome_depth_bins: &GenomeDepthBins,
+    filename: &Utf8Path,
+    bin_size: u32,
+    depth_bins: &[ChromDepthBins],
     chrom_list: &ChromList,
     label: &str,
 ) {
-    info!(
-        "Writing {} track to bigwig file: '{}'",
-        label,
-        filename.display()
-    );
+    info!("Writing {label} track to bigwig file: '{filename}'");
 
-    let mut bigwig_writer = bigwig_utils::get_new_writer(filename.to_str().unwrap(), chrom_list);
+    let mut bigwig_writer = bigwig_utils::get_new_writer(filename.as_str(), chrom_list);
 
-    for (chrom_index, chrom_depth_bins) in genome_depth_bins.chroms.iter().enumerate() {
+    for (chrom_index, chrom_depth_bins) in depth_bins.iter().enumerate() {
         let chrom_name = chrom_list.data[chrom_index].label.as_str();
         for depth_bin_segment_range in
             ArraySegmenter::new(chrom_depth_bins, |v| matches!(v, DepthBin::Excluded))
@@ -242,16 +284,16 @@ pub fn write_depth_bigwig_file(
                 .iter()
                 .map(|v| match v {
                     DepthBin::Depth(d) => *d as f32,
-                    _ => panic!("Unexpected depth bin state"),
+                    _ => panic!("Unexpected depth bin state while writing {label} track"),
                 })
                 .collect::<Vec<_>>();
 
             bigwig_writer
                 .add_interval_span_steps(
                     chrom_name,
-                    depth_bin_segment_range.start as u32 * genome_depth_bins.bin_size,
-                    genome_depth_bins.bin_size,
-                    genome_depth_bins.bin_size,
+                    depth_bin_segment_range.start as u32 * bin_size,
+                    bin_size,
+                    bin_size,
                     &mut depths,
                 )
                 .unwrap();
@@ -259,7 +301,7 @@ pub fn write_depth_bigwig_file(
     }
 }
 
-pub fn serialize_genome_depth_bins(discover_dir: &Path, genome_depth_bins: &GenomeDepthBins) {
+pub fn serialize_genome_depth_bins(discover_dir: &Utf8Path, genome_depth_bins: &GenomeDepthBins) {
     let mut buf = Vec::new();
     genome_depth_bins
         .serialize(&mut rmp_serde::Serializer::new(&mut buf))
@@ -267,24 +309,19 @@ pub fn serialize_genome_depth_bins(discover_dir: &Path, genome_depth_bins: &Geno
 
     let filename = discover_dir.join(DEPTH_BINS_MESSAGEPACK_FILENAME);
 
-    info!(
-        "Writing depth bins to binary file: '{}'",
-        filename.display()
-    );
+    info!("Writing depth bins to binary file: '{filename}'");
 
     unwrap!(
         std::fs::write(&filename, buf.as_slice()),
-        "Unable to open and write genome depth bins binary file: '{}'",
-        filename.display()
+        "Unable to open and write genome depth bins binary file: '{filename}'"
     );
 }
 
-pub fn deserialize_genome_depth_bins(discover_dir: &Path) -> GenomeDepthBins {
+pub fn deserialize_genome_depth_bins(discover_dir: &Utf8Path) -> GenomeDepthBins {
     let filename = discover_dir.join(DEPTH_BINS_MESSAGEPACK_FILENAME);
     let buf = unwrap!(
         std::fs::read(&filename),
-        "Unable to open and read genome depth bins binary file: '{}'",
-        filename.display()
+        "Unable to open and read genome depth bins binary file: '{filename}'"
     );
     rmp_serde::from_slice(&buf).unwrap()
 }

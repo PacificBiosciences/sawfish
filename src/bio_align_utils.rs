@@ -294,7 +294,7 @@ mod tests {
 
         // Text:    AACTGTATAA
         // Pattern: -ACT-TAT--
-        let score = aligner.align("AACTGTATAA".as_bytes(), "ACTTAT".as_bytes());
+        let score = aligner.align(b"AACTGTATAA", b"ACTTAT");
         assert_eq!(score, 4);
         let alignment = unwrap!(aligner.get_last_alignment());
         assert_eq!(alignment.ref_offset, 1);
@@ -307,7 +307,7 @@ mod tests {
 
         // Text:    AACTGTATAA
         // Pattern: --CTGAATA-
-        let score = aligner.align("AACTGTATAA".as_bytes(), "CTGAATA".as_bytes());
+        let score = aligner.align(b"AACTGTATAA", b"CTGAATA");
         assert_eq!(score, 3);
         let alignment = unwrap!(aligner.get_last_alignment());
         assert_eq!(alignment.ref_offset, 2);
@@ -315,12 +315,12 @@ mod tests {
 
         // Text:    ---AACTGTATAA
         // Pattern: CCGAACT------
-        let score = aligner.align("AACTGTATAA".as_bytes(), "CCGAACT".as_bytes());
+        let score = aligner.align(b"AACTGTATAA", b"CCGAACT");
         assert_eq!(score, 0); // Expected to align incorrectly
 
         // Text:    AACTGTATAA
         // Pattern: -ACTG-ATA-
-        let score = aligner.align("AACTGTATAA".as_bytes(), "ACTGATA".as_bytes());
+        let score = aligner.align(b"AACTGTATAA", b"ACTGATA");
         assert_eq!(score, 5);
         let alignment = unwrap!(aligner.get_last_alignment());
         assert_eq!(alignment.ref_offset, 1);
@@ -342,7 +342,7 @@ mod tests {
 
         // Text:    AACTGTATAA---
         // Pattern: ------ATAACCG
-        let score = aligner.align("AACTGTATAA".as_bytes(), "ATAACCG".as_bytes());
+        let score = aligner.align(b"AACTGTATAA", b"ATAACCG");
         assert_eq!(score, 4);
         let alignment = unwrap!(aligner.get_last_alignment());
         assert_eq!(alignment.ref_offset, 6);
@@ -350,7 +350,7 @@ mod tests {
 
         // Text:    ---AACTGTATAA
         // Pattern: CCGAACT------
-        let score = aligner.align("AACTGTATAA".as_bytes(), "CCGAACT".as_bytes());
+        let score = aligner.align(b"AACTGTATAA", b"CCGAACT");
         assert_eq!(score, 0); // Expected to align incorrectly
     }
 
@@ -369,7 +369,7 @@ mod tests {
 
         // Text:    ---AACTGTATAA
         // Pattern: CCGAACT------
-        let score = aligner.align("AACTGTATAA".as_bytes(), "CCGAACT".as_bytes());
+        let score = aligner.align(b"AACTGTATAA", b"CCGAACT");
         assert_eq!(score, 4);
         let alignment = unwrap!(aligner.get_last_alignment());
         assert_eq!(alignment.ref_offset, 0);
@@ -377,7 +377,7 @@ mod tests {
 
         // Text:    AACTGTATAA---
         // Pattern: ------ATAACCG
-        let score = aligner.align("AACTGTATAA".as_bytes(), "ATAACCG".as_bytes());
+        let score = aligner.align(b"AACTGTATAA", b"ATAACCG");
         assert_eq!(score, 1); // Expected to align incorrectly
     }
 
@@ -387,7 +387,7 @@ mod tests {
 
         // Text:    AACTGTATAA---
         // Pattern: ------ATAACCG
-        let score = aligner.align("AACTGTATAA".as_bytes(), "ATAACCG".as_bytes());
+        let score = aligner.align(b"AACTGTATAA", b"ATAACCG");
         assert_eq!(score, 4);
         let alignment = unwrap!(aligner.get_last_alignment());
         assert_eq!(alignment.ref_offset, 6);
@@ -395,7 +395,7 @@ mod tests {
 
         // Text:    ---AACTGTATAA
         // Pattern: CCGAACT------
-        let score = aligner.align("AACTGTATAA".as_bytes(), "CCGAACT".as_bytes());
+        let score = aligner.align(b"AACTGTATAA", b"CCGAACT");
         assert_eq!(score, 4);
         let alignment = unwrap!(aligner.get_last_alignment());
         assert_eq!(alignment.ref_offset, 0);

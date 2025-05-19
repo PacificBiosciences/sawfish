@@ -4,8 +4,8 @@ use crate::int_range::IntRange;
 ///
 /// # Arguments
 ///
-/// - ref_range - ref span of the indel in its current represented location
-/// - read_range - read span of the indel in its current represented location
+/// * `ref_range` - ref span of the indel in its current represented location
+/// * `read_range` - read span of the indel in its current represented location
 ///
 /// Range coordinates are zero-indexed and start at the first position affected by the indel.
 /// For instance:
@@ -80,8 +80,8 @@ mod tests {
 
     #[test]
     fn test_get_indel_homology_range() {
-        let seq1 = "ABCDDABC".as_bytes();
-        let seq2 = "ABCDDDABC".as_bytes();
+        let seq1 = b"ABCDDABC";
+        let seq2 = b"ABCDDDABC";
 
         {
             // left shifted case:
@@ -92,13 +92,13 @@ mod tests {
             let (range, seq) =
                 get_indel_breakend_homology_info(seq2, &seq2_range, seq1, &seq1_range);
             assert_eq!(range, IntRange::from_pair(0, 2));
-            assert_eq!(seq, "DD".as_bytes());
+            assert_eq!(seq, b"DD");
 
             // order reflects an insertion
             let (range, seq) =
                 get_indel_breakend_homology_info(seq1, &seq1_range, seq2, &seq2_range);
             assert_eq!(range, IntRange::from_pair(0, 2));
-            assert_eq!(seq, "DD".as_bytes());
+            assert_eq!(seq, b"DD");
         }
 
         {
@@ -110,13 +110,13 @@ mod tests {
             let (range, seq) =
                 get_indel_breakend_homology_info(seq2, &seq2_range, seq1, &seq1_range);
             assert_eq!(range, IntRange::from_pair(-2, 0));
-            assert_eq!(seq, "DD".as_bytes());
+            assert_eq!(seq, b"DD");
 
             // order reflects an insertion
             let (range, seq) =
                 get_indel_breakend_homology_info(seq1, &seq1_range, seq2, &seq2_range);
             assert_eq!(range, IntRange::from_pair(-2, 0));
-            assert_eq!(seq, "DD".as_bytes());
+            assert_eq!(seq, b"DD");
         }
     }
 
@@ -124,27 +124,27 @@ mod tests {
     fn test_get_indel_homology_range_edge_checks() {
         {
             // Bump into left edge:
-            let seq1 = "DDDDABC".as_bytes();
-            let seq2 = "DDDDDDABC".as_bytes();
+            let seq1 = b"DDDDABC";
+            let seq2 = b"DDDDDDABC";
 
             let seq1_range = IntRange::from_pair(2, 2);
             let seq2_range = IntRange::from_pair(3, 4);
             let (range, seq) =
                 get_indel_breakend_homology_info(seq2, &seq2_range, seq1, &seq1_range);
             assert_eq!(range, IntRange::from_pair(-2, 2));
-            assert_eq!(seq, "DDDD".as_bytes());
+            assert_eq!(seq, b"DDDD");
         }
         {
             // Bump into right edge:
-            let seq1 = "ABCDDDD".as_bytes();
-            let seq2 = "ABCDDDDDD".as_bytes();
+            let seq1 = b"ABCDDDD";
+            let seq2 = b"ABCDDDDDD";
 
             let seq1_range = IntRange::from_pair(3, 3);
             let seq2_range = IntRange::from_pair(3, 4);
             let (range, seq) =
                 get_indel_breakend_homology_info(seq2, &seq2_range, seq1, &seq1_range);
             assert_eq!(range, IntRange::from_pair(-0, 4));
-            assert_eq!(seq, "DDDD".as_bytes());
+            assert_eq!(seq, b"DDDD");
         }
     }
 }

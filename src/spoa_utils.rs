@@ -155,10 +155,10 @@ fn get_two_read_consensus(
 /// of result in a more efficient direct way
 ///
 /// # Arguments
-/// * query_start_clip - The query position (zero-indexed) where the query-to ref alignment starts
+/// * `query_start_clip` - The query position (zero-indexed) where the query-to ref alignment starts
 ///   in the `alignments` strings
-/// * query_size - Full query length
-/// * alignments - 2 strings formatted to pretty-print an alignment between ref (1st) and query (2nd)
+/// * `query_size` - Full query length
+/// * `alignments` - 2 strings formatted to pretty-print an alignment between ref (1st) and query (2nd)
 ///   sequences
 ///
 /// Returns a 2-tuple of (1) the reference sequence offset for the start of the alignment and (2)

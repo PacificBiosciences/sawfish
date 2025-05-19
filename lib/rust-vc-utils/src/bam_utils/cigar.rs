@@ -114,9 +114,13 @@ pub fn get_hard_clipped_read_clip_positions(cigar: &[Cigar]) -> (usize, usize, u
     (left_clip_size, read_pos - right_clip_size, read_pos)
 }
 
-/// Report the following positions in read coordinates:
+/// Return a 3-tuple of values related to read clipping
+///
+/// The first two values are in zero-index read coordinates:
 /// 1. The first position after all left-side hard and soft clipping
-/// 2. The first position of all right-side hard and soft clipping
+/// 2. The first position after the last non-clipped base
+///
+/// ...and the 3rd value:
 /// 3. The read length
 ///
 pub fn get_complete_read_clip_positions(cigar: &[Cigar]) -> (usize, usize, usize) {

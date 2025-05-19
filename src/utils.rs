@@ -249,30 +249,13 @@ pub fn drop_true<T>(vec: &mut Vec<T>, drop_list: &[bool]) {
     vec.retain(|_| !*drop.next().unwrap())
 }
 
-/// Attempt to increase open file limit to the system's hard limit on *nix-like systems
-///
-/// This is an optional increase so continue through all failure cases without error.
-///
-pub fn attempt_max_open_file_limit() {
-    use rlimit::Resource;
-
-    let (soft, hard) = match Resource::NOFILE.get() {
-        Ok(x) => x,
-        Err(_) => return,
-    };
-
-    if soft < hard {
-        rlimit::setrlimit(Resource::NOFILE, hard, hard).unwrap_or_default();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_get_seq_pos_flanks() {
-        let seq1 = "ABCDEFGH".as_bytes();
+        let seq1 = b"ABCDEFGH";
 
         let (before, after) = get_seq_pos_flanks(seq1, 4, 2);
         assert_eq!(before, "CD");

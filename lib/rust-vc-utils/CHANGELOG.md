@@ -1,7 +1,8 @@
-## v0.29.0 - 2024-09-xx
+## v0.29.0 - 2024-10-31
 
 ### Added
-- Add new force-periodic option to progress_reporter, breaks api
+- Add simple mean tracker
+- Add new force-periodic option to `ProgressReporter`, breaks api
 - Add new bam record utils
 
 ## v0.28.0 - 2024-09-04

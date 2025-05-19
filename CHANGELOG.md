@@ -1,17 +1,15 @@
 # Change Log
 
-## v1.0.2 - 2025-04-25
+## v2.0.0a7 - 2025-04-18
 
-### Changed
+This is the first public alpha release of SV/CNV integration. This version of sawfish adds full depth segmentation into
+the SV calling process to provide (1) independent depth-based CNV calls, (2) integrated calls with both breakpoint and
+depth support and (3) to improve filtration of large putative breakpoint-based DEL/DUP calls without depth support.
 
-- CR-480 Convert large deletions and duplications to breakends
-  - Deletions and duplications larger than 100kb are now converted to breakend records by default, can be changed with `--max-deldup-size`
-  argument in the joint-call step.
-
-### Fixed
-
-- CR-470 Improve validation of sample discover step input
-  - Provide clear usage error if any input samples to the joint-call step do not appear to be complete sawfish discover step results
+Status: This is an alpha release. The first full round of single and multi-sample SV and CNV integrations are in place,
+with a full user guide update. The integrations likely still need polish and further attention on more practical use
+cases, as well as more complete documentation. The current behaviors, cmdline arguments and file formatting may all be
+subject to change prior to a stable release of CNV integration.
 
 ## v1.0.1 - 2025-04-13
 

@@ -3,7 +3,7 @@ use std::hash::Hash;
 
 use log::error;
 
-use crate::expected_ploidy::SVLocusPloidy;
+use crate::expected_ploidy::{SVLocusExpectedCNInfo, SVLocusPloidy};
 use crate::genome_segment::GenomeSegment;
 use crate::int_range::IntRange;
 use crate::refine_sv::RefinedSV;
@@ -127,11 +127,13 @@ pub struct SVGroup {
     ///
     pub sample_haplotype_list: Vec<Vec<usize>>,
 
-    /// The maximum ploidy to use for each sample
+    /// Expected copy number info for each sample at the SV locus
     ///
-    /// If there's any ambiguity in the ploidy count this will always be set to the higher value.
+    /// This also provides the maximum ploidy to use for each sample (based on the sample expected copy number).
     ///
-    pub sample_ploidy: Vec<SVLocusPloidy>,
+    /// If there's any ambiguity in the expected cn/ploidy count over the SV locus regions, this will always be set to the higher value.
+    ///
+    pub sample_expected_cn_info: Vec<SVLocusExpectedCNInfo>,
 
     /// A vector with one entry for each Refined SV providing the index of the SV source haplotype
     pub sv_haplotype_map: Vec<usize>,
@@ -141,12 +143,17 @@ pub struct SVGroup {
 }
 
 impl SVGroup {
+    /// Return true for single-region SVGroups
+    ///
+    /// Single-region SVGroups have a single span over something like a TR, likely to contain smaller indels
+    ///
+    /// Mulit-region SVs tend to be larger events with one region around each breakend
     pub fn is_single_region(&self) -> bool {
         self.group_regions.len() == 1
     }
 
     #[allow(clippy::field_reassign_with_default)]
-    pub fn get_validity_test(&self) -> SVGroupTestStatus {
+    pub fn get_validity_test(&self, treat_single_copy_as_haploid: bool) -> SVGroupTestStatus {
         let mut result = SVGroupTestStatus::default();
 
         // tmp
@@ -162,7 +169,8 @@ impl SVGroup {
 
         let sample_count = self.sample_haplotype_list.len();
 
-        result.is_sample_max_haplotype_count_valid = self.sample_ploidy.len() == sample_count;
+        result.is_sample_max_haplotype_count_valid =
+            self.sample_expected_cn_info.len() == sample_count;
 
         result.is_sample_haplotype_list_valid = {
             let valid_haplotype_indexes = !self
@@ -188,7 +196,11 @@ impl SVGroup {
             let valid_hap_count = self
                 .sample_haplotype_list
                 .iter()
-                .zip(self.sample_ploidy.iter())
+                .zip(
+                    self.sample_expected_cn_info
+                        .iter()
+                        .map(|x| x.ploidy(treat_single_copy_as_haploid)),
+                )
                 .all(|(list, ploidy)| {
                     let max = match ploidy {
                         SVLocusPloidy::Diploid => 2,
@@ -209,8 +221,8 @@ impl SVGroup {
         result
     }
 
-    pub fn assert_validity(&self) {
-        let test_result = self.get_validity_test();
+    pub fn assert_validity(&self, treat_single_copy_as_haploid: bool) {
+        let test_result = self.get_validity_test(treat_single_copy_as_haploid);
         if !test_result.is_valid() {
             error!("Invalid sv_group: {:?}\nreason: {:?}", self, test_result);
             for refined_sv in self.refined_svs.iter() {

@@ -14,6 +14,19 @@ lazy_static! {
 }
  */
 
+/// Get a new bcf header which is actually empty so that we can set our own version number
+///
+pub fn get_empty_bcf_header() -> Header {
+    // Give the incorrect mode to htslib to prevent it from writing the wrong VCF version number.
+    // As of 202409 htslib doesn't store the mode argument so this shouldn't break the output.
+    //
+    let mode = std::ffi::CString::new("r").unwrap();
+    Header {
+        inner: unsafe { htslib::bcf_hdr_init(mode.as_ptr()) },
+        subset: None,
+    }
+}
+
 /// Builds common fields into a VCF header, upon which more app specific details can be added
 ///
 pub fn get_basic_vcf_header(
@@ -21,7 +34,9 @@ pub fn get_basic_vcf_header(
     chrom_list: &ChromList,
     sample_names: &[&str],
 ) -> Header {
-    let mut header = Header::new();
+    let mut header = get_empty_bcf_header();
+    header.push_record(b"##fileformat=VCFv4.4");
+
     let date_string = chrono::Local::now().format("%Y%m%d").to_string();
     header.push_record(format!("##fileDate={date_string}").as_bytes());
     header.push_record(format!("##reference=file://{ref_filename}").as_bytes());

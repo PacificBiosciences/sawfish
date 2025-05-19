@@ -1,5 +1,4 @@
-use std::path::Path;
-
+use camino::Utf8Path;
 use log::{debug, error, info};
 use rust_htslib::bam::{
     self,
@@ -205,7 +204,7 @@ fn get_contig_alignment_header(chrom_list: &ChromList, pkg_name: &str) -> bam::h
 /// Completes writing (and closing) the contig bam file itself
 ///
 fn write_contig_alignments_bam(
-    filename: &Path,
+    filename: &Utf8Path,
     thread_count: usize,
     chrom_list: &ChromList,
     contig_alignments: Vec<ContigAlignmentInfo>,
@@ -228,7 +227,7 @@ fn write_contig_alignments_bam(
 /// The bam_header should not already have a sawfish PG entry, to avoid conflicting PG entires which cause problems in IGV
 ///
 pub fn write_contig_alignments(
-    output_dir: &Path,
+    output_dir: &Utf8Path,
     thread_count: usize,
     chrom_list: &ChromList,
     contig_alignment_type_label: &str,
@@ -243,10 +242,7 @@ pub fn write_contig_alignments(
 
     let filename = output_dir.join(discover::CONTIG_ALIGNMENT_FILENAME);
 
-    info!(
-        "Writing {contig_alignment_type_label} contig alignments to bam file: '{}'",
-        filename.display()
-    );
+    info!("Writing {contig_alignment_type_label} contig alignments to bam file: '{filename}'");
 
     write_contig_alignments_bam(&filename, thread_count, chrom_list, contig_alignments);
 
@@ -262,17 +258,10 @@ pub fn write_contig_alignments(
         thread_count as u32,
     ) {
         Ok(()) => {
-            debug!(
-                "Finished building index for bam file {}.",
-                filename.display()
-            );
+            debug!("Finished building index for bam file {filename}.");
         }
         Err(e) => {
-            error!(
-                "Error while building index for {}: {}",
-                filename.display(),
-                e
-            );
+            error!("Error while building index for {filename}: {e}");
             std::process::exit(exitcode::IOERR);
         }
     };

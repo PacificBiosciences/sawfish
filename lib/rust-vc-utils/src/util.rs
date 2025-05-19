@@ -1,3 +1,31 @@
+/// Updatable/mergable mean value tracker
+///
+#[derive(Default, Clone)]
+pub struct MeanTracker {
+    total: f64,
+    count: f64,
+}
+
+impl MeanTracker {
+    pub fn mean(&self) -> f64 {
+        if self.count > 0.0 {
+            self.total / self.count
+        } else {
+            0.0
+        }
+    }
+
+    pub fn insert(&mut self, x: f64) {
+        self.total += x;
+        self.count += 1.0;
+    }
+
+    pub fn merge(&mut self, other: &Self) {
+        self.total += other.total;
+        self.count += other.count;
+    }
+}
+
 /// Deterministically downsample a vector while evenly distributing the removed positions
 ///
 pub fn downsample_vector<T>(vec: Vec<T>, new_size: usize) -> Vec<T> {
@@ -109,6 +137,22 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_mean_tracker() {
+        let mut a = MeanTracker::default();
+        let mut b = MeanTracker::default();
+
+        a.insert(2.0);
+        a.insert(4.0);
+
+        approx::assert_ulps_eq!(a.mean(), 3.0, max_ulps = 4);
+
+        b.insert(6.0);
+        a.merge(&b);
+
+        approx::assert_ulps_eq!(a.mean(), 4.0, max_ulps = 4);
+    }
 
     #[test]
     fn test_downsample_vector() {

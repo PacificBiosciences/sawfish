@@ -1,6 +1,6 @@
 use rust_htslib::bam;
-use std::path::Path;
 
+use camino::Utf8Path;
 use rust_htslib::bcf::{self, Read};
 use rust_vc_utils::aux::{get_string_aux_tag, is_aux_tag_found};
 use rust_vc_utils::{rev_comp_in_place, ChromList};
@@ -16,7 +16,7 @@ use crate::genome_segment::GenomeSegment;
 use crate::int_range::IntRange;
 use crate::large_variant_output::{CONTIG_POS_INFO_KEY, OVERLAP_ASM_INFO_KEY};
 use crate::refine_sv::assembly_regions::read_assembly_regions_from_bed;
-use crate::refine_sv::{RefinedSV, RefinedSVExt, SVScoreInfo};
+use crate::refine_sv::RefinedSV;
 use crate::simple_alignment::SimpleAlignment;
 use crate::sv_group::{
     ClusterAssembly, ClusterAssemblyAlignment, GroupHaplotypeId, SVGroup, SVGroupHaplotype,
@@ -171,15 +171,15 @@ fn update_sample_assemblies_from_bam_record(
     }
 }
 
-fn get_candidate_sv_contig_info(discover_dir: &Path, chrom_list: &ChromList) -> SampleAssemblies {
+fn get_candidate_sv_contig_info(
+    discover_dir: &Utf8Path,
+    chrom_list: &ChromList,
+) -> SampleAssemblies {
     use rust_htslib::bam::Read;
 
     let contig_filename = discover_dir.join(discover::CONTIG_ALIGNMENT_FILENAME);
     if !contig_filename.exists() {
-        panic!(
-            "Can't find contig alignment file expected at {}",
-            contig_filename.display()
-        );
+        panic!("Can't find contig alignment file expected at {contig_filename}");
     }
 
     let mut sample_assemblies = Vec::new();
@@ -205,7 +205,7 @@ struct BndAltInfo {
 /// Example BND alt allele string is "TCT]chr1:500]", see VCF spec for full description.
 ///
 /// # Arguments
-/// * homlen - this is used to correct the remote breakend into a left-shifted position when the breakpoint is inverted
+/// * `homlen` - this is used to correct the remote breakend into a left-shifted position when the breakpoint is inverted
 ///
 fn parse_bnd_alt_allele(chrom_list: &ChromList, alt_allele: &[u8], homlen: i64) -> BndAltInfo {
     let alt_allele = std::str::from_utf8(alt_allele).unwrap();
@@ -438,11 +438,11 @@ fn process_bcf_record_to_anno_refine_sv(
             single_region_refinement: cluster_assembly.single_region_refinement(),
             contig_pos_before_breakend1: contig_pos,
             assembly_regions,
-            ext: RefinedSVExt::default(),
+            ext: Default::default(),
 
             // All items below are set by the scoring routine, so we just default them here
             //
-            score: SVScoreInfo::default(),
+            score: Default::default(),
         };
 
         Some(AnnotatedRefinedSV {
@@ -500,11 +500,11 @@ fn process_bcf_record_to_anno_refine_sv(
             single_region_refinement: cluster_assembly.single_region_refinement(),
             contig_pos_before_breakend1: contig_pos,
             assembly_regions,
-            ext: RefinedSVExt::default(),
+            ext: Default::default(),
 
             // All items below are set by the scoring routine, so we just default them here
             //
-            score: SVScoreInfo::default(),
+            score: Default::default(),
         };
         Some(AnnotatedRefinedSV {
             refined_sv,
@@ -520,6 +520,7 @@ fn process_bcf_record_to_anno_refine_sv(
 /// The group_arsvs will always be cleared by this method.
 ///
 fn process_rsv_cluster_to_sv_group(
+    treat_single_copy_as_haploid: bool,
     contigs: &SampleAssemblies,
     expected_copy_number_regions: Option<&GenomeRegionsByChromIndex>,
     group_arsvs: &mut Vec<AnnotatedRefinedSV>,
@@ -543,8 +544,11 @@ fn process_rsv_cluster_to_sv_group(
         })
         .collect::<Vec<_>>();
 
-    let (max_haplotype_count, ploidy) =
-        get_max_haplotype_count_for_regions(expected_copy_number_regions, &group_regions);
+    let (max_haplotype_count, expected_cn_info) = get_max_haplotype_count_for_regions(
+        treat_single_copy_as_haploid,
+        expected_copy_number_regions,
+        &group_regions,
+    );
 
     let debug = false;
     if debug {
@@ -552,7 +556,7 @@ fn process_rsv_cluster_to_sv_group(
         eprintln!("contig_map {:?}", &first_arsv.contig_map);
     }
 
-    let sample_ploidy = vec![ploidy];
+    let sample_expected_cn_info = vec![expected_cn_info];
     let mut sample_haplotype_list = vec![first_arsv
         .contig_map
         .iter()
@@ -670,7 +674,7 @@ fn process_rsv_cluster_to_sv_group(
             group_regions,
             group_haplotypes,
             sample_haplotype_list,
-            sample_ploidy,
+            sample_expected_cn_info,
             sv_haplotype_map,
             refined_svs,
         })
@@ -679,15 +683,19 @@ fn process_rsv_cluster_to_sv_group(
 
 /// Take a set of annotated refined SVs from the same cluster, and try to convert these into an SVGroup
 fn process_rsv_cluster(
+    treat_single_copy_as_haploid: bool,
     contigs: &SampleAssemblies,
     expected_copy_number_regions: Option<&GenomeRegionsByChromIndex>,
     group_arsvs: &mut Vec<AnnotatedRefinedSV>,
     sv_groups: &mut Vec<SVGroup>,
 ) {
     if !group_arsvs.is_empty() {
-        if let Some(sv_group) =
-            process_rsv_cluster_to_sv_group(contigs, expected_copy_number_regions, group_arsvs)
-        {
+        if let Some(sv_group) = process_rsv_cluster_to_sv_group(
+            treat_single_copy_as_haploid,
+            contigs,
+            expected_copy_number_regions,
+            group_arsvs,
+        ) {
             sv_groups.push(sv_group);
         }
     }
@@ -697,6 +705,7 @@ fn process_rsv_cluster(
 /// process overlapping SVs
 ///
 fn group_single_sample_refined_svs(
+    treat_single_copy_as_haploid: bool,
     contigs: &SampleAssemblies,
     expected_copy_number_regions: Option<&GenomeRegionsByChromIndex>,
     mut anno_refined_svs: Vec<AnnotatedRefinedSV>,
@@ -722,6 +731,7 @@ fn group_single_sample_refined_svs(
     for arsv in anno_refined_svs.into_iter() {
         if last_cluster_index != Some(arsv.refined_sv.id.cluster_index) {
             process_rsv_cluster(
+                treat_single_copy_as_haploid,
                 contigs,
                 expected_copy_number_regions,
                 &mut group_arsvs,
@@ -732,6 +742,7 @@ fn group_single_sample_refined_svs(
         group_arsvs.push(arsv);
     }
     process_rsv_cluster(
+        treat_single_copy_as_haploid,
         contigs,
         expected_copy_number_regions,
         &mut group_arsvs,
@@ -740,7 +751,7 @@ fn group_single_sample_refined_svs(
 
     // Check sv_group validity
     for sv_group in sv_groups.iter() {
-        sv_group.assert_validity();
+        sv_group.assert_validity(treat_single_copy_as_haploid);
     }
 
     sv_groups
@@ -748,9 +759,12 @@ fn group_single_sample_refined_svs(
 
 /// Walk through candidate SV records for sample and convert these into sv_groups for downstream processing
 ///
+#[allow(clippy::too_many_arguments)]
 fn process_sv_groups_from_candidate_sv_file(
     disable_small_indels: bool,
-    discover_dir: &Path,
+    disable_svs: bool,
+    treat_single_copy_as_haploid: bool,
+    discover_dir: &Utf8Path,
     chrom_list: &ChromList,
     assembly_regions: &[Vec<GenomeSegment>],
     contigs: &SampleAssemblies,
@@ -758,10 +772,7 @@ fn process_sv_groups_from_candidate_sv_file(
 ) -> Vec<SVGroup> {
     let candidate_sv_filename = discover_dir.join(discover::CANDIDATE_SV_FILENAME);
     if !candidate_sv_filename.exists() {
-        panic!(
-            "Can't find candidate SV file expected at {}",
-            candidate_sv_filename.display()
-        );
+        panic!("Can't find candidate SV file expected at {candidate_sv_filename}");
     }
 
     let mut reader = bcf::Reader::from_path(candidate_sv_filename).unwrap();
@@ -796,21 +807,30 @@ fn process_sv_groups_from_candidate_sv_file(
             &rec,
         );
         if let Some(anno_refined_sv) = arsv {
-            if disable_small_indels && anno_refined_sv.refined_sv.single_region_refinement {
+            if disable_svs
+                || (disable_small_indels && anno_refined_sv.refined_sv.single_region_refinement)
+            {
                 continue;
             }
             anno_refined_svs.push(anno_refined_sv);
         }
     }
 
-    group_single_sample_refined_svs(contigs, expected_copy_number_regions, anno_refined_svs)
+    group_single_sample_refined_svs(
+        treat_single_copy_as_haploid,
+        contigs,
+        expected_copy_number_regions,
+        anno_refined_svs,
+    )
 }
 
 /// Read SV Group list from candidate SV bcf
 ///
 pub fn get_sample_sv_groups(
     disable_small_indels: bool,
-    discover_dir: &Path,
+    disable_svs: bool,
+    treat_single_copy_as_haploid: bool,
+    discover_dir: &Utf8Path,
     chrom_list: &ChromList,
     target_regions: &GenomeRegions,
     expected_copy_number_regions: Option<&GenomeRegionsByChromIndex>,
@@ -821,6 +841,8 @@ pub fn get_sample_sv_groups(
     let contigs = get_candidate_sv_contig_info(discover_dir, chrom_list);
     let mut sv_groups = process_sv_groups_from_candidate_sv_file(
         disable_small_indels,
+        disable_svs,
+        treat_single_copy_as_haploid,
         discover_dir,
         chrom_list,
         &assembly_regions,

@@ -1,5 +1,4 @@
-use std::path::{Path, PathBuf};
-
+use camino::{Utf8Path, Utf8PathBuf};
 use log::info;
 use rust_htslib::bcf;
 use rust_vc_utils::{rev_comp_in_place, ChromList, GenomeRef};
@@ -15,6 +14,7 @@ use crate::refine_sv::{
     get_rsv_id_label, AlleleType, Genotype, RefinedSV, SVPhaseStatus, SVSampleScoreInfo,
     SVScoreInfo,
 };
+use crate::refined_cnv::{CNVSampleScoreInfo, CNVScoreInfo, RefinedCNV, SharedSampleScoreInfo};
 use crate::score_sv::QualityModelAlleles;
 use crate::sv_group::SVGroup;
 use crate::sv_id::get_bnd_sv_id_label;
@@ -32,23 +32,37 @@ fn get_sv_vcf_header(
     let mut header =
         vcf_utils::get_basic_vcf_header(&settings.ref_filename, chrom_list, sample_names);
 
-    let contig_pos = format!("##INFO=<ID={},Number=1,Type=Integer,Description=\"SV position in the contig sequence before breakend1\">", CONTIG_POS_INFO_KEY);
+    let mut records = Vec::<&[u8]>::new();
 
-    let overlap_asm = format!("##INFO=<ID={},Number=.,Type=Integer,Description=\"Assembly indices of overlapping haplotypes\">", OVERLAP_ASM_INFO_KEY);
+    records.append(&mut vec![
+        br#"##ALT=<ID=DEL,Description="Deletion">"#,
+        br#"##ALT=<ID=INS,Description="Insertion">"#,
+        br#"##ALT=<ID=DUP,Description="Duplication">"#,
+        br#"##ALT=<ID=DUP:TANDEM,Description="Tandem Duplication">"#,
+        br#"##ALT=<ID=INV,Description="Inversion">"#,
+        br#"##ALT=<ID=CNV,Description="Copy number variable region">"#,
+    ]);
+
+    // Note that the `PASS` and `.` FILTER records below are not typically included in the header,
+    // but there's an oddity in programatically creating vcfs in htslib that forces these to be present,
+    // and specifically ordered before INFO/FORMAT.
+    //
+    records.push(br#"##FILTER=<ID=PASS,Description="All filters passed">"#);
+    records.push(br#"##FILTER=<ID=.,Description="Unknown filtration status">"#);
 
     let min_qual_filter = format!(
         "##FILTER=<ID=MinQUAL,Description=\"QUAL score is less than {}\">",
         &settings.min_qual
     );
 
-    // Note that the `PASS` and `.` FILTER records below are not typically included in the header,
-    // but there's an oddity that rust-htslib interface that forces these to be present
-    //
-    let mut records: Vec<&[u8]> = vec![
-        br#"##ALT=<ID=DEL,Description="Deletion">"#,
-        br#"##ALT=<ID=INS,Description="Insertion">"#,
-        br#"##ALT=<ID=DUP:TANDEM,Description="Tandem Duplication">"#,
-        br#"##ALT=<ID=INV,Description="Inversion">"#,
+    if !candidate_mode {
+        records.push(br#"##FILTER=<ID=InvBreakpoint,Description="Breakpoint represented as part of an inversion record (same EVENT ID)">"#);
+        records.push(min_qual_filter.as_bytes());
+        records.push(br#"##FILTER=<ID=MaxScoringDepth,Description="SV candidate exceeds max scoring depth">"#);
+        records.push(br#"##FILTER=<ID=ConflictingBreakpointGT,Description="Genotypes of breakpoints in a multi-breakpoint event conflict in the majority of cases">"#);
+    }
+
+    records.append(&mut vec![
         //br#"##INFO=<ID=CIEND,Number=2,Type=Integer,Description="Confidence interval around END for imprecise variants">"#,
         //br#"##INFO=<ID=CIPOS,Number=2,Type=Integer,Description="Confidence interval around POS for imprecise variants">"#,
         br#"##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">"#,
@@ -60,8 +74,12 @@ fn get_sv_vcf_header(
         br#"##INFO=<ID=INSLEN,Number=.,Type=Integer,Description="Insertion length">"#,
         br#"##INFO=<ID=INSSEQ,Number=.,Type=String,Description="Insertion sequence (for symbolic alt alleles)">"#,
         br#"##INFO=<ID=MATEID,Number=.,Type=String,Description="ID of mate breakends">"#,
-        br#"##INFO=<ID=SVLEN,Number=.,Type=Integer,Description="Difference in length between REF and ALT alleles">"#,
-        br#"##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">"#,];
+        br#"##INFO=<ID=SVCLAIM,Number=A,Type=String,Description="Claim made by the structural variant call. Valid values are D, J, DJ for abundance, adjacency and both respectively">"#,
+        br#"##INFO=<ID=SVLEN,Number=A,Type=Integer,Description="Length of structural variant">"#,
+        br#"##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">"#,]);
+
+    let contig_pos = format!("##INFO=<ID={},Number=1,Type=Integer,Description=\"SV position in the contig sequence before breakend1\">", CONTIG_POS_INFO_KEY);
+    let overlap_asm = format!("##INFO=<ID={},Number=.,Type=Integer,Description=\"Assembly indices of overlapping haplotypes\">", OVERLAP_ASM_INFO_KEY);
 
     if candidate_mode {
         records.push(contig_pos.as_bytes());
@@ -74,6 +92,8 @@ fn get_sv_vcf_header(
             br#"##FORMAT=<ID=AD,Number=R,Type=Integer,Description="Read depth for each allele">"#,
             //br#"##FORMAT=<ID=ADF,Number=R,Type=Integer,Description="Read depth for each allele on the forward strand">"#,
             //br#"##FORMAT=<ID=ADR,Number=R,Type=Integer,Description="Read depth for each allele on the reverse strand">"#,
+            br#"##FORMAT=<ID=CN,Number=1,Type=Float,Description="Copy number">"#,
+            br#"##FORMAT=<ID=CNQ,Number=1,Type=Float,Description="Copy number genotype quality">"#,
         ];
         if settings.enable_phasing {
             score_records.push(
@@ -83,22 +103,9 @@ fn get_sv_vcf_header(
         records.append(&mut score_records);
     }
 
-    let mut std_records: Vec<&[u8]> = vec![
-        br#"##FILTER=<ID=.,Description="Unknown filtration status">"#,
-        br#"##FILTER=<ID=PASS,Description="All filters passed">"#,
-    ];
-    records.append(&mut std_records);
-
-    if !candidate_mode {
-        records.push(br#"##FILTER=<ID=InvBreakpoint,Description="Breakpoint represented as part of an inversion record (same EVENT ID)">"#);
-        records.push(min_qual_filter.as_bytes());
-        records.push(br#"##FILTER=<ID=MaxScoringDepth,Description="SV candidate exceeds max scoring depth">"#);
-        records.push(br#"##FILTER=<ID=ConflictingBreakpointGT,Description="Genotypes of breakpoints in a multi-breakpoint event conflict in the majority of cases">"#);
-    }
-
-    records.into_iter().for_each(|x| {
+    for x in records.into_iter() {
         header.push_record(x);
-    });
+    }
 
     header
 }
@@ -112,6 +119,7 @@ fn get_sv_type_vcf_label(sv_type: VcfSVType) -> &'static str {
         Duplication => "DUP",
         Breakpoint => "BND",
         SingleBreakend => "BND",
+        CopyNumberVariant => "CNV",
     }
 }
 
@@ -148,7 +156,7 @@ impl Ord for VcfRecord {
 fn add_sv_type(sv_type: VcfSVType, record: &mut bcf::Record) {
     let sv_type_label = get_sv_type_vcf_label(sv_type);
     record
-        .push_info_string("SVTYPE".as_bytes(), &[sv_type_label.as_bytes()])
+        .push_info_string(b"SVTYPE", &[sv_type_label.as_bytes()])
         .unwrap();
 }
 
@@ -158,12 +166,10 @@ fn add_homology_tags(seg: &GenomeSegment, hom_seq: &[u8], record: &mut bcf::Reco
     assert_eq!(hom_len as usize, hom_seq.len());
     if hom_len > 0 {
         record
-            .push_info_integer("HOMLEN".as_bytes(), &[hom_len as i32])
+            .push_info_integer(b"HOMLEN", &[hom_len as i32])
             .unwrap();
 
-        record
-            .push_info_string("HOMSEQ".as_bytes(), &[hom_seq])
-            .unwrap();
+        record.push_info_string(b"HOMSEQ", &[hom_seq]).unwrap();
     }
 }
 
@@ -177,7 +183,7 @@ fn add_qual(score: &SVScoreInfo, record: &mut bcf::Record) {
 
 /// candidate_mode - True if writing out the candidate VCF in discovery mode, prior to genotyping
 /// is_inversion_filter - True for breakends represented as a higher-level INV record, which will be filtered out
-fn add_vcf_filters(
+fn add_sv_vcf_filters(
     settings: &VcfSettings,
     score: &SVScoreInfo,
     record: &mut bcf::Record,
@@ -215,9 +221,7 @@ fn add_vcf_filters(
 fn add_inslen(bp: &Breakpoint, record: &mut bcf::Record) {
     let inslen = bp.insert_info.size() as i32;
     if inslen > 0 {
-        record
-            .push_info_integer("INSLEN".as_bytes(), &[inslen])
-            .unwrap();
+        record.push_info_integer(b"INSLEN", &[inslen]).unwrap();
     }
 }
 
@@ -225,7 +229,7 @@ fn add_insseq(bp: &Breakpoint, record: &mut bcf::Record) {
     if let InsertInfo::Seq(seq) = &bp.insert_info {
         if !seq.is_empty() {
             record
-                .push_info_string("INSSEQ".as_bytes(), &[seq.as_slice()])
+                .push_info_string(b"INSSEQ", &[seq.as_slice()])
                 .unwrap();
         }
     }
@@ -235,10 +239,28 @@ fn add_event(rsv: &RefinedSV, record: &mut bcf::Record) {
     if let Some(inversion_id) = rsv.ext.inversion_id {
         let event_tag = format!("INV{inversion_id}");
         record
-            .push_info_string("EVENT".as_bytes(), &[event_tag.as_bytes()])
+            .push_info_string(b"EVENT", &[event_tag.as_bytes()])
             .unwrap();
+        record.push_info_string(b"EVENTTYPE", &[b"INV"]).unwrap();
+    }
+}
+
+fn add_svclaim(
+    sv_type: VcfSVType,
+    depth_support: bool,
+    bp_support: bool,
+    record: &mut bcf::Record,
+) {
+    if sv_type == VcfSVType::Deletion || sv_type == VcfSVType::Duplication {
+        let mut svc = Vec::new();
+        if depth_support {
+            svc.push(b'D');
+        }
+        if bp_support {
+            svc.push(b'J');
+        }
         record
-            .push_info_string("EVENTTYPE".as_bytes(), &["INV".as_bytes()])
+            .push_info_string(b"SVCLAIM", &[svc.as_slice()])
             .unwrap();
     }
 }
@@ -264,18 +286,26 @@ fn add_overlap_indexes(group_contig_indexes: &[usize], record: &mut bcf::Record)
     }
 }
 
-/// Get GT for sample
+/// Get SV htslib-encoded genotype for sample
+///
+/// # Arguments:
+/// * `treat_single_copy_as_haploid` - If true, treat expected single-copy regions as haploid
+/// * `format_haploid_samples_as_diploid` - If true format GT values as "1/1" and "0/0" instead of "1" and "0" in haploid regions
 ///
 /// Return a 2-tuple of (1) htslib-encoded GT value (2) bool indicating if the GT is phased
 ///
-fn get_genotype(
+fn get_sv_genotype(
     sample_score: &SVSampleScoreInfo,
     format_haploid_samples_as_diploid: bool,
+    treat_single_copy_as_haploid: bool,
     enable_phasing: bool,
 ) -> (Vec<i32>, bool) {
     use bcf::record::GenotypeAllele::*;
-    match sample_score.ploidy {
-        SVLocusPloidy::Diploid => match &sample_score.gt {
+    match sample_score
+        .expected_cn_info
+        .ploidy(treat_single_copy_as_haploid)
+    {
+        SVLocusPloidy::Diploid => match &sample_score.shared.gt {
             Some(gt) => {
                 let (a0, a1) = match gt {
                     Genotype::Ref => (0, 0),
@@ -305,7 +335,7 @@ fn get_genotype(
                 false,
             ),
         },
-        SVLocusPloidy::Haploid => match &sample_score.gt {
+        SVLocusPloidy::Haploid => match &sample_score.shared.gt {
             Some(gt) => match gt {
                 Genotype::Ref => {
                     if format_haploid_samples_as_diploid {
@@ -342,21 +372,30 @@ fn get_genotype(
     }
 }
 
-fn get_genotype_quality(sample_score: &SVSampleScoreInfo) -> i32 {
+fn get_genotype_quality(sample_score: &SharedSampleScoreInfo) -> i32 {
     match &sample_score.gt {
         Some(_) => sample_score.gt_qscore,
         None => bcf::record::Numeric::missing(),
     }
 }
 
+/// # Arguments
+/// * `treat_single_copy_as_haploid` - It true, treat expected single-copy regions as haploid
+///
 fn get_genotype_lhoods(
     sample_score: &SVSampleScoreInfo,
     format_haploid_samples_as_diploid: bool,
+    treat_single_copy_as_haploid: bool,
 ) -> Vec<i32> {
     // This is defined even when GT is unknown, because in the absense of data, likelihoods are known even if uninformative
-    let gt_lhoods = sample_score.gt_lhood_qscore.clone();
+    let gt_lhoods = sample_score.shared.gt_lhood_qscore.clone();
 
-    if (!format_haploid_samples_as_diploid) && sample_score.ploidy == SVLocusPloidy::Haploid {
+    if (!format_haploid_samples_as_diploid)
+        && sample_score
+            .expected_cn_info
+            .ploidy(treat_single_copy_as_haploid)
+            == SVLocusPloidy::Haploid
+    {
         vec![
             gt_lhoods[Genotype::Ref as usize],
             gt_lhoods[Genotype::Hom as usize],
@@ -370,9 +409,9 @@ fn get_genotype_lhoods(
 fn get_sample_allele_depths(sample_score: &SVSampleScoreInfo) -> Vec<i32> {
     /*
     let adf = ad.iter().map(|x| x.fwd_strand as i32).collect::<Vec<_>>();
-    record.push_format_integer("ADF".as_bytes(), &adf).unwrap();
+    record.push_format_integer(b"ADF", &adf).unwrap();
     let adr = ad.iter().map(|x| x.rev_strand as i32).collect::<Vec<_>>();
-    record.push_format_integer("ADR".as_bytes(), &adr).unwrap();
+    record.push_format_integer(b"ADR", &adr).unwrap();
      */
 
     if sample_score.is_max_scoring_depth || sample_score.allele_depth.is_empty() {
@@ -389,7 +428,17 @@ fn get_sample_allele_depths(sample_score: &SVSampleScoreInfo) -> Vec<i32> {
     }
 }
 
-fn add_sample_info(sv_score: &SVScoreInfo, record: &mut bcf::Record, enable_phasing: bool) {
+/// # Arguments
+/// * `treat_single_copy_as_haploid` - It true, treat expected single-copy regions as haploid
+/// * `has_cnv_tags` - True if SV was matched to CNV and has additional CNV vcf tags
+///
+fn add_sv_sample_info(
+    sv_score: &SVScoreInfo,
+    record: &mut bcf::Record,
+    enable_phasing: bool,
+    treat_single_copy_as_haploid: bool,
+    has_cnv_tags: bool,
+) {
     // Some tools don't want to accept haploid GT records, so this flag will setup VCF output to
     // write them as diploid instead if true.
     //
@@ -399,12 +448,15 @@ fn add_sample_info(sv_score: &SVScoreInfo, record: &mut bcf::Record, enable_phas
     let mut gqs = Vec::new();
     let mut pls = Vec::new();
     let mut ads = Vec::new();
+    let mut cns = Vec::new();
+    let mut cnqs = Vec::new();
     let mut pss = Vec::new();
     let mut is_any_phased = false;
     for sample_score in sv_score.samples.iter() {
-        let (gt, is_sample_phased) = get_genotype(
+        let (gt, is_sample_phased) = get_sv_genotype(
             sample_score,
             format_haploid_samples_as_diploid,
+            treat_single_copy_as_haploid,
             enable_phasing,
         );
         if is_sample_phased {
@@ -422,17 +474,27 @@ fn add_sample_info(sv_score: &SVScoreInfo, record: &mut bcf::Record, enable_phas
             }
         }
 
-        gqs.push(get_genotype_quality(sample_score));
+        gqs.push(get_genotype_quality(&sample_score.shared));
         pls.extend(get_genotype_lhoods(
             sample_score,
             format_haploid_samples_as_diploid,
+            treat_single_copy_as_haploid,
         ));
         ads.extend(get_sample_allele_depths(sample_score));
+
+        if has_cnv_tags {
+            cns.push(get_copy_number(&sample_score.shared));
+            cnqs.push(get_copy_number_quality(&sample_score.shared));
+        }
     }
     record.push_format_integer(b"GT", &gts).unwrap();
     record.push_format_integer(b"GQ", &gqs).unwrap();
     record.push_format_integer(b"PL", &pls).unwrap();
     record.push_format_integer(b"AD", &ads).unwrap();
+    if has_cnv_tags {
+        record.push_format_integer(b"CN", &cns).unwrap();
+        record.push_format_integer(b"CNQ", &cnqs).unwrap();
+    }
     if !pss.is_empty() && is_any_phased {
         record.push_format_integer(b"PS", &pss).unwrap();
     }
@@ -455,7 +517,7 @@ fn add_vcf_record_sample_scoring(
 
     let is_inversion_filter = is_bnd && rsv.ext.inversion_id.is_some();
     let is_conflicting_gt = rsv.ext.is_inversion && rsv.ext.is_conflicting_gt;
-    add_vcf_filters(
+    add_sv_vcf_filters(
         settings,
         &rsv.score,
         &mut record,
@@ -468,7 +530,13 @@ fn add_vcf_record_sample_scoring(
         add_contig_pos(rsv.contig_pos_before_breakend1, &mut record);
         add_overlap_indexes(group_contig_indexes, &mut record);
     } else {
-        add_sample_info(&rsv.score, &mut record, settings.enable_phasing);
+        add_sv_sample_info(
+            &rsv.score,
+            &mut record,
+            settings.enable_phasing,
+            settings.treat_single_copy_as_haploid,
+            rsv.ext.is_cnv_match,
+        );
     }
 
     record
@@ -566,26 +634,30 @@ fn convert_refined_sv_to_non_bnd_vcf_record(
     add_sv_type(sv_type, &mut record);
 
     // Set END - (use value+1 to convert to 1-indexed position)
+    //
+    // Note that we keep this even though its deprecated in VCF 4.4, to reduce transitional confusion
     record
-        .push_info_integer("END".as_bytes(), &[(end + 1) as i32])
+        .push_info_integer(b"END", &[(end + 1) as i32])
         .unwrap();
 
     // Set SVLEN
+    //
+    // SVLEN is different in the VCF 4.4 spec, always positive and follows the symbolic allele
     {
-        // Get a positive SVLEN value for DUP and INV to be forward-compatible with VCF 4.4:
+        // Ensure SVLEN is always positive to better align with the VCF 4.4 spec:
         let sv_len = match sv_type {
-            VcfSVType::Deletion | VcfSVType::Insertion => ins_size - del_size,
+            VcfSVType::Insertion => ins_size,
             _ => del_size,
         };
         record
-            .push_info_integer("SVLEN".as_bytes(), &[sv_len as i32])
+            .push_info_integer(b"SVLEN", &[sv_len as i32])
             .unwrap();
     }
 
     add_homology_tags(seg1, &rsv.breakend1_homology_seq, &mut record);
 
     if !rsv.bp.is_precise {
-        record.push_info_flag("IMPRECISE".as_bytes()).unwrap();
+        record.push_info_flag(b"IMPRECISE").unwrap();
     }
 
     add_inslen(&rsv.bp, &mut record);
@@ -595,6 +667,8 @@ fn convert_refined_sv_to_non_bnd_vcf_record(
     }
 
     add_event(rsv, &mut record);
+
+    add_svclaim(sv_type, rsv.ext.is_cnv_match, true, &mut record);
 
     let is_bnd = false;
     let record = add_vcf_record_sample_scoring(
@@ -788,12 +862,12 @@ fn convert_refined_sv_to_bnd_vcf_record(
     {
         let mate_id_str = get_bnd_sv_id_label(&rsv.id, !is_breakend1);
         record
-            .push_info_string("MATEID".as_bytes(), &[mate_id_str.as_bytes()])
+            .push_info_string(b"MATEID", &[mate_id_str.as_bytes()])
             .unwrap();
     }
 
     if !rsv.bp.is_precise {
-        record.push_info_flag("IMPRECISE".as_bytes()).unwrap();
+        record.push_info_flag(b"IMPRECISE").unwrap();
     }
 
     add_inslen(&rsv.bp, &mut record);
@@ -817,12 +891,30 @@ fn is_same_pos_record(r1: &bcf::Record, r2: &bcf::Record) -> bool {
     r1.rid() == r2.rid() && r1.pos() == r2.pos()
 }
 
-fn get_bcf_record_homlen(rec: &bcf::Record) -> i64 {
+fn get_bcf_record_homlen(rec: &bcf::Record) -> Option<i32> {
     let x = rec.info(b"HOMLEN").integer().unwrap();
     if let Some(x) = x {
-        x.first().cloned().unwrap() as i64
+        x.first().cloned()
     } else {
-        0
+        None
+    }
+}
+
+fn get_bcf_record_end(rec: &bcf::Record) -> Option<i32> {
+    let x = rec.info(b"END").integer().unwrap();
+    if let Some(x) = x {
+        x.first().cloned()
+    } else {
+        None
+    }
+}
+
+fn get_bcf_record_svlen(rec: &bcf::Record) -> Option<i32> {
+    let x = rec.info(b"SVLEN").integer().unwrap();
+    if let Some(x) = x {
+        x.first().cloned()
+    } else {
+        None
     }
 }
 
@@ -830,6 +922,8 @@ fn is_duplicate_record(r1: &bcf::Record, r2: &bcf::Record) -> bool {
     is_same_pos_record(r1, r2)
         && (r1.alleles() == r2.alleles())
         && (get_bcf_record_homlen(r1) == get_bcf_record_homlen(r2))
+        && (get_bcf_record_svlen(r1) == get_bcf_record_svlen(r2))
+        && (get_bcf_record_end(r1) == get_bcf_record_end(r2))
 }
 
 /// Filter out duplicate vcf records
@@ -838,25 +932,28 @@ fn is_duplicate_record(r1: &bcf::Record, r2: &bcf::Record) -> bool {
 ///
 /// Duplicated variants are supposed to be prevented by the pipeline through good calling logic, but
 /// in case any make it this far we remove them here as a final filtration step. Note that because
-/// this is just an 'emergency backup filter', it is conservative.
+/// this is just an 'emergency backup filter', it is conservative, and some duplications may make it
+/// through.
 ///
 fn dedup_records(records: Vec<VcfRecord>) -> (Vec<VcfRecord>, usize) {
-    let mut new_records: Vec<VcfRecord> = Vec::new();
+    let mut deduplicated_records: Vec<VcfRecord> = Vec::new();
     let mut first_matching_pos_index = 0;
     let mut duplicate_record_count = 0;
     for record in records {
         // Update first_matching_pos_index
-        if !(new_records.is_empty()
-            || is_same_pos_record(&record.0, &new_records[first_matching_pos_index].0))
+        if !(deduplicated_records.is_empty()
+            || is_same_pos_record(&record.0, &deduplicated_records[first_matching_pos_index].0))
         {
-            first_matching_pos_index = new_records.len();
+            first_matching_pos_index = deduplicated_records.len();
         }
 
         // Check this record against all accepted records at the same position to decide if it will
         // be filtered.
         //
         let mut filter_duplicate = false;
-        for accepted_record in new_records[first_matching_pos_index..new_records.len()].iter() {
+        for accepted_record in
+            deduplicated_records[first_matching_pos_index..deduplicated_records.len()].iter()
+        {
             if is_duplicate_record(&record.0, &accepted_record.0) {
                 filter_duplicate = true;
                 duplicate_record_count += 1;
@@ -864,10 +961,10 @@ fn dedup_records(records: Vec<VcfRecord>) -> (Vec<VcfRecord>, usize) {
             }
         }
         if !filter_duplicate {
-            new_records.push(record);
+            deduplicated_records.push(record);
         }
     }
-    (new_records, duplicate_record_count)
+    (deduplicated_records, duplicate_record_count)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -959,24 +1056,217 @@ fn convert_sv_group_to_vcf_records(
             VcfSVType::SingleBreakend => {
                 panic!("No support for single-ended breakend output to VCF");
             }
+            VcfSVType::CopyNumberVariant => {
+                panic!("Invalid type in sv_group: CopyNumberVariant");
+            }
         }
     }
 }
 
-/// Returns the de-duplicated records and the count of filtered duplicate records
+/// Get CNV htslib-encoded genotype for sample
 ///
+/// Return htslib-encoded GT value
+///
+fn get_cnv_genotype(
+    treat_single_copy_as_haploid: bool,
+    cnv_sample_score: &CNVSampleScoreInfo,
+) -> Vec<i32> {
+    let is_haploid = treat_single_copy_as_haploid && cnv_sample_score.expected_copy_number == 1;
+    let copy_number = cnv_sample_score.shared.copy_number;
+
+    use bcf::record::GenotypeAllele::*;
+    if !is_haploid {
+        // diploid (default) case:
+        match copy_number {
+            Some(0) => vec![i32::from(Unphased(1)), i32::from(Unphased(1))],
+            Some(1) => vec![i32::from(Unphased(0)), i32::from(Unphased(1))],
+            Some(x) if x > 1 => vec![i32::from(UnphasedMissing), i32::from(Unphased(1))],
+            _ => vec![i32::from(UnphasedMissing), i32::from(UnphasedMissing)],
+        }
+    } else {
+        // haploid case:
+        match copy_number {
+            Some(x) if x == 0 || x > 1 => {
+                vec![i32::from(Unphased(1)), vcf_utils::VECTOR_END_INTEGER]
+            }
+            _ => vec![i32::from(UnphasedMissing), vcf_utils::VECTOR_END_INTEGER],
+        }
+    }
+}
+
+fn get_copy_number(sample_score: &SharedSampleScoreInfo) -> i32 {
+    match sample_score.copy_number {
+        Some(x) => x as i32,
+        None => bcf::record::Numeric::missing(),
+    }
+}
+
+fn get_copy_number_quality(sample_score: &SharedSampleScoreInfo) -> i32 {
+    match sample_score.copy_number {
+        Some(_) => sample_score.copy_number_qscore,
+        None => bcf::record::Numeric::missing(),
+    }
+}
+
+fn add_cnv_sample_info(settings: &VcfSettings, cnv_score: &CNVScoreInfo, record: &mut bcf::Record) {
+    let mut gts = Vec::new();
+    let mut cns = Vec::new();
+    let mut cnqs = Vec::new();
+
+    for cnv_sample_score in cnv_score.samples.iter() {
+        cns.push(get_copy_number(&cnv_sample_score.shared));
+        cnqs.push(get_copy_number_quality(&cnv_sample_score.shared));
+
+        let gt = get_cnv_genotype(settings.treat_single_copy_as_haploid, cnv_sample_score);
+        gts.extend(gt);
+    }
+    record.push_format_integer(b"GT", &gts).unwrap();
+    record.push_format_integer(b"CN", &cns).unwrap();
+    record.push_format_integer(b"CNQ", &cnqs).unwrap();
+}
+
+/// Set CNV QUAL
+fn add_cnv_qual(score: &CNVScoreInfo, record: &mut bcf::Record) {
+    record.set_qual(match score.alt_score {
+        Some(x) => x.round(),
+        None => bcf::record::Numeric::missing(),
+    });
+}
+
+fn add_cnv_vcf_filters(settings: &VcfSettings, score: &CNVScoreInfo, record: &mut bcf::Record) {
+    if let Some(alt_score) = score.alt_score {
+        if alt_score < settings.min_qual as f32 {
+            record.push_filter("MinQUAL".as_bytes()).unwrap();
+        }
+    }
+    if record.filters().peekable().peek().is_none() {
+        record.push_filter("PASS".as_bytes()).unwrap();
+    }
+}
+
+fn add_vcf_record_cnv_sample_scoring(
+    settings: &VcfSettings,
+    score: &CNVScoreInfo,
+    record: &mut bcf::Record,
+) {
+    add_cnv_qual(score, record);
+
+    add_cnv_vcf_filters(settings, score, record);
+
+    add_cnv_sample_info(settings, score, record);
+}
+
+fn get_cnv_id_label(cnv: &RefinedCNV) -> String {
+    format!(
+        "{}:CNV:{}:{}:{}",
+        env!("CARGO_PKG_NAME"),
+        cnv.source_sample_index,
+        cnv.segment.chrom_index,
+        cnv.segment.range.start
+    )
+}
+
+fn convert_cnv_to_vcf_record(
+    settings: &VcfSettings,
+    genome_ref: &GenomeRef,
+    chrom_list: &ChromList,
+    sample_count: usize,
+    vcf: &bcf::Writer,
+    cnv: &RefinedCNV,
+) -> Option<VcfRecord> {
+    assert_eq!(sample_count, cnv.score.samples.len());
+
+    let sv_type = match cnv.get_cnv_type() {
+        Some(x) => x,
+        None => {
+            return None;
+        }
+    };
+
+    let seg = &cnv.segment;
+
+    // CNV segmentation format marks the start of the CNV range as zero-indexed inclusive. Here we translate to a zero-indexed version of the
+    // standard VCF position, which starts one base before the CNV, per the spec for all symbolic alleles, so need to subtract 1.
+    let start = seg.range.start - 1;
+    let end = seg.range.end - 1;
+
+    // Although a VCF stat POS of 0 (1-indexed) is VCF spec compliant, it is de-facto non-spec, b/c htslib and htsjdk don't really support it, so
+    // this case gets special-cased up to 1:
+    let start = std::cmp::max(start, 0);
+
+    assert!(end > start);
+    let cnv_size = end - start;
+
+    // Bail out of difficult cases
+    if start < -1 {
+        return None;
+    }
+
+    let mut record = vcf.empty_record();
+    record.set_rid(Some(seg.chrom_index as u32));
+    record.set_pos(start);
+
+    // Set ID
+    {
+        let id_str = get_cnv_id_label(cnv);
+        record.set_id(id_str.as_bytes()).unwrap();
+    }
+
+    // Set REF and ALT
+    let chrom_info = &chrom_list.data[seg.chrom_index];
+    let chrom_seq = genome_ref.chroms.get(chrom_info.label.as_str()).unwrap();
+
+    let ref_seq = if start >= 0 {
+        &chrom_seq[start as usize..(start + 1) as usize]
+    } else {
+        b"N"
+    };
+
+    let alt_seq = match sv_type {
+        VcfSVType::Deletion => b"<DEL>",
+        VcfSVType::Duplication => b"<DUP>",
+        _ => b"<CNV>",
+    };
+    record.set_alleles(&[ref_seq, alt_seq]).unwrap();
+
+    record.push_info_flag(b"IMPRECISE").unwrap();
+
+    add_sv_type(sv_type, &mut record);
+
+    // Set END - (use value+1 to convert to 1-indexed position)
+    record
+        .push_info_integer(b"END", &[(end + 1) as i32])
+        .unwrap();
+
+    record
+        .push_info_integer(b"SVLEN", &[cnv_size as i32])
+        .unwrap();
+
+    add_svclaim(sv_type, true, false, &mut record);
+
+    add_vcf_record_cnv_sample_scoring(settings, &cnv.score, &mut record);
+
+    Some(VcfRecord(record))
+}
+
+/// Convert `SVGroup`s into `VcfRecord`s
+///
+/// Returns the de-duplicated VCF records and the count of filtered duplicate VCF records
+///
+#[allow(clippy::too_many_arguments)]
 fn get_vcf_records(
     settings: &VcfSettings,
     genome_ref: &GenomeRef,
     chrom_list: &ChromList,
     sample_count: usize,
     sv_groups: &[SVGroup],
+    cnvs: &[RefinedCNV],
     vcf: &bcf::Writer,
     candidate_mode: bool,
 ) -> (Vec<VcfRecord>, usize) {
     let mut records = Vec::new();
 
-    for sv_group in sv_groups {
+    for sv_group in sv_groups.iter() {
         convert_sv_group_to_vcf_records(
             settings,
             genome_ref,
@@ -992,29 +1282,40 @@ fn get_vcf_records(
     records.sort();
 
     let enable_dedup_records = !(candidate_mode || settings.no_vcf_dedup);
-
-    if enable_dedup_records {
+    let (mut deduplicated_records, duplicate_record_count) = if enable_dedup_records {
         dedup_records(records)
     } else {
         (records, 0)
+    };
+
+    // Add CNV records AFTER deduplication because the CNV segmentation process prevents the
+    // style of FP duplicate we experience from breakpoint-based calling.
+    //
+    for cnv in cnvs {
+        let cnv_vcf_record =
+            convert_cnv_to_vcf_record(settings, genome_ref, chrom_list, sample_count, vcf, cnv);
+        if let Some(x) = cnv_vcf_record {
+            deduplicated_records.push(x);
+        }
     }
+
+    deduplicated_records.sort();
+
+    (deduplicated_records, duplicate_record_count)
 }
 
-/// This file outputs just the SV information, consistent with a traditional SV caller
-///
-/// A separate 'large-variant' VCF will output the joint information from both SV and CNV
-///
 /// # Arguments
-/// * candidate_mode - If true, don't write out scoring information, and use bcf format
+/// * `candidate_mode` - If true, don't write out scoring information, and use bcf format
 ///
 #[allow(clippy::too_many_arguments)]
 fn write_sv_vcf_file(
     settings: &VcfSettings,
-    filename: &Path,
+    filename: &Utf8Path,
     genome_ref: &GenomeRef,
     chrom_list: &ChromList,
     sample_names: &[&str],
     sv_groups: &[SVGroup],
+    cnvs: &[RefinedCNV],
     candidate_mode: bool,
 ) -> VcfStats {
     let format = if candidate_mode {
@@ -1033,6 +1334,7 @@ fn write_sv_vcf_file(
         chrom_list,
         sample_count,
         sv_groups,
+        cnvs,
         &vcf,
         candidate_mode,
     );
@@ -1049,7 +1351,7 @@ fn write_sv_vcf_file(
 
 pub struct VcfSettings {
     pub ref_filename: String,
-    pub output_dir: PathBuf,
+    pub output_dir: Utf8PathBuf,
     pub min_qual: i32,
 
     /// Disable end-stage VCF duplicate record filter (if not in candidate_mode)
@@ -1060,15 +1362,19 @@ pub struct VcfSettings {
 
     /// Enable phased genotype output if true
     pub enable_phasing: bool,
+
+    /// If true, treat SVs in expected single-copy regions as haploid
+    pub treat_single_copy_as_haploid: bool,
 }
 
 impl VcfSettings {
     pub fn new(
         ref_filename: &str,
-        output_dir: &Path,
+        output_dir: &Utf8Path,
         min_qual: i32,
         no_vcf_dedup: bool,
         enable_phasing: bool,
+        treat_single_copy_as_haploid: bool,
     ) -> Self {
         Self {
             ref_filename: ref_filename.to_string(),
@@ -1077,6 +1383,7 @@ impl VcfSettings {
             no_vcf_dedup,
             min_symbolic_deletion_size: 100_001,
             enable_phasing,
+            treat_single_copy_as_haploid,
         }
     }
 }
@@ -1097,6 +1404,7 @@ pub fn write_indexed_sv_vcf_file(
     chrom_list: &ChromList,
     sample_names: &[&str],
     sv_groups: &[SVGroup],
+    cnvs: &[RefinedCNV],
     candidate_mode: bool,
 ) -> VcfStats {
     assert!(sample_names.is_empty() || (!candidate_mode));
@@ -1113,11 +1421,7 @@ pub fn write_indexed_sv_vcf_file(
         "genotyped"
     };
 
-    info!(
-        "Writing {} structural variants to file: '{}'",
-        label,
-        filename.display()
-    );
+    info!("Writing {label} structural variants to file: '{filename}'");
 
     let vcf_stats = write_sv_vcf_file(
         settings,
@@ -1126,6 +1430,7 @@ pub fn write_indexed_sv_vcf_file(
         chrom_list,
         sample_names,
         sv_groups,
+        cnvs,
         candidate_mode,
     );
 

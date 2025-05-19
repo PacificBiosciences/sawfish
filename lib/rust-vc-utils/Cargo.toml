@@ -1,12 +1,12 @@
 [package]
 name = "rust-vc-utils"
-version = "0.28.0"
+version = "0.29.0"
 authors = ["Chris Saunders <csaunders@pacificbiosciences.com>"]
 description = "A library of miscellaneous variant calling utilities"
 edition = "2021"
 
 [dependencies]
-approx = "0"
+approx = "0.5"
 bio = "2"
 indicatif = "0.17"
 log = "0.4"
