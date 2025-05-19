@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::breakpoint::BreakendDirection;
-use crate::copy_number_segmentation::SampleTransitionTypes;
+use crate::copy_number_segmentation::{CopyNumberState, SampleTransitionTypes};
 use crate::int_range::{get_recip_overlap, IntRange};
 use crate::joint_call::{SampleJointCallData, SharedJointCallData};
 use crate::refine_sv::Genotype;
@@ -28,13 +28,13 @@ fn is_large_deldup(sv_group: &SVGroup, min_copynum_checked_sv_size: usize) -> bo
         .is_some_and(|x| x >= min_copynum_checked_sv_size)
 }
 
-fn annotate_segmentation_boost_breakends(
+fn annotate_segmentation_power_boost_breakends(
     all_sample_data: &[SampleJointCallData],
     sv_groups: &[SVGroup],
     transition_types: &mut [SampleTransitionTypes],
     min_copynum_checked_sv_size: usize,
 ) {
-    // For the copy-number track to be resegmented around a samller SV with relaxed transition scores, the copy number
+    // For the copy-number track to be resegmented around a smaller SV with relaxed transition scores, the copy number
     // must be consistent already throughout the span of the SV AND through a left and right edge region of the
     // following size:
     let sv_edge_size = 5000;
@@ -76,8 +76,6 @@ fn annotate_segmentation_boost_breakends(
                 continue;
             }
 
-            let sv_locus_expected_copy_number = sample_score.expected_cn_info.expected_copy_number;
-
             let sample_transition_types = &mut transition_types[sample_index];
 
             // Wind CNV index forward from head segment to find the first segment intersecting this SV
@@ -104,10 +102,21 @@ fn annotate_segmentation_boost_breakends(
 
                     // Check if all criteria are met for the creation of a low-cost copy-number state transition on this
                     // SV's boundaries
-                    if cn_segment.copy_number_info.state as u8 == sv_locus_expected_copy_number
-                        && (cn_segment_pos_range.start + sv_edge_size) <= be1.segment.range.start
-                        && (be2.segment.range.end + sv_edge_size) <= cn_segment_pos_range.end
-                    {
+                    let context_segment_large_enough = (cn_segment_pos_range.start + sv_edge_size)
+                        <= be1.segment.range.start
+                        && (be2.segment.range.end + sv_edge_size) <= cn_segment_pos_range.end;
+
+                    let context_copy_number_consistent_with_sv = {
+                        if be1.dir == BreakendDirection::LeftAnchor {
+                            // DEL
+                            cn_segment.copy_number_info.state != CopyNumberState::Zero
+                        } else {
+                            // DUP
+                            cn_segment.copy_number_info.state != CopyNumberState::High
+                        }
+                    };
+
+                    if context_copy_number_consistent_with_sv && context_segment_large_enough {
                         let start_pos = be1.segment.range.center();
                         let end_pos = be2.segment.range.center();
                         if be1.dir == BreakendDirection::LeftAnchor {
@@ -372,7 +381,7 @@ pub fn get_copynum_transition_types_from_breakends(
     // whether we retain their SV type or change them to BNDs:
     let min_copynum_checked_sv_size = 50000;
 
-    annotate_segmentation_boost_breakends(
+    annotate_segmentation_power_boost_breakends(
         all_sample_data,
         sv_groups,
         &mut transition_types,

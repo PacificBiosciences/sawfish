@@ -5,6 +5,7 @@
 * [Overview](#overview)
 * [Accuracy evaluation](#accuracy-evaluation)
 * [Getting started](#getting-started)
+* [Inputs](#inputs)
 * [Outputs](#outputs)
 * [Other usage details](#other-usage-details)
 
@@ -13,23 +14,23 @@
 Sawfish is a joint structural variant (SV) and copy number variant (CNV) caller for mapped HiFi sequencing reads. It
 discovers germline structural variants from local sequence assembly and jointly genotypes these variants across multiple
 samples. Sawfish additionally applies copy number segmentation on each sample's sequencing coverage levels,
-synchronizing structural variant breakpoints with copy number change boundaries in the process to improve classification
-of breakpoint-based structural variant calls, in addition to calling copy number variants.
+synchronizing structural variant breakpoints with copy number change boundaries in the process to improve both
+structural variant and CNV calling accuracy.
 
 Key features:
 - Combined assessment of all large variants in each sample.
-  - Sawfish provides a unified view of both SVs and CNVs in each sample, with redundant calls merged into single
-    variants describing both breakpoint and copy number detail.
+  - Sawfish provides a unified view of SVs and CNVs in each sample, with each jointly-supported variant merged into one
+    record detailing both breakpoint and copy number support.
 - High SV discovery and genotyping accuracy
   - All breakpoint-based structural variants are modeled and genotyped as local haplotypes, yielding substantial
-    accuracy gains on modern SV truth sets such as the GIAB HG002 T2T SVs. 
+    accuracy gains on modern SV truth sets such as the GIAB HG002 T2T SVs.
 - High resolution
   - All breakpoint-based structural variants are assembled to basepair resolution and reported with breakpoint homology
     and insertion details.
 - Integrated copy number segmentation
-  - Integrated copy number segmentation with GC-bias correction is used to: (1) call CNVs independent of any breakpoint
-    support, and (2) improve the classification of large structural variant deletion and duplication calls, any such
-    calls lacking consistent depth support are reclassified as breakends.
+  - Integrated copy number segmentation with GC-bias correction is used to: (1) independently call CNVs and (2) improve
+    the classification of large SV deletion and duplication calls, any such calls lacking consistent depth support are
+    reclassified as breakends.
 - Simple multi-threaded workflow
   - A single command-line is used for each of the discover and joint-call steps
 
@@ -54,16 +55,16 @@ release tarball, or via conda as described below.
 #### Install from GitHub
 
 To install sawfish from github, download the latest release tarball compiled for 64-bit Linux on the [github release
-channel](https://github.com/PacificBiosciences/sawfish/releases/latest), then unpack the tar file. Using v0.12.1 as an
+channel](https://github.com/PacificBiosciences/sawfish/releases/latest), then unpack the tar file. Using v2.0.0 as an
 example, the tar file can be downloaded and unpacked as follows:
 
-    wget https://github.com/PacificBiosciences/sawfish/releases/download/v0.12.1/sawfish-v0.12.1-x86_64-unknown-linux-gnu.tar.gz
-    tar -xzf sawfish-v0.12.1-x86_64-unknown-linux-gnu.tar.gz
+    wget https://github.com/PacificBiosciences/sawfish/releases/download/v2.0.0/sawfish-v2.0.0-x86_64-unknown-linux-gnu.tar.gz
+    tar -xzf sawfish-v2.0.0-x86_64-unknown-linux-gnu.tar.gz
 
 The sawfish binary is found in the `bin/` directory of the unpacked file distribution. This can be run with the help
 option to test the binary and review latest usage details:
 
-    sawfish-v0.12.1-x86_64-unknown-linux-gnu/bin/sawfish --help
+    sawfish-v2.0.0-x86_64-unknown-linux-gnu/bin/sawfish --help
 
 #### Install from conda
 
@@ -82,10 +83,10 @@ Sawfish analyzes samples in 2 steps:
    - Identifies candidate structural variant (SV) regions
     - Assembles each candidate SV into a local SV haplotype.
     - Builds a binned track of sequencing coverage over the whole genome
-    - Runs initial copy number segmentation on the depth track, and iterates the segmentation to estimate and adjust for
-      sample-specific GC-bias levels.
-2. `joint-call` - The joint call step takes the output of the sawfish 'discover' step for one-to-many samples and
-   provides jointly genotyped SV calls over the sample set. Joint calling includes the following operations:
+    - Runs initial 'draft' copy number segmentation on the depth track, and iterates the segmentation to estimate and
+      adjust for sample-specific GC-bias levels.
+2. `joint-call` - Given the 'discover' command results from each sample, the joint call step merges and genotypes SVs,
+   calls CNVs and unifies SV/CNV calls from one or more samples. Joint calling includes the following operations:
     - Merge duplicate SV haplotypes
     - Associate deduplicated SV haplotypes with samples
     - Evaluate SV read support in each sample
@@ -107,10 +108,10 @@ the `discover` and the `joint-call` steps.
       --threads 16  \
       --ref GRCh38.fa \
       --bam HG002.GRCh38.bam \
-      --expected-cn expected_cn.hg38.XY.bed \
-      --cnv-excluded-regions cnv.excluded_regions_inc_sawfish_common_cnv.hg38.bed.gz \
+      --expected-cn ${DISTRO_ROOT_DIR}/data/expected_cn/expected_cn.hg38.XY.bed \
+      --cnv-excluded-regions ${DISTRO_ROOT_DIR}/data/cnv_excluded_regions/annotation_and_common_cnv.hg38.bed.gz \
       --output-dir HG002_discover_dir
-    
+
     sawfish joint-call \
       --threads 16 \
       --sample HG002_discover_dir \
@@ -137,24 +138,24 @@ sample. Note that these 3 commands are independent and could be run in parallel.
       --threads 16 \
       --ref GRCh38.fa \
       --bam HG004.GRCh38.bam \
-      --expected-cn expected_cn.hg38.XY.bed \
-      --cnv-excluded-regions cnv.excluded_regions_inc_sawfish_common_cnv.hg38.bed.gz \
+      --expected-cn ${DISTRO_ROOT_DIR}/data/expected_cn/expected_cn.hg38.XX.bed \
+      --cnv-excluded-regions ${DISTRO_ROOT_DIR}/data/cnv_excluded_regions/annotation_and_common_cnv.hg38.bed.gz \
       --output-dir HG004_discover_dir
 
     sawfish discover \
       --threads 16 \
       --ref GRCh38.fa \
       --bam HG003.GRCh38.bam \
-      --expected-cn expected_cn.hg38.XY.bed \
-      --cnv-excluded-regions cnv.excluded_regions_inc_sawfish_common_cnv.hg38.bed.gz \
+      --expected-cn ${DISTRO_ROOT_DIR}/data/expected_cn/expected_cn.hg38.XY.bed \
+      --cnv-excluded-regions ${DISTRO_ROOT_DIR}/data/cnv_excluded_regions/annotation_and_common_cnv.hg38.bed.gz \
       --output-dir HG003_discover_dir
 
     sawfish discover \
       --threads 16 \
       --ref GRCh38.fa \
       --bam HG002.GRCh38.bam \
-      --expected-cn expected_cn.hg38.XY.bed \
-      --cnv-excluded-regions cnv.excluded_regions_inc_sawfish_common_cnv.hg38.bed.gz \
+      --expected-cn ${DISTRO_ROOT_DIR}/data/expected_cn/expected_cn.hg38.XY.bed \
+      --cnv-excluded-regions ${DISTRO_ROOT_DIR}/data/cnv_excluded_regions/annotation_and_common_cnv.hg38.bed.gz \
       --output-dir HG002_discover_dir
 
 After all discover steps have completed, joint calling can be run over all 3 samples using the following command:
@@ -171,6 +172,23 @@ The primary output of the `joint-call` step can be found in `HG002_trio_joint_ca
 
 Just as in the single-sample case, note that the reference fasta and all 3 sample bam paths specified in the `discover`
 steps are stored and reused in the subsequent `joint-call` step.
+
+### Upgrading to sawfish v2 from previous sawfish versions
+
+The sawfish version 2 release addd a substantial new CNV calling and integration feature. For users switching from
+previous sawfish versions this can largely be treated as a gradual change, in that the accuracy of smaller SVs remains
+just as high and computational resource demands are similar. However, the following differences should be considered:
+
+1. The final output is now VCF v4.4, which introduces some subtle changes, notably `SVLEN` is now the absolute value of
+the SV size.
+
+2. Specifying expected copy number regions with the  `--expected-cn` argument is now an important configuration input
+for getting meaningful SV/CNV results from the sex chromosomes. Sawfish's previous behavior to change SV ploidy as a
+function of expected copy number is no longer the default behavior, see full details in the [expected copy number
+section](#expected-copy-number).
+
+3. Specifying excluded CNV regions with the `--cnv-excluded-regions` argument is another important new configuration
+input for improving CNV precision. See the [CNV excluded regions section](#cnv-excluded-regions) for full details.
 
 ## Inputs
 
@@ -192,29 +210,39 @@ reciprocal requirement, the reference fasta may contain chromosome names not pre
 
 ### Expected copy number
 
-An expected copy number file can be provided for each sample during the discover step, to set expected copy number per
-region of the genome. Any regions not specified will have a default expected copy number of 2. If no file is specified
-the default expected copy number of 2 will apply to the whole genome.
+An BED file can be provided for each sample during the discover step to set expected copy number per region of the
+genome, by using the `--expected-cn` option. Any regions not specified will have a default expected copy number of 2. If
+no file is specified the default expected copy number of 2 will apply to the whole genome.
 
 The expected copy number is important in determining which copy number segments will be output as CNV deletions or
 duplications, and is especially useful to indicate the expected copy number for mammalian sex chromosomes.
 
-During the joint-call step, the expected copy number inputs from the discover phase are retained per sample, so for
-instance in a human pedigree analysis the expected copy number on the chrX nPAR region can vary by sample sex chromosome
-complement.
-
-The expected copy number file must be in BED format, with the first 3 columns used to specify regions following standard
-BED format, and with expected copy number provided in column 5. Column 4 is ignored and can be used as a region label.
-
-Example expected copy number BED files are provided for some common human reference genomes and sex chromosome
+Pre-generated expected copy number BED files are provided for some common human reference genomes and sex chromosome
 complements in the sawfish [expected_cn](../data/expected_cn/) directory. These can be used directly or serve as
-templates for other sample configurations.
+templates for other sample configurations. As an example, the BED file for hg38 and karyotype XY is:
 
-Note that in earlier versions of sawfish, before CNV output was introduced, the expected copy number input would change
-the ploidy used by the genotyper for breakpoint-based calls. This ploidy change is no longer made by default, and for
-general purpose calling this change is no longer recommended. If the previous ploidy-change behavior is preferred, the
-`--treat_single_copy_as_haploid` option can be provided in the joint-call step to cause any region with copy number 1 to
-be treated as haploid (all other cases will continue to be treated as diploid).
+```
+chrX	0	2781479	chrX_PAR_1	2
+chrX	2781479	155701382	chrX_uniq_1	1
+chrX	155701382	156040895	chrX_PAR_2	2
+chrY	0	2781479	chrY_PAR_1	0
+chrY	2781479	56887902	chrY_uniq_1	1
+chrY	56887902	57227415	chrY_PAR_2	0
+```
+
+As demonstrated in this example, the expected copy number file must be in BED format, with the first 3 columns used to
+specify regions following standard BED format. Expected copy number must be provided in column 5. Column 4 is ignored
+and can be used as a region label.
+
+During the joint-call step, the expected copy number inputs from the discover phase are retained per sample allowing,
+e.g. the expected copy number on the chrX nPAR region to vary by sample sex chromosome complement in a human pedigree
+analysis.
+ß
+Note that in earlier versions of sawfish before CNV output was introduced, the expected copy number input would change
+the ploidy used by the genotyper for breakpoint-based calls. Since sawfish v2, this ploidy change is no longer made by
+default, and for general purpose calling this change is no longer recommended. If the previous ploidy-change behavior is
+preferred, the `--treat-single-copy-as-haploid` option can be provided in the joint-call step to cause any region with
+copy number 1 to be treated as haploid (all other cases will continue to be treated as diploid).
 
 ### CNV excluded regions
 
@@ -225,23 +253,20 @@ the section further below, but note that these regions do not change the behavio
 
 Pre-computed CNV excluded regions are provided in the sawfish [cnv_excluded_regions](../data/cnv_excluded_regions/)
 directory for some common human reference genomes. The recommended exclusion track for GRCh38 is
-`cnv.excluded_regions_inc_sawfish_common_cnv.hg38.bed.gz`. This is the only reference genome for which complete excluded
-regions are provided. The complete excluded regions are a combination of (1) regions annotated as assembly gaps,
-centromeres, and alpha satellite sequences (2) regions where sawfish calls the same CNV type in at least 50% of the 47
-HPRC year1 cohort samples
+`annotation_and_common_cnv.hg38.bed.gz`. This is the only reference genome for which a combined annotation and common CNV based
+exclude region set is provided. Annotation-based excluded regions include assembly gaps,centromeres, and alpha satellite
+sequences. Common CNV excluded regions specify where sawfish calls the same CNV type in a high fraction of samples within a
+diverse sample cohort. In this case the common CNV regions indicate that the CNV type is present in at least 50% of the 47
+[HPRC year1 cohort samples]
 (https://raw.githubusercontent.com/human-pangenomics/HPP_Year1_Data_Freeze_v1.0/main/sample_metadata/hprc_year1_sample_metadata.txt).
 
-For other genomes, 'base'/minimal excluded region tracks are provided for the first excluded region type only (regions
-annotated as assembly gaps, centromeres, and alpha satellite sequences). These files are named with the pattern
-`cnv.excluded_regions.${genome_tag}.bed.gz`, where the genome_tag value may be hg38, hg19 or hs37d5. For reference
+For other genomes, 'annotation_only' excluded region tracks are provided. These files are named with the pattern
+`annotation_only.${genome_tag}.bed.gz`, where the genome_tag value may be `hg38`, `hg19` or `hs37d5`. For reference
 genomes other than GRCh38, these files provide some level of exclusion to reduce false positives, and should produce a
 better result than not excluding any regions. For other reference genomes, it is recommended to develop a similarly
-expanded exclusion region track including common sawfish CNV calls from a background cohort.
-
-The scripts used to produce the 'base' exclusion regions are provided in the [cnv_excluded_regions script
-directory](../scripts/cnv_excluded_regions). Here `get_cnv_exclusion_regions.bash` is used to produce the exclusion
-tracks for hg19 and hg38, and provides a template which could be adapted to other genomes supported on the UCSC browser.
-The script `convert_hg19_regions_to_hs37d5.bash` is used to convert the hg19 regions to hs37d5.
+expanded exclusion region track including common sawfish CNV calls from a background cohort. The methods used to
+produce both annotation and common-cnv based excluded regions are described in the [cnv_excluded_regions script
+directory](../scripts/cnv_excluded_regions), which can be used to extend support to additional reference genomes.
 
 #### How excluded regions influence copy number calling
 
@@ -251,7 +276,7 @@ through a relatively small excluded region without interruption. This allows a m
 represented as a continuous CNV over a reference assembly gap, for example.
 
 A summary of excluded region behavior is as follows:
-- All depth bins intersecting an excluded region are removed from the depth bins track. 
+- All depth bins intersecting an excluded region are removed from the depth bins track.
 - All minor allele frequency evidence intersecting an excluded region are removed from the minor allele frequency track.
 - Segmentation will treat any depth bins intersecting an excluded region as having a small bias in favor of a special
 unknown copy-number state -- the probability of all other copy number states are equal, but lower than the unknown
@@ -278,16 +303,18 @@ The primary output of the joint-calling step are the SV and CNV calls for all sa
 
 #### Quality scores
 
-The primary quality metrics for each SV call are:
-1. `QUAL` - This is the phred-scaled confidence that the given SV allele exists in the set of genotyped samples.
-2. `GQ` - This value is provided once for each sample. It is the phred-scaled confidence that the given sample genotype
-   is correct.
-
-The primary quality metrics for each CNV call are:
-1. `QUAL` - This is the phred-scaled confidence that the segment copy number is not the expected copy number in at least
-   one sample.
-2. `CNQ` - This value is provided once for each sample. It is the phred-scaled confidence that the given copy number
-   (`CN`) value is correct for this segment.
+The primary quality metrics for each variant call are:
+1. `QUAL` - This is the phred-scaled confidence that the given alternate allele exists in the set of analyzed samples
+    - For SV calls supported only by breakpoint evidence, it reflects the probability of any non-reference genotype in
+      any sample.
+    - For CNV calls supported only by depth evidence, it reflects the probability of that the segment copy number is not
+      the expected copy number in any sample.
+    - For merged SV/CNV calls, QUAL reflects the maximum of the breakpoint and depth-based QUAL values from the merged
+      components
+2. `GQ` - This value is provided once for each sample in a breakpont-based call. It is the phred-scaled confidence that
+   the given sample genotype is correct in this sample based on supporting read evidence at the breakpoint.
+2. `CNQ` - This value is provided once for each sample in a depth-based call. It is the phred-scaled confidence that the
+   given copy number (`CN`) value is correct for this segment in the given sample.
 
 All phred-scaled quality scores in the VCF output have a maximum value of 999.
 
@@ -495,14 +522,13 @@ chr1    1651421 sawfish:0:92:0:0        GTAGCCCCTCTGAACGGTCTGTGACACACGCATGCTTTCA
 
 ## Other usage details
 
-### Analyzing CNV/Large variants only
+### Faster analysis for CNV/Large variants only
 
-Sawfish has an option to run selecting for large-scale breakpoint events and CNVs only by adding the
-`--disable-small-indels` flag in the discover step of every sample. In this mode all CNVs and non-indel SVs will be
-retained as well as large scale breakpoint-based deletions and duplications. Not that this mode is based on calling
-mechanism rather than a strict size cutoff, but in general all content above ~10kb should still be present in this mode.
-This is an experimental feature, meaning that the exact behavior of this mode may change in the future based on user
-feedback, but in general when running with this option sawfish can be thought of as a breakpoint-enhanced CNV caller.
+Sawfish has a faster CNV-focused mode which can be enabled by using the `--fast-cnv-mode` flag in the discover step of
+every sample. With this setting, sawfish analyzes only the larger-scale SV breakpoint evidence that could be useful to
+improve CNV/large-variant accuracy, together with the depth-based CNV analysis which would be run regardless of the mode
+setting. Smaller assembly regions are skipped, which will remove all insertions and most breakpoint-based deletions
+below about 1kb.
 
 ### Determinism
 

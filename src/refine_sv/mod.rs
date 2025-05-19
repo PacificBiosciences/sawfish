@@ -37,7 +37,7 @@ use crate::expected_ploidy::{get_max_haplotype_count_for_regions, SVLocusExpecte
 use crate::genome_segment::{GenomeSegment, IntRange};
 use crate::log_utils::debug_msg;
 use crate::refine_sv::SVFilterType::{GTExcluded, NoFilter, Replicated};
-use crate::refined_cnv::SharedSampleScoreInfo;
+use crate::refined_cnv::{SharedSampleScoreInfo, SharedVariantScoreInfo};
 use crate::run_stats::RefineStats;
 use crate::sv_group::SVGroup;
 use crate::sv_id::{get_sv_id_label, SVUniqueIdData};
@@ -216,8 +216,13 @@ impl SVSampleScoreInfo {
 
 #[derive(Clone, Default)]
 pub struct SVScoreInfo {
-    /// Quality score for any non-reference genotype in any sample
-    pub alt_score: Option<f32>,
+    /// Quality score for any non-reference genotype in any sample based on read-support likelihoods
+    pub sv_alt_score: Option<f32>,
+
+    /// Quality score for any non-default copy number in any sample based on depth-support likelihoods
+    ///
+    /// This is only defined if the SV has been merged with a CNV
+    pub cnv_alt_score: Option<f32>,
 
     /// If true this SV should be filtered as a replicate.
     ///
@@ -232,6 +237,28 @@ pub struct SVScoreInfo {
 
     /// Scores for each sample
     pub samples: Vec<SVSampleScoreInfo>,
+}
+
+impl SVScoreInfo {
+    /// Quality score for any non-reference genotype in any sample or any non-default copy number in any sample
+    pub fn alt_score(&self) -> Option<f32> {
+        match (self.sv_alt_score, self.cnv_alt_score) {
+            (Some(sv), Some(cnv)) => Some(sv.max(cnv)),
+            (Some(sv), None) => Some(sv),
+            (None, Some(cnv)) => Some(cnv),
+            (None, None) => None,
+        }
+    }
+
+    pub fn update_cnv_alt_score(&mut self, max_qscore: u32) {
+        self.cnv_alt_score = self.get_cnv_alt_score(max_qscore);
+    }
+}
+
+impl SharedVariantScoreInfo for SVScoreInfo {
+    fn get_shared_sample_iter(&self) -> impl Iterator<Item = &SharedSampleScoreInfo> {
+        self.samples.iter().map(|x| &x.shared)
+    }
 }
 
 #[derive(Clone)]
@@ -776,13 +803,12 @@ pub fn refine_sv_candidates(
     //
     let cluster_job_order = get_cluster_job_order(clusters);
 
+    let disable_small_indels = settings.fast_cnv_mode || shared_settings.disable_small_indels;
+
     // Optionally apply debug filter
     let cluster_job_order = cluster_job_order
         .into_iter()
-        .filter(|(_, bpc)| {
-            !shared_settings.disable_svs
-                && (!shared_settings.disable_small_indels || (bpc.assembly_segments.len() > 1))
-        })
+        .filter(|(_, bpc)| (!disable_small_indels || (bpc.assembly_segments.len() > 1)))
         .collect::<Vec<_>>();
 
     write_assembly_regions_to_bed(&settings.output_dir, chrom_list, clusters);

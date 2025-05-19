@@ -1434,8 +1434,10 @@ pub fn get_sample_copy_number_segments(
         );
 
         info!(
-            "Haploid coverage estimates for sample '{}', iteration {}. Uncorrected: {:.3} GC-Corrected: {:.3}",
-            sample_scan_result.sample_name, (iter_index+1), haploid_coverage.depth, haploid_coverage.gc_corrected_depth
+            "Haploid coverage estimate iteration {}. Uncorrected: {:.3} GC-Corrected: {:.3}",
+            (iter_index + 1),
+            haploid_coverage.depth,
+            haploid_coverage.gc_corrected_depth
         );
 
         let sample_cns_input = SampleCopyNumberSegmentationInput {

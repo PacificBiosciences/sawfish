@@ -1,15 +1,19 @@
 # Change Log
 
-## v2.0.0a7 - 2025-04-18
+## v2.0.0 - 2025-05-19
 
-This is the first public alpha release of SV/CNV integration. This version of sawfish adds full depth segmentation into
-the SV calling process to provide (1) independent depth-based CNV calls, (2) integrated calls with both breakpoint and
-depth support and (3) to improve filtration of large putative breakpoint-based DEL/DUP calls without depth support.
+This is the first official release of SV/CNV integration in sawfish. This version adds full depth segmentation into the
+SV calling process to provide several benefits:
 
-Status: This is an alpha release. The first full round of single and multi-sample SV and CNV integrations are in place,
-with a full user guide update. The integrations likely still need polish and further attention on more practical use
-cases, as well as more complete documentation. The current behaviors, cmdline arguments and file formatting may all be
-subject to change prior to a stable release of CNV integration.
+1. Consistent view of all large variants in a single output, including calls based on breakpoint evidence, calls from
+depth evidence and calls jointly supported by both.
+
+2. A breakpoint-enhanced CNV caller: Sawfish provides standard depth-based CNV calls without requiring breakpoint
+evidence, but when available, breakpoints can be used to provide more accurate segmentation and higher sensitivity at
+lower sequencing depths.
+
+3. An improved SV caller, via more precise calling of large, unbalanced SVs: All large deletions and duplications must
+have some level of depth segmentation support, enabling more precise large variant output.
 
 ## v1.0.1 - 2025-04-13
 

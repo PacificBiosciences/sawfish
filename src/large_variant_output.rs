@@ -175,7 +175,7 @@ fn add_homology_tags(seg: &GenomeSegment, hom_seq: &[u8], record: &mut bcf::Reco
 
 /// Set QUAL
 fn add_qual(score: &SVScoreInfo, record: &mut bcf::Record) {
-    record.set_qual(match score.alt_score {
+    record.set_qual(match score.alt_score() {
         Some(x) => x.round(),
         None => bcf::record::Numeric::missing(),
     });
@@ -199,7 +199,7 @@ fn add_sv_vcf_filters(
         if is_max_scoring_depth {
             record.push_filter("MaxScoringDepth".as_bytes()).unwrap();
         }
-        if let Some(alt_score) = score.alt_score {
+        if let Some(alt_score) = score.alt_score() {
             if alt_score < settings.min_qual as f32 {
                 record.push_filter("MinQUAL".as_bytes()).unwrap();
             }
@@ -1072,7 +1072,11 @@ fn get_cnv_genotype(
     cnv_sample_score: &CNVSampleScoreInfo,
 ) -> Vec<i32> {
     let is_haploid = treat_single_copy_as_haploid && cnv_sample_score.expected_copy_number == 1;
-    let copy_number = cnv_sample_score.shared.copy_number;
+    let copy_number = cnv_sample_score
+        .shared
+        .copy_info
+        .as_ref()
+        .map(|x| x.copy_number);
 
     use bcf::record::GenotypeAllele::*;
     if !is_haploid {
@@ -1095,15 +1099,15 @@ fn get_cnv_genotype(
 }
 
 fn get_copy_number(sample_score: &SharedSampleScoreInfo) -> i32 {
-    match sample_score.copy_number {
-        Some(x) => x as i32,
+    match &sample_score.copy_info {
+        Some(x) => x.copy_number as i32,
         None => bcf::record::Numeric::missing(),
     }
 }
 
 fn get_copy_number_quality(sample_score: &SharedSampleScoreInfo) -> i32 {
-    match sample_score.copy_number {
-        Some(_) => sample_score.copy_number_qscore,
+    match &sample_score.copy_info {
+        Some(x) => x.copy_number_qscore,
         None => bcf::record::Numeric::missing(),
     }
 }

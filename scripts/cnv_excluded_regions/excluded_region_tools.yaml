@@ -1,0 +1,5 @@
+name: excluded_region_tools 
+dependencies:
+  - bioconda::bcftools=1.21
+  - bioconda::bedtools=2.31.1
+  - bioconda::tabix=1.11

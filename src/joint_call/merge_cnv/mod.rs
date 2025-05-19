@@ -23,7 +23,7 @@ use crate::int_range::{get_recip_overlap, IntRange};
 use crate::joint_call::{SampleJointCallData, SharedJointCallData};
 use crate::prob_utils::{ln_error_prob_to_qphred, normalize_ln_distro};
 use crate::refine_sv::{Genotype, RefinedSV};
-use crate::refined_cnv::{CNVSampleScoreInfo, CNVScoreInfo, RefinedCNV};
+use crate::refined_cnv::{CNVSampleScoreInfo, CNVScoreInfo, RefinedCNV, SharedSampleCopyNumInfo};
 use crate::sv_group::SVGroup;
 use crate::sv_id::SVUniqueIdData;
 use crate::utils::remove_sorted_indices;
@@ -75,10 +75,10 @@ fn get_cnv_sample_qualities_from_cn_state_lnlhoods(
     state_lnlhoods: &[f64],
     sample_score: &mut CNVSampleScoreInfo,
 ) {
-    sample_score.shared.copy_number = Some(cns.copy_number_info.as_u32_depth());
+    let copy_number = cns.copy_number_info.as_u32_depth();
 
     // Compute CNQ:
-    sample_score.shared.copy_number_qscore = {
+    let copy_number_qscore = {
         // First generate the equiv of PL values for copy number (this doesn't exist in the VCF spec)
         //
         let mut cn_lhood_qscore = Vec::new();
@@ -92,7 +92,7 @@ fn get_cnv_sample_qualities_from_cn_state_lnlhoods(
             );
 
             // Max to zero since we aren't necessarily guaranteed that cn_state is the best lhood.
-            // The max assumption has been broken at times by some non-probabalistic segmentation
+            // The max assumption has been broken at times by some non-probabilistic segmentation
             // schemes.
             //
             let cnq = std::cmp::max(cnq, 0);
@@ -115,8 +115,13 @@ fn get_cnv_sample_qualities_from_cn_state_lnlhoods(
     let mut cn_pprob = state_lnlhoods.to_vec();
     let _max_cn_pprob_index = normalize_ln_distro(&mut cn_pprob).unwrap();
 
-    sample_score.expected_copy_number_prob =
-        Some(cn_pprob[sample_score.expected_copy_number as usize]);
+    let expected_copy_number_prob = cn_pprob[sample_score.expected_copy_number as usize];
+
+    sample_score.shared.copy_info = Some(SharedSampleCopyNumInfo {
+        copy_number,
+        copy_number_qscore,
+        expected_copy_number_prob,
+    });
 }
 
 /// Convert copy number segment to a refined CNV
@@ -244,10 +249,10 @@ fn consolidate_multi_sample_cnv(
             assert_eq!(rcnv.segment, merged_rcnv.segment);
 
             for (sample_index, sample_score) in rcnv.score.samples.into_iter().enumerate() {
-                if sample_score.shared.copy_number.is_some() {
+                if sample_score.shared.copy_info.is_some() {
                     assert!(merged_rcnv.score.samples[sample_index]
                         .shared
-                        .copy_number
+                        .copy_info
                         .is_none());
                     merged_rcnv.score.samples[sample_index] = sample_score;
                 }
@@ -335,7 +340,7 @@ fn get_refined_cnvs(
     // This is delayed until after all sample consolidation
     //
     for rcnv in multisample_refined_cnvs.iter_mut() {
-        rcnv.score.update_alt_score(max_qscore);
+        rcnv.score.update_cnv_alt_score(max_qscore);
     }
 
     if debug {
@@ -364,8 +369,8 @@ fn sv_eligible_for_cnv_matching(rsv: &RefinedSV, min_sv_size: usize, min_qual: f
         let is_max_scoring_depth = rsv.score.samples.iter().any(|x| x.is_max_scoring_depth);
         if is_max_scoring_depth {
             false
-        } else if let Some(alt_score) = rsv.score.alt_score {
-            alt_score >= min_qual
+        } else if let Some(sv_alt_score) = rsv.score.sv_alt_score {
+            sv_alt_score >= min_qual
         } else {
             false
         }
@@ -378,8 +383,8 @@ fn sv_eligible_for_cnv_matching(rsv: &RefinedSV, min_sv_size: usize, min_qual: f
 ///
 fn is_gt_cn_match(sample_index: usize, rcnv: &RefinedCNV, rsv: &RefinedSV) -> Option<bool> {
     let rcnv_sample_score = &rcnv.score.samples[sample_index];
-    let copy_number = match rcnv_sample_score.shared.copy_number {
-        Some(x) => x,
+    let copy_number = match &rcnv_sample_score.shared.copy_info {
+        Some(x) => x.copy_number,
         None => {
             return None;
         }
@@ -437,14 +442,16 @@ fn is_gt_cn_match(sample_index: usize, rcnv: &RefinedCNV, rsv: &RefinedSV) -> Op
 ///
 type CNVToSVMatchTracker = BTreeMap<usize, BTreeSet<usize>>;
 
+/// Describes an SV's candidate CNV match in one sample
 #[derive(Clone, Debug, PartialEq)]
 struct SVToCNVSampleMatchInfo {
+    /// Index of the candidate CNV
     refined_cnv_index: usize,
 
     /// Total distance separating the left and right SV & CNV span edges
     total_breakend_dist: i64,
 
-    /// Is the SV GT compatible with the CNV CN value?
+    /// True if the SV GT is compatible with the CNV CN shift in this sample
     gt_cn_match: bool,
 }
 struct SVToCNVMatchInfo {
@@ -500,13 +507,28 @@ fn remove_poorly_matching_svs(
     });
 }
 
+/// Enumerate information on how a specific SV matches CNVs over all samples
+///
+/// This includes metrics to determine which SV to retain in case of multiple overlapping SV matches to the same CNV
+///
 struct SVCNVMatchScore {
+    /// Total number of samples where the SV has a candiate CNV match with compatible CN shift direction for the SV type
     match_count: usize,
+
+    /// Sum of the total breakend distances over all samples qualifying to be counted in match_count
     all_match_breakend_dist: i64,
+
+    /// Index of the SV group within the full joint-call SVGroup list
     sv_group_index: usize,
+
+    /// Information used to compose the unique VCF ID entry for the given SV
     id: SVUniqueIdData,
 }
 
+/// Enumerate information on how a specific SV matches CNVs over all samples
+///
+/// Return None if the SV has no CNV matches
+///
 fn get_sv_cnv_match_score(
     sv_to_cnv_matches: &SVToCNVMatchTracker,
     sv_group_index: usize,
@@ -570,11 +592,6 @@ fn merge_cnv_with_sv(
     // with the edge dist filter
     //
     let min_sv_cnv_recip_overlap = 0.9;
-
-    // Size above which deletions and duplications are reported as breakends if they lack correspondence
-    // with depth segmentation.
-    //
-    let min_sv_required_depth_support_size = 50_000;
 
     let min_gt_cn_match_fraction = 0.5;
 
@@ -713,7 +730,7 @@ fn merge_cnv_with_sv(
         }
     }
 
-    // Now process the sv to cnv mapping structures to make sure that each CNV matched to no more than one SV
+    // Now process the sv to cnv mapping structures to make sure that each CNV is matched to no more than one SV
 
     remove_poorly_matching_svs(
         &mut sv_to_cnv_matches,
@@ -732,6 +749,7 @@ fn merge_cnv_with_sv(
         }
 
         if sv_index_scores.len() < 2 {
+            // The CNV already matches no more than one SV, so the SV ranking and filtration steps below can be skipped
             continue;
         }
 
@@ -769,10 +787,9 @@ fn merge_cnv_with_sv(
             let rcnv = &refined_cnvs[sv_to_cnv_sample_match.refined_cnv_index];
             let rcnv_sample_score = &rcnv.score.samples[sample_index];
             let rsv_sample_score = &mut rsv.score.samples[sample_index];
-            rsv_sample_score.shared.copy_number = rcnv_sample_score.shared.copy_number;
-            rsv_sample_score.shared.copy_number_qscore =
-                rcnv_sample_score.shared.copy_number_qscore;
+            rsv_sample_score.shared.copy_info = rcnv_sample_score.shared.copy_info.clone();
         }
+        rsv.score.update_cnv_alt_score(settings.max_qscore);
     }
 
     info!("Merged {} CNVs into matching SVs", merged_cnv_indexes.len());
@@ -785,8 +802,14 @@ fn merge_cnv_with_sv(
             refined_cnvs.len() + merged_cnv_indexes.len()
         );
     }
+}
 
-    // Now mark any non-merged large SVs for filtration into BND
+/// Mark any large SVs without CNV support for filtration into BND
+///
+fn mark_unsupported_large_deldup_for_bnd_conversion(
+    min_sv_required_depth_support_size: usize,
+    sv_groups: &mut [SVGroup],
+) {
     for sv_group in sv_groups.iter_mut().filter(|x| !x.is_single_region()) {
         // Filtering for non single-region SVs means this should always be true:
         assert_eq!(sv_group.refined_svs.len(), 1);
@@ -1012,8 +1035,18 @@ pub fn merge_sv_with_depth_info(
     // 5. Run SV/CNV overlap detection (transfer from old code)
     // 6. Assign non-overlapping large SVs to breakpoint output (add later)
 
+    //
+    // Hard coded parameters for this section
+    //
+
     // Determines how much the copy number transition probability is relaxed at SV breakpoints during re-segmentation:
+    //
     let breakpoint_transition_factor = 0.5;
+
+    // Size above which deletions and duplications are reported as breakends if they lack correspondence
+    // with depth segmentation.
+    //
+    let min_sv_required_depth_support_size = 50_000;
 
     // Identify large overlapping SVs in each sample (skip for now)
 
@@ -1059,7 +1092,11 @@ pub fn merge_sv_with_depth_info(
     );
 
     // Run final SV <-> CNV matching operation, and update both SV and CNV records to reflect merging updates
-    merge_cnv_with_sv(settings, sample_count, sv_groups, &mut refined_cnvs);
+    if !settings.disable_sv_cnv_merge {
+        merge_cnv_with_sv(settings, sample_count, sv_groups, &mut refined_cnvs);
+    }
+
+    mark_unsupported_large_deldup_for_bnd_conversion(min_sv_required_depth_support_size, sv_groups);
 
     refined_cnvs
 }

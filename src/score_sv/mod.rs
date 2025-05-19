@@ -1506,6 +1506,7 @@ fn get_sv_sample_qualities_from_allele_counts(
         }
     }
 
+    // Extract the second-highest genotype likelihood as the GQ value
     let gt_qscore = sample_score
         .shared
         .gt_lhood_qscore
@@ -1543,7 +1544,7 @@ fn get_sv_qualities_from_allele_counts(
         joint_ref_prob *= sample_ref_prob;
     }
 
-    sv_score.alt_score = Some(
+    sv_score.sv_alt_score = Some(
         (error_prob_to_phred(joint_ref_prob) as f32)
             .min(settings.max_qscore as f32)
             .max(0.0),

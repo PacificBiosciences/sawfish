@@ -8,13 +8,28 @@ use crate::prob_utils::error_prob_to_phred;
 use crate::refine_sv::Genotype;
 
 #[derive(Clone, Debug)]
+pub struct SharedSampleCopyNumInfo {
+    /// Called copy number of sample at the variant locus
+    pub copy_number: u32,
+
+    /// Copy number quality score (CNQ)
+    ///
+    /// This quality expresses the probability that CN is incorrect, given a naive CN prior
+    pub copy_number_qscore: i32,
+
+    /// Posterior probability of the expected copy number across this segment
+    ///
+    /// This is an intermediate value used to compute tha QUAL score, it is stored at the sample level to enable the
+    /// recalculation of QUAL when merging results across samples
+    ///
+    pub expected_copy_number_prob: f64,
+}
+
+#[derive(Clone, Debug)]
 /// Per-sample scoring information shared on all variant types (SVs and CNVs)
 pub struct SharedSampleScoreInfo {
-    /// Called copy number of sample at the variant locus
-    pub copy_number: Option<u32>,
-
-    /// Copy number quality score, only defined if copy_number is
-    pub copy_number_qscore: i32,
+    /// Copy number information for CNV or merged SV/CNV events
+    pub copy_info: Option<SharedSampleCopyNumInfo>,
 
     /// Most likely genotype (per sample)
     ///
@@ -30,11 +45,30 @@ pub struct SharedSampleScoreInfo {
 impl Default for SharedSampleScoreInfo {
     fn default() -> Self {
         Self {
-            copy_number: None,
-            copy_number_qscore: 0,
+            copy_info: None,
             gt: None,
             gt_qscore: 0,
             gt_lhood_qscore: vec![0; Genotype::COUNT],
+        }
+    }
+}
+
+pub trait SharedVariantScoreInfo {
+    fn get_shared_sample_iter(&self) -> impl Iterator<Item = &SharedSampleScoreInfo>;
+
+    fn get_cnv_alt_score(&mut self, max_qscore: u32) -> Option<f32> {
+        let expected_copy_number_probs = self
+            .get_shared_sample_iter()
+            .filter_map(|x| x.copy_info.as_ref().map(|y| y.expected_copy_number_prob))
+            .collect::<Vec<_>>();
+        if expected_copy_number_probs.is_empty() {
+            None
+        } else {
+            let joint_expected_copy_number_prob = expected_copy_number_probs.iter().product();
+            let qscore = (error_prob_to_phred(joint_expected_copy_number_prob) as f32)
+                .min(max_qscore as f32)
+                .max(0.0);
+            Some(qscore)
         }
     }
 }
@@ -44,16 +78,6 @@ impl Default for SharedSampleScoreInfo {
 pub struct CNVSampleScoreInfo {
     /// Expected copy number of sample at the CNV locus
     pub expected_copy_number: u32,
-
-    /// Posterior probability of the expected copy number across this segment
-    ///
-    /// This is an intermediate value used to compute tha QUAL score, it is stored
-    /// at the sample level to enable the recalculation of QUAL when merging results
-    /// across samples
-    ///
-    /// This is only defined if the copy_number is defined for the sample
-    ///
-    pub expected_copy_number_prob: Option<f64>,
 
     /// All shared per-sample scoring information for any variant type
     pub shared: SharedSampleScoreInfo,
@@ -69,25 +93,14 @@ pub struct CNVScoreInfo {
 }
 
 impl CNVScoreInfo {
-    pub fn update_alt_score(&mut self, max_qscore: u32) {
-        self.alt_score = self.get_alt_score(max_qscore);
+    pub fn update_cnv_alt_score(&mut self, max_qscore: u32) {
+        self.alt_score = self.get_cnv_alt_score(max_qscore);
     }
+}
 
-    fn get_alt_score(&mut self, max_qscore: u32) -> Option<f32> {
-        let expected_copy_number_probs = self
-            .samples
-            .iter()
-            .filter_map(|x| x.expected_copy_number_prob)
-            .collect::<Vec<_>>();
-        if expected_copy_number_probs.is_empty() {
-            None
-        } else {
-            let joint_expected_copy_number_prob = expected_copy_number_probs.iter().product();
-            let qscore = (error_prob_to_phred(joint_expected_copy_number_prob) as f32)
-                .min(max_qscore as f32)
-                .max(0.0);
-            Some(qscore)
-        }
+impl SharedVariantScoreInfo for CNVScoreInfo {
+    fn get_shared_sample_iter(&self) -> impl Iterator<Item = &SharedSampleScoreInfo> {
+        self.samples.iter().map(|x| &x.shared)
     }
 }
 
@@ -129,8 +142,8 @@ impl RefinedCNV {
         let mut del = 0;
         let mut dup = 0;
         for sample in self.score.samples.iter() {
-            if let Some(x) = sample.shared.copy_number {
-                match x.cmp(&sample.expected_copy_number) {
+            if let Some(x) = &sample.shared.copy_info {
+                match x.copy_number.cmp(&sample.expected_copy_number) {
                     Ordering::Less => {
                         del += 1;
                     }

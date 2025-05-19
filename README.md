@@ -10,7 +10,7 @@ Key features:
 - Combined assessment of all large variants in each sample.
   - Sawfish provides a unified view of both SVs and CNVs in each sample, with redundant calls merged into single variants describing both breakpoint and copy number detail.
 - High SV discovery and genotyping accuracy
-  - All breakpoint-based structural variants are modeled and genotyped as local haplotypes, yielding substantial accuracy gains on modern SV truth sets such as the GIAB HG002 T2T SVs. 
+  - All breakpoint-based structural variants are modeled and genotyped as local haplotypes, yielding substantial accuracy gains on modern SV truth sets such as the GIAB HG002 T2T SVs.
 - High resolution
   - All breakpoint-based structural variants are assembled to basepair resolution and reported with breakpoint homology and insertion details.
 - Integrated copy number segmentation

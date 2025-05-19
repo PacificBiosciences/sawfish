@@ -69,6 +69,10 @@ pub struct JointCallSettings {
     /// Skip checks on input sample discover directory contents
     #[arg(long)]
     pub skip_sample_input_check: bool,
+
+    /// Disable SV/CNV merge, for internal debug only
+    #[arg(hide = true, long)]
+    pub disable_sv_cnv_merge: bool,
 }
 
 /// Check that every sample path represents a completed sawfish discover run

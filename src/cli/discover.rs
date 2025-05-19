@@ -27,7 +27,7 @@ pub struct DiscoverSettings {
     ///
     /// Copy number will be read from column 5 of the input BED file. Column 4 is ignored and can
     /// be used as a region label. The default copy number is 2 for unspecified regions. These copy
-    /// number values will be stored in discover output for each samplme and automatically selected
+    /// number values will be stored in discover output for each sample and automatically selected
     /// for the given sample during joint-calling.
     ///
     /// Note this option is especially useful to clarify expected sex chromosome copy number in the sample.
@@ -49,11 +49,21 @@ pub struct DiscoverSettings {
     /// Variant file used to generate minor allele frequency track for this sample, in VCF or BCF format.
     ///
     /// The bigwig track file will be output for each sample in the joint-call step as 'maf.bw' in each
-    /// sample directory. The frequences may also be used to improve copy-number segmentation in a future
+    /// sample directory. The frequencies may also be used to improve copy-number segmentation in a future
     /// update.
     ///
     #[arg(long = "maf", value_name = "FILE")]
     pub maf_filename: Option<String>,
+
+    /// This mode is designed to more quickly run a CNV-focused analysis by analyzing only the larger-scale SV
+    /// breakpoint evidence that could be useful to improve CNV/large-variant accuracy, together with depth-based
+    /// CNV analysis which is run regardless of this mode setting.
+    ///
+    /// Smaller assembly regions are skipped in his mode, which will remove all insertions, and most deletions below
+    /// about 1kb.
+    ///
+    #[arg(long)]
+    pub fast_cnv_mode: bool,
 
     /// Size of bins used for CNV depth track. The segmentation parameters are highly dependent on
     /// this value so it cannot be changed independently of the transition probability and
@@ -66,7 +76,7 @@ pub struct DiscoverSettings {
     #[arg(hide = true, long = "transition-probability", default_value_t = 0.02)]
     pub transition_prob: f64,
 
-    /// Depth bin Poisson emision probabilities are raised to this power to help correct
+    /// Depth bin Poisson emission probabilities are raised to this power to help correct
     /// for their having dependencies on neighboring bins, even though they ar treated as
     /// independent for segmentation and quality scoring.
     #[arg(hide = true, long = "dependency-correction", default_value_t = 0.02)]

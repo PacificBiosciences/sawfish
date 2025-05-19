@@ -762,7 +762,6 @@ fn group_single_sample_refined_svs(
 #[allow(clippy::too_many_arguments)]
 fn process_sv_groups_from_candidate_sv_file(
     disable_small_indels: bool,
-    disable_svs: bool,
     treat_single_copy_as_haploid: bool,
     discover_dir: &Utf8Path,
     chrom_list: &ChromList,
@@ -807,9 +806,7 @@ fn process_sv_groups_from_candidate_sv_file(
             &rec,
         );
         if let Some(anno_refined_sv) = arsv {
-            if disable_svs
-                || (disable_small_indels && anno_refined_sv.refined_sv.single_region_refinement)
-            {
+            if disable_small_indels && anno_refined_sv.refined_sv.single_region_refinement {
                 continue;
             }
             anno_refined_svs.push(anno_refined_sv);
@@ -828,7 +825,6 @@ fn process_sv_groups_from_candidate_sv_file(
 ///
 pub fn get_sample_sv_groups(
     disable_small_indels: bool,
-    disable_svs: bool,
     treat_single_copy_as_haploid: bool,
     discover_dir: &Utf8Path,
     chrom_list: &ChromList,
@@ -841,7 +837,6 @@ pub fn get_sample_sv_groups(
     let contigs = get_candidate_sv_contig_info(discover_dir, chrom_list);
     let mut sv_groups = process_sv_groups_from_candidate_sv_file(
         disable_small_indels,
-        disable_svs,
         treat_single_copy_as_haploid,
         discover_dir,
         chrom_list,

@@ -80,7 +80,6 @@ fn get_sample_joint_call_data(
     chrom_list: &ChromList,
     target_regions: &GenomeRegions,
     disable_small_indels: bool,
-    disable_svs: bool,
     treat_single_copy_as_haploid: bool,
     discover_dir: &Utf8Path,
     discover_settings: DiscoverSettings,
@@ -101,7 +100,6 @@ fn get_sample_joint_call_data(
 
     let sv_groups = get_sample_sv_groups(
         disable_small_indels,
-        disable_svs,
         treat_single_copy_as_haploid,
         discover_dir,
         chrom_list,
@@ -165,7 +163,6 @@ fn get_all_sample_joint_call_data(
                     chrom_list,
                     target_regions,
                     shared_settings.disable_small_indels,
-                    shared_settings.disable_svs,
                     settings.treat_single_copy_as_haploid,
                     discover_dir,
                     discover_settings,

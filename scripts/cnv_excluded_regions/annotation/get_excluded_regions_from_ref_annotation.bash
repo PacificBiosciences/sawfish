@@ -3,24 +3,20 @@
 set -o errexit
 set -o nounset
 
+# This script builds excluded regions for CNV calling based on UCSC annotation tracks for a given reference genome. It
+# is recommended to supplement these regions with empirical regions based on common CNV calls in a background cohort.
 #
-# This script builds a minimum set of exclusion regions for CNV calling. It is recommended to supplement these
-# regions with empirical regions based on problematic regions in a background cohort.
-#
-
 # The reference defaults to human hg38, but can be adapted for other references depending on UCSC track availability.
 #
+# The script assumes tabix and bgzip are in the path, via the accompanying 'excluded_region_tools' conda environment.
+#
 
-# The reference tag for the genome version to use. This script has only been tested for ref values 'hg19' and 'hg38'.
-# It may work with other reference versions in the UCSC genome browser database, but this hasn't been tested.
+# The reference tag for the genome version to use. This script has only been tested for ref values 'hg19' and 'hg38'. It
+# may work with other reference versions in the UCSC genome browser database, but this hasn't been tested.
 ref=hg38
 
-# This script depends on bgzip and tabix, customize these values if they are not already in the path
-bgzip=bgzip
-tabix=tabix
 
-
-outfile=cnv.excluded_regions.${ref}.bed.gz
+outfile=annotation_only.${ref}.bed.gz
 
 base_url=http://hgdownload.cse.ucsc.edu/goldenPath/$ref
 
@@ -38,8 +34,8 @@ get_gaps() {
 
 # Get UCSC Centromere track if it exists, simplify labels and convert to bed format
 #
-# This file is optional because in at least some older genomes, it may not exist. In such cases the centromere
-# regions are annotated in the gap track instead.
+# This file is optional because in at least some older genomes, it may not exist. In such cases the centromere regions
+# are annotated in the gap track instead.
 #
 get_centromeres() {
   url=$base_url/database/centromeres.txt.gz
@@ -61,7 +57,7 @@ get_alpha() {
 
 cat <(get_gaps) <(get_centromeres) |\
 cat - <(get_alpha) |\
-sort -k1,1 -k2,2g | $bgzip -c >|\
+sort -k1,1 -k2,2g | bgzip -c >|\
 $outfile
 
-$tabix -p bed $outfile
+tabix -p bed $outfile

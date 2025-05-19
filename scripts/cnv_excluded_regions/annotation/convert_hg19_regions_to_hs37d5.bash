@@ -3,16 +3,13 @@
 set -o errexit
 set -o nounset
 
-#
 # This script yields a recommended set of exclusion regions for CNV calling on hs37d5, by
 # converting excluded regions from hg19.
 #
+# Assumes tabix and bgzip are in the path, via the accompanying 'excluded_region_tools' conda environment
+#
 
-hg19_excluded_regions=cnv.excluded_regions.hg19.bed.gz
-
-# This script depends on bgzip and tabix, customize these values if they are not already in the path
-bgzip=bgzip
-tabix=tabix
+hg19_excluded_regions=annotation_only.hg19.bed.gz
 
 hg19_renamed() {
   gzip -dc $hg19_excluded_regions |\
@@ -26,8 +23,8 @@ other() {
 }
 
 
-label=cnv.excluded_regions.hs37d5
+label=annotation_only.hs37d5
 
-cat <(hg19_renamed) <(other) | $bgzip -c >| $label.bed.gz
-$tabix -p bed $label.bed.gz
+cat <(hg19_renamed) <(other) | bgzip -c >| $label.bed.gz
+tabix -p bed $label.bed.gz
 
