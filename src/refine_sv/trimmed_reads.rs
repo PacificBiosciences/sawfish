@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
-use rust_htslib::bam::{self, record::CigarString, Read};
+use rust_htslib::bam::{self, Read, record::CigarString};
 use rust_vc_utils::bam_utils::aux::{get_optional_float_aux_tag, is_aux_tag_found};
 use rust_vc_utils::bam_utils::cigar::{
     get_cigar_ref_offset, is_hard_clipped, update_ref_and_hard_clipped_read_pos,
@@ -10,13 +10,13 @@ use rust_vc_utils::bam_utils::filter_out_alignment_record;
 use rust_vc_utils::{ChromList, GenomeRef};
 use unwrap::unwrap;
 
-use crate::bam_sa_parser::{get_seq_order_read_split_segments, SeqOrderSplitReadSegment};
+use crate::bam_sa_parser::{SeqOrderSplitReadSegment, get_seq_order_read_split_segments};
 use crate::bam_utils::{
-    bam_fetch_segment, get_gap_compressed_identity, test_read_for_large_insertion_soft_clip,
-    translate_ref_range_to_hardclipped_read_range, LargeInsertionSoftClipState,
+    LargeInsertionSoftClipState, bam_fetch_segment, get_gap_compressed_identity,
+    test_read_for_large_insertion_soft_clip, translate_ref_range_to_hardclipped_read_range,
 };
 use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint, BreakpointCluster, InsertInfo};
-use crate::genome_segment::{get_int_range_distance, GenomeSegment, IntRange};
+use crate::genome_segment::{GenomeSegment, IntRange, get_int_range_distance};
 use crate::refine_sv::RefineSVSettings;
 use crate::utils::remove_sorted_indices;
 
@@ -106,7 +106,9 @@ fn get_large_del_candidate_read_range(record: &bam::Record, bp: &Breakpoint) -> 
     let del_match_dist = std::cmp::min(MAX_DEL_DIST, (del_size as f32 * DEL_MATCH_FACTOR) as i64);
 
     if debug {
-        eprintln!("del_start_range: {del_start_range:?} del_size: {del_size} del_match_dist: {del_match_dist}");
+        eprintln!(
+            "del_start_range: {del_start_range:?} del_size: {del_size} del_match_dist: {del_match_dist}"
+        );
     }
 
     let mut read_pos = 0usize;

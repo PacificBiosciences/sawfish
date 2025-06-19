@@ -10,16 +10,16 @@ use self::transition_types::get_copynum_transition_types_from_breakends;
 use crate::breakpoint::BreakendDirection;
 use crate::cli::JointCallSettings;
 use crate::copy_number_segmentation::{
-    get_depth_emission_lnprob, get_haploid_genome_coverage,
-    get_single_pass_sample_copy_number_segments, write_copy_number_segment_file, CopyNumberSegment,
-    CopyNumberState, HaploidCoverage, SampleCopyNumberSegmentationInput, SampleCopyNumberSegments,
-    SampleTransitionTypes, TransitionProbInfo,
+    CopyNumberSegment, CopyNumberState, HaploidCoverage, SampleCopyNumberSegmentationInput,
+    SampleCopyNumberSegments, SampleTransitionTypes, TransitionProbInfo, get_depth_emission_lnprob,
+    get_haploid_genome_coverage, get_single_pass_sample_copy_number_segments,
+    write_copy_number_segment_file,
 };
 use crate::depth_bins::DepthBin;
 use crate::expected_ploidy::get_majority_expected_copy_number_for_region;
 use crate::gc_correction::SampleGCBiasCorrectionData;
 use crate::genome_segment::GenomeSegment;
-use crate::int_range::{get_recip_overlap, IntRange};
+use crate::int_range::{IntRange, get_recip_overlap};
 use crate::joint_call::{SampleJointCallData, SharedJointCallData};
 use crate::prob_utils::{ln_error_prob_to_qphred, normalize_ln_distro};
 use crate::refine_sv::{Genotype, RefinedSV};
@@ -250,10 +250,12 @@ fn consolidate_multi_sample_cnv(
 
             for (sample_index, sample_score) in rcnv.score.samples.into_iter().enumerate() {
                 if sample_score.shared.copy_info.is_some() {
-                    assert!(merged_rcnv.score.samples[sample_index]
-                        .shared
-                        .copy_info
-                        .is_none());
+                    assert!(
+                        merged_rcnv.score.samples[sample_index]
+                            .shared
+                            .copy_info
+                            .is_none()
+                    );
                     merged_rcnv.score.samples[sample_index] = sample_score;
                 }
             }

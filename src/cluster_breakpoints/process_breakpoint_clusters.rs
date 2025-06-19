@@ -11,7 +11,7 @@ use super::large_insertions::find_large_insertion_candidates;
 use super::{BreakObservations, BreakpointObservationMap};
 use crate::breakpoint::*;
 use crate::cli;
-use crate::genome_segment::{get_segment_distance, GenomeSegment};
+use crate::genome_segment::{GenomeSegment, get_segment_distance};
 use crate::run_stats::ClusterStats;
 
 fn debug_bpos(output_dir: &Utf8Path, bpos: &BreakpointObservationMap, num: usize) {

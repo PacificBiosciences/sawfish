@@ -1,5 +1,5 @@
 use crate::bam_utils::clip_alignment_read_edges;
-use crate::contig_output::{write_contig_alignments, ContigAlignmentInfo, ContigAlignmentSegment};
+use crate::contig_output::{ContigAlignmentInfo, ContigAlignmentSegment, write_contig_alignments};
 use crate::joint_call::read_sample_data::SharedJointCallData;
 use crate::joint_call::{JointCallSettings, SharedSettings};
 use crate::sv_group::SVGroup;

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use camino::Utf8PathBuf;
 use clap::Args;
 use const_format::concatcp;
-use simple_error::{bail, SimpleResult};
+use simple_error::{SimpleResult, bail};
 
 use crate::run_stats::read_discover_run_stats;
 

@@ -1,18 +1,18 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use log::info;
 use rust_htslib::bcf;
-use rust_vc_utils::{rev_comp_in_place, ChromList, GenomeRef};
+use rust_vc_utils::{ChromList, GenomeRef, rev_comp_in_place};
 use strum::EnumCount;
 
 use crate::breakpoint::{
-    get_breakpoint_vcf_sv_type, Breakend, BreakendDirection, Breakpoint, InsertInfo, VcfSVType,
+    Breakend, BreakendDirection, Breakpoint, InsertInfo, VcfSVType, get_breakpoint_vcf_sv_type,
 };
 use crate::cli;
 use crate::expected_ploidy::SVLocusPloidy;
 use crate::genome_segment::GenomeSegment;
 use crate::refine_sv::{
-    get_rsv_id_label, AlleleType, Genotype, RefinedSV, SVPhaseStatus, SVSampleScoreInfo,
-    SVScoreInfo,
+    AlleleType, Genotype, RefinedSV, SVPhaseStatus, SVSampleScoreInfo, SVScoreInfo,
+    get_rsv_id_label,
 };
 use crate::refined_cnv::{CNVSampleScoreInfo, CNVScoreInfo, RefinedCNV, SharedSampleScoreInfo};
 use crate::score_sv::QualityModelAlleles;
@@ -78,8 +78,14 @@ fn get_sv_vcf_header(
         br#"##INFO=<ID=SVLEN,Number=A,Type=Integer,Description="Length of structural variant">"#,
         br#"##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">"#,]);
 
-    let contig_pos = format!("##INFO=<ID={},Number=1,Type=Integer,Description=\"SV position in the contig sequence before breakend1\">", CONTIG_POS_INFO_KEY);
-    let overlap_asm = format!("##INFO=<ID={},Number=.,Type=Integer,Description=\"Assembly indices of overlapping haplotypes\">", OVERLAP_ASM_INFO_KEY);
+    let contig_pos = format!(
+        "##INFO=<ID={},Number=1,Type=Integer,Description=\"SV position in the contig sequence before breakend1\">",
+        CONTIG_POS_INFO_KEY
+    );
+    let overlap_asm = format!(
+        "##INFO=<ID={},Number=.,Type=Integer,Description=\"Assembly indices of overlapping haplotypes\">",
+        OVERLAP_ASM_INFO_KEY
+    );
 
     if candidate_mode {
         records.push(contig_pos.as_bytes());

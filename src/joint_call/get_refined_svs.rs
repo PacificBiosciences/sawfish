@@ -3,7 +3,7 @@ use rust_htslib::bam;
 use camino::Utf8Path;
 use rust_htslib::bcf::{self, Read};
 use rust_vc_utils::aux::{get_string_aux_tag, is_aux_tag_found};
-use rust_vc_utils::{rev_comp_in_place, ChromList};
+use rust_vc_utils::{ChromList, rev_comp_in_place};
 use unwrap::unwrap;
 
 use crate::bam_sa_parser::get_seq_order_read_split_segments;
@@ -15,8 +15,8 @@ use crate::genome_regions::{GenomeRegions, GenomeRegionsByChromIndex};
 use crate::genome_segment::GenomeSegment;
 use crate::int_range::IntRange;
 use crate::large_variant_output::{CONTIG_POS_INFO_KEY, OVERLAP_ASM_INFO_KEY};
-use crate::refine_sv::assembly_regions::read_assembly_regions_from_bed;
 use crate::refine_sv::RefinedSV;
+use crate::refine_sv::assembly_regions::read_assembly_regions_from_bed;
 use crate::simple_alignment::SimpleAlignment;
 use crate::sv_group::{
     ClusterAssembly, ClusterAssemblyAlignment, GroupHaplotypeId, SVGroup, SVGroupHaplotype,
@@ -557,12 +557,14 @@ fn process_rsv_cluster_to_sv_group(
     }
 
     let sample_expected_cn_info = vec![expected_cn_info];
-    let mut sample_haplotype_list = vec![first_arsv
-        .contig_map
-        .iter()
-        .take(max_haplotype_count)
-        .copied()
-        .collect::<Vec<_>>()];
+    let mut sample_haplotype_list = vec![
+        first_arsv
+            .contig_map
+            .iter()
+            .take(max_haplotype_count)
+            .copied()
+            .collect::<Vec<_>>(),
+    ];
 
     let mut tmp_arsvs = Vec::new();
     std::mem::swap(group_arsvs, &mut tmp_arsvs);
@@ -613,7 +615,7 @@ fn process_rsv_cluster_to_sv_group(
             for (new_sv_index, (sv_index, _)) in sv_haplotype_map
                 .iter()
                 .enumerate()
-                .filter(|(_, &hap_index)| haplotype_index_remap[hap_index].is_some())
+                .filter(|&(_, &hap_index)| haplotype_index_remap[hap_index].is_some())
                 .enumerate()
             {
                 x[sv_index] = Some(new_sv_index);

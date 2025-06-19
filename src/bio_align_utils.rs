@@ -1,5 +1,5 @@
-use bio::alignment::pairwise::{banded, MatchFunc, MatchParams, Scoring};
-use bio::alignment::{sparse, Alignment, AlignmentOperation};
+use bio::alignment::pairwise::{MatchFunc, MatchParams, Scoring, banded};
+use bio::alignment::{Alignment, AlignmentOperation, sparse};
 use rust_htslib::bam::record::Cigar;
 
 use crate::simple_alignment::SimpleAlignment;

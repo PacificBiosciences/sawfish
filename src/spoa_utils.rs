@@ -4,7 +4,7 @@
 use std::ffi::{CStr, CString};
 
 use rust_htslib::bam::record::Cigar;
-use spoa::{get_alignment_clip_size, get_alignment_overlap_size, AlignmentEngine, Graph};
+use spoa::{AlignmentEngine, Graph, get_alignment_clip_size, get_alignment_overlap_size};
 
 use crate::simple_alignment::SimpleAlignment;
 use crate::utils;

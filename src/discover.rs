@@ -1,4 +1,4 @@
-use rust_vc_utils::{get_genome_ref_from_fasta, get_sample_name, ChromList};
+use rust_vc_utils::{ChromList, get_genome_ref_from_fasta, get_sample_name};
 
 use crate::bam_scanner::scan_sample_bam_for_sv_evidence;
 use crate::cli;
@@ -8,12 +8,12 @@ use crate::copy_number_segmentation::{
 };
 use crate::depth_bins;
 use crate::gc_correction::*;
-use crate::genome_regions::{write_genome_regions_to_bed, GenomeRegions};
+use crate::genome_regions::{GenomeRegions, write_genome_regions_to_bed};
 use crate::globals::PROGRAM_VERSION;
-use crate::large_variant_output::{write_indexed_sv_vcf_file, VcfSettings};
+use crate::large_variant_output::{VcfSettings, write_indexed_sv_vcf_file};
 use crate::maf_utils::{scan_maf_file, serialize_maf_data};
 use crate::refine_sv;
-use crate::run_stats::{delete_run_stats, write_discover_run_stats, DiscoverRunStats, RunStep};
+use crate::run_stats::{DiscoverRunStats, RunStep, delete_run_stats, write_discover_run_stats};
 use crate::worker_thread_data::get_bam_reader_worker_thread_data;
 
 pub const ASSEMBLY_REGIONS_FILENAME: &str = "assembly.regions.bed";
@@ -25,6 +25,7 @@ pub const DEPTH_BINS_BIGWIG_FILENAME: &str = "depth.bw";
 pub const DEPTH_BINS_MESSAGEPACK_FILENAME: &str = "depth.mpack";
 pub const EXPECTED_COPY_NUMBER_BED_FILENAME: &str = "expected.copy.number.bed";
 pub const GENOME_GC_LEVELS_MESSAGEPACK_FILENAME: &str = "genome.gclevels.mpack";
+pub const GC_BIAS_CORRECTED_DEPTH_BINS_BIGWIG_FILENAME: &str = "gc_bias_corrected_depth.bw";
 pub const MAF_BIGWIG_FILENAME: &str = "maf.bw";
 pub const MAF_MESSAGEPACK_FILENAME: &str = "maf.mpack";
 pub const MAX_SV_DEPTH_FILENAME: &str = "max.depth.bed";
@@ -101,7 +102,6 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         //
         let maf_data = scan_maf_file(maf_filename, &chrom_list, &[&sample_name]);
         serialize_maf_data(&settings.output_dir, &maf_data);
-        //maf_utils::write_maf_track_files(&settings.output_dir, &chrom_list, &maf_scan_result);
     }
 
     let mut sample_scan_result = scan_sample_bam_for_sv_evidence(

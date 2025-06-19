@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use std::io::Write;
 
 use camino::Utf8Path;
-use flate2::{write::GzEncoder, Compression};
+use flate2::{Compression, write::GzEncoder};
 use log::info;
 use unwrap::unwrap;
 
-use crate::breakpoint::{get_breakpoint_vcf_sv_type, VcfSVType};
+use crate::breakpoint::{VcfSVType, get_breakpoint_vcf_sv_type};
 use crate::refine_sv::get_rsv_id_label;
 use crate::sv_group::SVGroup;
 use crate::sv_id::get_bnd_sv_id_label;

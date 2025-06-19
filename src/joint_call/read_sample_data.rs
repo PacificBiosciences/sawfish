@@ -2,24 +2,24 @@ use std::sync::mpsc::channel;
 
 use camino::Utf8Path;
 use log::info;
-use rust_vc_utils::{get_genome_ref_from_fasta, ChromList, GenomeRef};
+use rust_vc_utils::{ChromList, GenomeRef, get_genome_ref_from_fasta};
 use unwrap::unwrap;
 
 use super::get_refined_svs::get_sample_sv_groups;
 
-use crate::cli::{read_discover_settings, DiscoverSettings, JointCallSettings, SharedSettings};
-use crate::copy_number_segmentation::{deserialize_copy_number_segments, SampleCopyNumberSegments};
-use crate::depth_bins::{deserialize_genome_depth_bins, GenomeDepthBins};
+use crate::cli::{DiscoverSettings, JointCallSettings, SharedSettings, read_discover_settings};
+use crate::copy_number_segmentation::{SampleCopyNumberSegments, deserialize_copy_number_segments};
+use crate::depth_bins::{GenomeDepthBins, deserialize_genome_depth_bins};
 use crate::discover;
 use crate::discover::EXPECTED_COPY_NUMBER_BED_FILENAME;
 use crate::gc_correction::{
-    deserialize_genome_gc_levels, deserialize_sample_gc_bias_data, GenomeGCLevels,
-    SampleGCBiasCorrectionData,
+    GenomeGCLevels, SampleGCBiasCorrectionData, deserialize_genome_gc_levels,
+    deserialize_sample_gc_bias_data,
 };
 use crate::genome_regions::{
-    read_genome_regions_from_bed, ChromRegions, GenomeRegions, GenomeRegionsByChromIndex,
+    ChromRegions, GenomeRegions, GenomeRegionsByChromIndex, read_genome_regions_from_bed,
 };
-use crate::maf_utils::{deserialize_maf_data, MafData};
+use crate::maf_utils::{MafData, deserialize_maf_data};
 use crate::run_stats::read_discover_run_stats;
 use crate::score_sv::SampleScoreData;
 use crate::sv_group::SVGroup;

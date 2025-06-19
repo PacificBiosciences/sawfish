@@ -1,8 +1,8 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::sync::{
-    atomic::{self, AtomicBool},
     Arc, Mutex,
+    atomic::{self, AtomicBool},
 };
 use std::time::{Duration, Instant};
 

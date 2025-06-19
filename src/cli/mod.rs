@@ -5,17 +5,17 @@ mod shared;
 use camino::Utf8Path;
 use chrono::Datelike;
 use clap::{Parser, Subcommand};
-use simple_error::{bail, SimpleResult};
+use simple_error::{SimpleResult, bail};
 
 use self::discover::validate_and_fix_discovery_settings;
 pub use self::discover::{
-    read_discover_settings, validate_discover_settings_data, write_discover_settings,
-    DiscoverSettings,
+    DiscoverSettings, read_discover_settings, validate_discover_settings_data,
+    write_discover_settings,
 };
-use self::joint_call::validate_and_fix_joint_call_settings;
 pub use self::joint_call::JointCallSettings;
-use self::shared::validate_and_fix_shared_settings;
+use self::joint_call::validate_and_fix_joint_call_settings;
 pub use self::shared::SharedSettings;
+use self::shared::validate_and_fix_shared_settings;
 use crate::globals::PROGRAM_VERSION;
 
 #[derive(Subcommand)]

@@ -3,8 +3,8 @@ use std::sync::mpsc::channel;
 use log::{error, info};
 use rust_htslib::bam::{self, Read};
 use rust_vc_utils::{
-    filter_out_alignment_record, get_region_segments, ChromList, GenomeRef, MeanTracker,
-    ProgressReporter,
+    ChromList, GenomeRef, MeanTracker, ProgressReporter, filter_out_alignment_record,
+    get_region_segments,
 };
 use unwrap::unwrap;
 

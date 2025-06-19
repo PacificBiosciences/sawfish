@@ -1,10 +1,10 @@
 use std::ffi::CStr;
 
-use spoa::{get_alignment_clip_size, get_alignment_overlap_size, AlignmentEngine};
+use spoa::{AlignmentEngine, get_alignment_clip_size, get_alignment_overlap_size};
 
 use super::add_flanks::{
-    add_flanks, get_consensus_alignment_info, ConsensusSequence, ConsensusSequenceInfo,
-    TrimmedReadConsensusAlignmentInfo,
+    ConsensusSequence, ConsensusSequenceInfo, TrimmedReadConsensusAlignmentInfo, add_flanks,
+    get_consensus_alignment_info,
 };
 use super::{AssemblyResult, RefineSVSettings};
 use crate::refine_sv::trimmed_reads::TrimmedReadInfo;
@@ -117,7 +117,12 @@ fn debug_assembly_alignment_quality(
     use crate::spoa_utils::{print_fasta, print_msa};
     eprintln!(
         "Best candidate assembly overlap: {} score: {} Norm score: {} is_reject: {} qname: {} read_range: {:?}",
-        align_info.overlap, align_info.score, get_norm_score(align_info), reject_assembly_alignment(min_norm_score, align_info), trimmed_read_info.qname, trimmed_read_info.read_range,
+        align_info.overlap,
+        align_info.score,
+        get_norm_score(align_info),
+        reject_assembly_alignment(min_norm_score, align_info),
+        trimmed_read_info.qname,
+        trimmed_read_info.read_range,
     );
     {
         let (score, query_start_clip, overlap, msa) = get_alignment_to_graph_consensus(
@@ -125,7 +130,9 @@ fn debug_assembly_alignment_quality(
             &mut candidate_assemblies[align_info.index].graph,
             cread,
         );
-        eprintln!("Overlap alignment to consensus score: {score} query_start_clip: {query_start_clip} overlap: {overlap}\nmsa:\n");
+        eprintln!(
+            "Overlap alignment to consensus score: {score} query_start_clip: {query_start_clip} overlap: {overlap}\nmsa:\n"
+        );
         print_msa(&msa);
     }
     {
@@ -134,7 +141,9 @@ fn debug_assembly_alignment_quality(
             &mut candidate_assemblies[align_info.index].graph,
             cread,
         );
-        eprintln!("SW alignment to consensus score: {score} query_start_clip: {query_start_clip} overlap: {overlap}\nmsa:\n");
+        eprintln!(
+            "SW alignment to consensus score: {score} query_start_clip: {query_start_clip} overlap: {overlap}\nmsa:\n"
+        );
         print_msa(&msa);
     }
 
@@ -277,7 +286,9 @@ fn cluster_and_sort_candidate_assemblies(
         {
             let count = candidate_assembly.graph.get_sequence_count();
             let con_len = candidate_assembly.graph.consensus().into_bytes().len();
-            eprintln!("Candidate assembly {candidate_assembly_index} read count {count} cons length {con_len}");
+            eprintln!(
+                "Candidate assembly {candidate_assembly_index} read count {count} cons length {con_len}"
+            );
         }
     }
 

@@ -4,7 +4,7 @@ use rust_htslib::bam::{
     self,
     record::{Aux, Cigar, CigarString},
 };
-use rust_vc_utils::{bam_reg2bin, get_alignment_end, ChromList};
+use rust_vc_utils::{ChromList, bam_reg2bin, get_alignment_end};
 
 use crate::bam_utils::has_aligned_segments;
 use crate::discover;

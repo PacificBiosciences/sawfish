@@ -7,19 +7,19 @@ mod trimmed_reads;
 
 use std::fmt;
 use std::sync::{
+    Arc, Mutex,
     atomic::{self, AtomicBool},
     mpsc::channel,
-    Arc, Mutex,
 };
 use std::time::Instant;
 
 use itertools::Itertools;
 use log::info;
 use rust_htslib::bam;
-use rust_vc_utils::{downsample_vector, ChromList, GenomeRef, ProgressReporter};
+use rust_vc_utils::{ChromList, GenomeRef, ProgressReporter, downsample_vector};
 use strum::EnumCount;
 
-use self::assemble::{assemble_and_cluster_reads, AssemblyResult};
+use self::assemble::{AssemblyResult, assemble_and_cluster_reads};
 use self::assembly_regions::{
     get_assembly_regions_from_breakpoint_cluster, write_assembly_regions_to_bed,
 };
@@ -31,16 +31,16 @@ use self::trimmed_reads::{
 
 use crate::breakpoint::{Breakpoint, BreakpointCluster};
 use crate::cli;
-use crate::contig_output::{write_contig_alignments, ContigAlignmentInfo};
+use crate::contig_output::{ContigAlignmentInfo, write_contig_alignments};
 use crate::discover::StaticDiscoverSettings;
-use crate::expected_ploidy::{get_max_haplotype_count_for_regions, SVLocusExpectedCNInfo};
+use crate::expected_ploidy::{SVLocusExpectedCNInfo, get_max_haplotype_count_for_regions};
 use crate::genome_segment::{GenomeSegment, IntRange};
 use crate::log_utils::debug_msg;
 use crate::refine_sv::SVFilterType::{GTExcluded, NoFilter, Replicated};
 use crate::refined_cnv::{SharedSampleScoreInfo, SharedVariantScoreInfo};
 use crate::run_stats::RefineStats;
 use crate::sv_group::SVGroup;
-use crate::sv_id::{get_sv_id_label, SVUniqueIdData};
+use crate::sv_id::{SVUniqueIdData, get_sv_id_label};
 use crate::utils::print_fasta;
 use crate::worker_thread_data::BamReaderWorkerThreadDataSet;
 
@@ -409,7 +409,11 @@ fn refine_sv_candidate_breakpoint(
     debug_msg!(
         debug,
         "Cluster {cluster_index}: Starting refine_sv_candidate_breakpoint on worker thread {worker_thread_index}. Regions: {}",
-        assembly_segments.iter().map(|x| x.to_region_str(chrom_list)).join(", "));
+        assembly_segments
+            .iter()
+            .map(|x| x.to_region_str(chrom_list))
+            .join(", ")
+    );
 
     // Don't use expected copy number regions at this point (here we change expected copy number regions to None)
     //

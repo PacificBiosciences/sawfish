@@ -3,7 +3,7 @@ use std::fmt;
 use rust_vc_utils::ChromList;
 
 use crate::int_range::get_int_range_dir_distance;
-pub use crate::int_range::{get_int_range_distance, IntRange};
+pub use crate::int_range::{IntRange, get_int_range_distance};
 
 /// The structure represents a contiguous region of the genome on a single chromosome
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
@@ -132,9 +132,13 @@ fn parse_chrom_index_from_samtools_region_string<'a>(
         (chrom_index, None)
     } else {
         let msg = if str != chrom {
-            format!("Unexpected format in genome region string '{str}': can't find chromosome name '{chrom}' or '{str}' in bam file header")
+            format!(
+                "Unexpected format in genome region string '{str}': can't find chromosome name '{chrom}' or '{str}' in bam file header"
+            )
         } else {
-            format!("Unexpected format in genome region string '{str}': can't find chromosome '{chrom}' in bam file header")
+            format!(
+                "Unexpected format in genome region string '{str}': can't find chromosome '{chrom}' in bam file header"
+            )
         };
         panic!("{}", msg);
     }
@@ -157,7 +161,10 @@ fn parse_samtools_pos_range(
     if let Some(pos_range_str) = pos_range_str {
         let s2 = pos_range_str.split('-').collect::<Vec<_>>();
         let s2l = s2.len();
-        assert!(s2l <= 2, "Unexpected format in position range '{pos_range_str}' from genome region string {region_str}");
+        assert!(
+            s2l <= 2,
+            "Unexpected format in position range '{pos_range_str}' from genome region string {region_str}"
+        );
 
         // Strip any commas out of the number field (same as tabix cmdline behavior)
         let s2 = s2

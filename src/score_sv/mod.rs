@@ -12,9 +12,8 @@ use unwrap::unwrap;
 
 use crate::bam_sa_parser::get_seq_order_read_split_segments;
 use crate::bam_utils::{
-    bam_fetch_segment, get_alignment_closest_to_target_ref_pos,
+    TargetMatchType, bam_fetch_segment, get_alignment_closest_to_target_ref_pos,
     get_bam_alignment_closest_to_target_ref_pos, get_gap_compressed_identity, is_split_read,
-    TargetMatchType,
 };
 use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint};
 use crate::expected_ploidy::{SVLocusExpectedCNInfo, SVLocusPloidy};
@@ -27,7 +26,7 @@ use crate::refine_sv::{
     AlleleCounts, AlleleType, Genotype, RefinedSV, SVPhaseStatus, SVSampleScoreInfo, SVScoreInfo,
 };
 use crate::sv_group::{ClusterAssemblyAlignment, GroupHaplotypeId, SVGroup, SVGroupHaplotype};
-use crate::wfa2_utils::{print_pairwise_alignment, PairwiseAligner};
+use crate::wfa2_utils::{PairwiseAligner, print_pairwise_alignment};
 
 /// Get the reference allele breakend flank sequence corresponding to the genotype alignment region of the target SV breakend
 ///
@@ -1007,7 +1006,9 @@ fn get_best_allele_for_flank_condition(
     };
 
     if debug {
-        eprintln!("flank_type {flank_type:?} condition {flank_registration_type:?} allele_scores {allele_scores:?}");
+        eprintln!(
+            "flank_type {flank_type:?} condition {flank_registration_type:?} allele_scores {allele_scores:?}"
+        );
     }
 
     allele_scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
@@ -1341,7 +1342,9 @@ fn set_allele_depth_counts_for_single_sample_and_sv_allele(
             );
 
             if debug {
-                eprintln!("AD Outcome: use_count: {use_count} count_allele: {count_allele} assigned_allele {assigned_allele} is_assigned_allele_score_tie {is_assigned_allele_score_tie}");
+                eprintln!(
+                    "AD Outcome: use_count: {use_count} count_allele: {count_allele} assigned_allele {assigned_allele} is_assigned_allele_score_tie {is_assigned_allele_score_tie}"
+                );
             }
 
             if use_count {
@@ -2348,11 +2351,7 @@ fn set_allele_depth_counts_for_sv_group(
         let ad_count_passes = {
             let sample_haplotype_list = &sv_group.sample_haplotype_list[sample_index];
             let is_multihaplotype_sample = sample_haplotype_list.len() > 1;
-            if is_multihaplotype_sample {
-                2
-            } else {
-                1
-            }
+            if is_multihaplotype_sample { 2 } else { 1 }
         };
         let mut max_native_support_count = 0;
         for _ in 0..ad_count_passes {

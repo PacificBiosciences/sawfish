@@ -272,7 +272,14 @@ impl SVGroup {
 
 impl std::fmt::Debug for SVGroup {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "SVGroup:\n\tregions {:?}\n\thap count {}\n\tsample_hap_map: {:?}\n\tsv_hap_map: {:?}\n\tsv count {}",
-               self.group_regions, self.group_haplotypes.len(), self.sample_haplotype_list, self.sv_haplotype_map, self.refined_svs.len())
+        write!(
+            f,
+            "SVGroup:\n\tregions {:?}\n\thap count {}\n\tsample_hap_map: {:?}\n\tsv_hap_map: {:?}\n\tsv count {}",
+            self.group_regions,
+            self.group_haplotypes.len(),
+            self.sample_haplotype_list,
+            self.sv_haplotype_map,
+            self.refined_svs.len()
+        )
     }
 }

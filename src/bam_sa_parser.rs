@@ -1,7 +1,7 @@
 use rust_htslib::bam::record::{CigarString, Record};
+use rust_vc_utils::ChromList;
 use rust_vc_utils::bam_utils::aux::get_string_aux_tag;
 use rust_vc_utils::bam_utils::cigar::get_complete_read_clip_positions;
-use rust_vc_utils::ChromList;
 
 use crate::bam_utils::has_aligned_segments;
 
@@ -157,7 +157,10 @@ pub fn get_seq_order_read_split_segments(
             Some(&x) => x,
             None => {
                 let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
-                panic!("In read '{qname}', the SA aux tag desribes a split read mapped to {}:{} (in segment {}), which is not found in the input reference fasta", sa_segment.rname, sa_segment.pos, sa_segment_index);
+                panic!(
+                    "In read '{qname}', the SA aux tag desribes a split read mapped to {}:{} (in segment {}), which is not found in the input reference fasta",
+                    sa_segment.rname, sa_segment.pos, sa_segment_index
+                );
             }
         };
         seq_order_read_split_segments.push({

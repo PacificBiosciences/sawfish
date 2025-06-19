@@ -3,7 +3,7 @@ use clap::Args;
 use const_format::concatcp;
 use rust_vc_utils::ChromList;
 use serde::{Deserialize, Serialize};
-use simple_error::{bail, SimpleResult};
+use simple_error::{SimpleResult, bail};
 use unwrap::unwrap;
 
 use super::defaults::{MIN_GAP_COMPRESSED_IDENTITY, MIN_SV_MAPQ};
@@ -320,7 +320,7 @@ fn validate_discover_settings_data_impl(
         error!(
             "Diploid chromosome regex '{}' does not match any chromosome names in the input alignment file, use '--cov-regex \".\"' to match all available chromosomes.",
             settings.coverage_est_regex
-            );
+        );
         return Err(SettingValidationError::NoChromMatch);
     }
 

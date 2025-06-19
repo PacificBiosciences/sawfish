@@ -1,18 +1,18 @@
 use std::collections::BTreeMap;
 
 use rust_htslib::bam;
+use rust_vc_utils::ChromList;
 use rust_vc_utils::aux::is_aux_tag_found;
 use rust_vc_utils::bam_utils::get_seq_order_read_position;
 use rust_vc_utils::cigar::{
     get_cigar_ref_offset, get_hard_clipped_read_clip_positions,
     update_ref_and_hard_clipped_read_pos,
 };
-use rust_vc_utils::ChromList;
 
-use crate::bam_sa_parser::{get_seq_order_read_split_segments, SeqOrderSplitReadSegment};
-use crate::bam_utils::{test_read_for_large_insertion_soft_clip, LargeInsertionSoftClipState};
+use crate::bam_sa_parser::{SeqOrderSplitReadSegment, get_seq_order_read_split_segments};
+use crate::bam_utils::{LargeInsertionSoftClipState, test_read_for_large_insertion_soft_clip};
 use crate::breakpoint::*;
-use crate::genome_segment::{get_segment_distance, GenomeSegment};
+use crate::genome_segment::{GenomeSegment, get_segment_distance};
 use crate::int_range::IntRange;
 
 /// Temporary representation used inside of break_builder to handle CIGAR candidates

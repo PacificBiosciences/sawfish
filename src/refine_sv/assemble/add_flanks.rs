@@ -70,7 +70,10 @@ fn get_best_prefix_index(
         let align_info = &source_read_alignment_info[source_read_index];
 
         if debug_prefix_selection {
-            eprintln!("Prefix qname: {} source_read_index {source_read_index} trimmmed_read_index {trimmed_read_index}", read_info.qname);
+            eprintln!(
+                "Prefix qname: {} source_read_index {source_read_index} trimmmed_read_index {trimmed_read_index}",
+                read_info.qname
+            );
             eprintln!(
                 "prefix_len {} align_info {:?}",
                 read_info.prefix_len(),
@@ -130,7 +133,10 @@ fn get_best_suffix_index(
         let align_info = &source_read_alignment_info[source_read_index];
 
         if debug_suffix_selection {
-            eprintln!("Suffix qname: {} source_read_index {source_read_index} trimmmed_read_index {trimmed_read_index}", read_info.qname);
+            eprintln!(
+                "Suffix qname: {} source_read_index {source_read_index} trimmmed_read_index {trimmed_read_index}",
+                read_info.qname
+            );
             eprintln!(
                 "suffix_len {} align_info {:?}",
                 read_info.suffix_len(),
@@ -225,7 +231,9 @@ fn process_consensus_info_to_assembly_result_contig(
 
     let prefix_suffix_debug = false;
     if prefix_suffix_debug {
-        eprintln!("ClusterIndex/AssemblyIndex {cluster_index}/{assembly_index} contig prefix/suffix info:");
+        eprintln!(
+            "ClusterIndex/AssemblyIndex {cluster_index}/{assembly_index} contig prefix/suffix info:"
+        );
         if let Some(index) = best_prefix_source_read_index {
             let trimmed_read_index = source_reads[index];
             let read_info = &trimmed_reads[trimmed_read_index];
@@ -314,7 +322,10 @@ fn process_consensus_info_to_assembly_result_contig(
     };
 
     if prefix_suffix_debug {
-        eprintln!("trim_core_start: {trim_core_start} trim_core_end_offset: {trim_core_end_offset} core_consensus_len: {}", core_consensus.len());
+        eprintln!(
+            "trim_core_start: {trim_core_start} trim_core_end_offset: {trim_core_end_offset} core_consensus_len: {}",
+            core_consensus.len()
+        );
     }
 
     // Sanity check to bail out if this gets messy.

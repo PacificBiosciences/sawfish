@@ -7,7 +7,7 @@ use rust_vc_utils::cigar::{
 use unwrap::unwrap;
 
 use super::add_flanks::{
-    add_flanks, get_consensus_alignment_info, ConsensusSequence, ConsensusSequenceInfo,
+    ConsensusSequence, ConsensusSequenceInfo, add_flanks, get_consensus_alignment_info,
 };
 use super::{AssemblyResult, RefineSVSettings};
 use crate::bio_align_utils::{AlignmentWeights, OverlapPairwiseAligner, PairwiseAligner};
@@ -127,11 +127,7 @@ fn reject_backbone_alignment(
 }
 
 fn abs_diff<U: std::cmp::PartialOrd + std::ops::Sub<Output = U>>(x1: U, x2: U) -> U {
-    if x1 < x2 {
-        x2 - x1
-    } else {
-        x1 - x2
-    }
+    if x1 < x2 { x2 - x1 } else { x1 - x2 }
 }
 
 /// Determine if 2 backbone alignments are at a very similar quality level
@@ -316,7 +312,8 @@ fn build_insertion_backbones(
             let count = candidate_backbone.source_reads.len();
             let length = candidate_backbone.seq.len();
             eprintln!(
-                "Candidate backbone {candidate_backbone_index} length: {length} read count: {count} reads: {:?}", candidate_backbone.source_reads
+                "Candidate backbone {candidate_backbone_index} length: {length} read count: {count} reads: {:?}",
+                candidate_backbone.source_reads
             );
         }
     }
@@ -491,7 +488,7 @@ fn polish_backbone(
         let max_indel = consensus_info
             .indel
             .iter()
-            .max_by(|(_, &a), (_, &b)| a.partial_cmp(&b).expect("Tried to compare a NaN"));
+            .max_by(|&(_, &a), &(_, &b)| a.partial_cmp(&b).expect("Tried to compare a NaN"));
         if let Some((ConsensusIndel::Indel(indel_edit), _)) = max_indel {
             candidate_backbone.seq.extend(&indel_edit.ins_seq);
             if indel_edit.del_len > 0 {
@@ -502,7 +499,7 @@ fn polish_backbone(
         let max_base = consensus_info
             .base
             .iter()
-            .max_by(|(_, &a), (_, &b)| a.partial_cmp(&b).expect("Tried to compare a NaN"));
+            .max_by(|&(_, &a), &(_, &b)| a.partial_cmp(&b).expect("Tried to compare a NaN"));
         if let Some((&base, _)) = max_base {
             candidate_backbone.seq.push(base);
         }

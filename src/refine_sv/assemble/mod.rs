@@ -2,7 +2,7 @@ mod add_flanks;
 mod banded_pairwise_assembler;
 mod spoa_assembler;
 
-use super::{trimmed_reads::TrimmedReadInfo, RefineSVSettings};
+use super::{RefineSVSettings, trimmed_reads::TrimmedReadInfo};
 use crate::int_range::IntRange;
 
 pub struct AssemblyResultContig {

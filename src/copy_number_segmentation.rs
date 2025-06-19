@@ -11,7 +11,7 @@ use unwrap::unwrap;
 
 use crate::bam_scanner::SampleAlignmentScanResult;
 use crate::cli;
-use crate::depth_bins::{get_bin_index, get_complete_bin_count, DepthBin, GenomeDepthBins};
+use crate::depth_bins::{DepthBin, GenomeDepthBins, get_bin_index, get_complete_bin_count};
 use crate::discover::{COPYNUM_SEGMENT_BEDGRAPH_FILENAME, COPYNUM_SEGMENT_MESSAGEPACK_FILENAME};
 use crate::expected_ploidy::get_expected_copy_number_info_for_regions;
 use crate::gc_correction::{GCBiasCorrectionData, GenomeGCLevels, SampleGCBiasCorrectionData};

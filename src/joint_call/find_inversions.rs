@@ -3,7 +3,7 @@ use crate::genome_segment::GenomeSegment;
 use crate::int_range::get_recip_overlap;
 use crate::refine_sv::Genotype;
 use crate::sv_group::SVGroup;
-use crate::sv_id::{get_sv_id_label, SVUniqueIdData};
+use crate::sv_id::{SVUniqueIdData, get_sv_id_label};
 
 struct CandBpInfo {
     /// Index of SV group in the current sorting of sv_group list

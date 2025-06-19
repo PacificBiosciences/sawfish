@@ -3,10 +3,10 @@ use std::collections::BinaryHeap;
 use rust_vc_utils::ChromList;
 
 use super::merge_sv_shared::{
-    clone_sv_group_as_multisample, set_sv_group_expected_cn_info, AnnoSVGroup,
+    AnnoSVGroup, clone_sv_group_as_multisample, set_sv_group_expected_cn_info,
 };
-use super::{get_duplicate_stats, CandidateSVGroupInfo};
-use crate::bio_align_utils::{print_pairwise_alignment, PairwiseAligner};
+use super::{CandidateSVGroupInfo, get_duplicate_stats};
+use crate::bio_align_utils::{PairwiseAligner, print_pairwise_alignment};
 use crate::breakpoint::Breakpoint;
 use crate::genome_segment::GenomeSegment;
 use crate::joint_call::SampleJointCallData;

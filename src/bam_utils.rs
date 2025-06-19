@@ -619,7 +619,7 @@ pub fn get_alignment_ref_segments(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_htslib::bam::{header, Header, HeaderView};
+    use rust_htslib::bam::{Header, HeaderView, header};
 
     #[test]
     fn test_gap_compressed_identity() {

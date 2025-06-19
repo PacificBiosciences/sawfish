@@ -1,12 +1,12 @@
 //! Track stats for the whole sawfish run
 //!
 
-use std::fs::{remove_file, File};
+use std::fs::{File, remove_file};
 
 use camino::Utf8Path;
 use log::info;
 use serde::{Deserialize, Serialize};
-use simple_error::{try_with, SimpleResult};
+use simple_error::{SimpleResult, try_with};
 use unwrap::unwrap;
 
 use crate::discover::RUN_STATS_FILENAME;

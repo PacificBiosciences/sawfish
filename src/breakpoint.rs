@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use rust_vc_utils::{rev_comp_in_place, ChromList};
+use rust_vc_utils::{ChromList, rev_comp_in_place};
 pub use strum::EnumCount;
 
-use crate::genome_segment::{get_segment_dir_distance, get_segment_distance, GenomeSegment};
+use crate::genome_segment::{GenomeSegment, get_segment_dir_distance, get_segment_distance};
 use crate::int_range::IntRange;
 
 /// Direction of a breakend

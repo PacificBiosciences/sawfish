@@ -9,10 +9,10 @@ use rust_vc_utils::bam_utils::cigar::{
     get_complete_read_clip_positions, update_hard_clipped_read_pos,
     update_ref_and_hard_clipped_read_pos, update_ref_pos,
 };
-use rust_vc_utils::{rev_comp_in_place, ChromList, GenomeRef};
+use rust_vc_utils::{ChromList, GenomeRef, rev_comp_in_place};
 
 use self::segment_alignment::{
-    transform_alt_hap_alignment_into_left_right_components, AltHapLeftRightComponentAlignmentInfo,
+    AltHapLeftRightComponentAlignmentInfo, transform_alt_hap_alignment_into_left_right_components,
 };
 use super::assemble::AssemblyResultContig;
 use super::{AssemblyResult, RefineSVSettings, RefinedSV};
@@ -27,10 +27,10 @@ use crate::contig_output::{ContigAlignmentInfo, ContigAlignmentSegment};
 use crate::expected_ploidy::SVLocusExpectedCNInfo;
 use crate::genome_ref_utils::get_ref_segment_seq;
 use crate::genome_segment::GenomeSegment;
-use crate::int_range::{get_overlap_range, IntRange};
+use crate::int_range::{IntRange, get_overlap_range};
 use crate::log_utils::debug_msg;
 use crate::refine_sv::AnnotatedOverlappingHaplotype;
-use crate::simple_alignment::{clip_alignment_ref_edges, SimpleAlignment};
+use crate::simple_alignment::{SimpleAlignment, clip_alignment_ref_edges};
 use crate::sv_group::{
     ClusterAssembly, ClusterAssemblyAlignment, GroupHaplotypeId, SVGroup, SVGroupHaplotype,
 };
@@ -418,13 +418,20 @@ fn align_single_ref_region_assemblies(
     let is_any_filter = filter_all_overlapping_svs || filter_close_overlapping_svs;
 
     let debug = false;
-    debug_msg!(debug, "SingleRef Cluster {cluster_index}: filter_all_overlapping_svs: {filter_all_overlapping_svs} filter_close_overlapping_svs: {filter_close_overlapping_svs}");
+    debug_msg!(
+        debug,
+        "SingleRef Cluster {cluster_index}: filter_all_overlapping_svs: {filter_all_overlapping_svs} filter_close_overlapping_svs: {filter_close_overlapping_svs}"
+    );
 
     let mut overlapping_haplotypes = Vec::new();
 
     for (assembly_index, assembly) in assemblies.iter().enumerate() {
         if assembly.supporting_read_count() < refine_settings.min_assembly_read_support {
-            debug_msg!(debug, "SingleRef cluster/contig: {cluster_index}/{assembly_index} - filtered for low read support: {}", assembly.supporting_read_count());
+            debug_msg!(
+                debug,
+                "SingleRef cluster/contig: {cluster_index}/{assembly_index} - filtered for low read support: {}",
+                assembly.supporting_read_count()
+            );
             continue;
         }
 
@@ -437,12 +444,19 @@ fn align_single_ref_region_assemblies(
         {
             (score, Some(x)) => (score, x),
             (_, None) => {
-                debug_msg!(debug, "SingleRef cluster/contig: {cluster_index}/{assembly_index} - filtered for poor contig to ref alignment");
+                debug_msg!(
+                    debug,
+                    "SingleRef cluster/contig: {cluster_index}/{assembly_index} - filtered for poor contig to ref alignment"
+                );
                 // TODO add warning or statistics to track these filtration cases
                 continue;
             }
         };
-        debug_msg!(debug, "SingleRef cluster/contig: {cluster_index}/{assembly_index} - assembly_contig_to_chrom_segment_alignment: {:?}", assembly_contig_to_chrom_segment_alignment);
+        debug_msg!(
+            debug,
+            "SingleRef cluster/contig: {cluster_index}/{assembly_index} - assembly_contig_to_chrom_segment_alignment: {:?}",
+            assembly_contig_to_chrom_segment_alignment
+        );
         debug_msg!(
             debug,
             "SingleRef cluster/contig: {cluster_index}/{assembly_index} - alignment_score {}",
@@ -574,10 +588,12 @@ fn align_single_ref_region_assemblies(
     let sv_group = if refined_svs.is_empty() {
         None
     } else {
-        let sample_haplotype_list = vec![overlapping_haplotypes
-            .iter()
-            .map(|x| x.assembly_index)
-            .collect()];
+        let sample_haplotype_list = vec![
+            overlapping_haplotypes
+                .iter()
+                .map(|x| x.assembly_index)
+                .collect(),
+        ];
         let sample_expected_cn_info = vec![expected_cn_info];
         let sv_haplotype_map = refined_svs.iter().map(|x| x.id.assembly_index).collect();
         let sv_group = SVGroup {
@@ -879,8 +895,12 @@ fn get_remote_breakend_info(
     };
 
     if debug {
-        eprintln!("left_full_ref_flank_size {left_ref_flank_size} left_remote_flank_size {left_remote_flank_size}");
-        eprintln!("right_full_ref_flank_size {right_ref_flank_size} right_remote_flank_size {right_remote_flank_size}");
+        eprintln!(
+            "left_full_ref_flank_size {left_ref_flank_size} left_remote_flank_size {left_remote_flank_size}"
+        );
+        eprintln!(
+            "right_full_ref_flank_size {right_ref_flank_size} right_remote_flank_size {right_remote_flank_size}"
+        );
     }
 
     // Verify remote flank size constraints
@@ -1065,11 +1085,19 @@ fn extract_reference_segment_info(
         eprintln!("extended_ref_segment: {:?}", &extended_ref_segment);
         eprintln!(
             "actual_left_flank_seq_size/actual_left_flank_range_size/left_ref_flank/left_seq_trim/left_range_trim: {}/{}/{}/{}/{}",
-            actual_left_flank_seq_size, actual_left_flank_range_size, left_ref_flank_size, left_seq_trim, left_range_trim
+            actual_left_flank_seq_size,
+            actual_left_flank_range_size,
+            left_ref_flank_size,
+            left_seq_trim,
+            left_range_trim
         );
         eprintln!(
             "actual_right_flank_seq_size/actual_right_flank_range_size/right_ref_flank/right_seq_trim/right_range_trim: {}/{}/{}/{}/{}",
-            actual_right_flank_seq_size, actual_right_flank_range_size, right_ref_flank_size, right_seq_trim, right_range_trim
+            actual_right_flank_seq_size,
+            actual_right_flank_range_size,
+            right_ref_flank_size,
+            right_seq_trim,
+            right_range_trim
         );
     }
 
@@ -1133,7 +1161,10 @@ fn get_two_region_alt_hap_info(
 ) -> TwoRegionAltHapInfo {
     let debug = false;
     if debug {
-        eprintln!("starting get_two_region_alt_hap_info for cluster_index {cluster_index} target_segments {:?}", target_segments);
+        eprintln!(
+            "starting get_two_region_alt_hap_info for cluster_index {cluster_index} target_segments {:?}",
+            target_segments
+        );
     }
 
     // The strategy to build the alternate haplotype model is to extract reference compositions corresponding to the
@@ -1167,7 +1198,9 @@ fn get_two_region_alt_hap_info(
 
     if debug {
         eprintln!("bp {bp:?}");
-        eprintln!("ref_segment2_revcomp {ref_segment2_revcomp} ref_segment2_after_ref_segment1 {ref_segment2_after_ref_segment1} middle_flank_size {middle_flank_size}");
+        eprintln!(
+            "ref_segment2_revcomp {ref_segment2_revcomp} ref_segment2_after_ref_segment1 {ref_segment2_after_ref_segment1} middle_flank_size {middle_flank_size}"
+        );
     }
 
     // Extract the two standard and extended reference segments:
@@ -1237,7 +1270,13 @@ fn get_two_region_alt_hap_info(
         get_segment_neighbor_extension_size(&ref_segment2_seq, &ref_segment2, cluster_index, 1);
 
     if debug {
-        eprintln!("ref_segment1_seq_len {} ref_segment1 {:?} ref_segment1_size {} segment1_extension_size {}", ref_segment1_seq.len(), &ref_segment1, ref_segment1.range.size(), segment1_neighbor_extension_size);
+        eprintln!(
+            "ref_segment1_seq_len {} ref_segment1 {:?} ref_segment1_size {} segment1_extension_size {}",
+            ref_segment1_seq.len(),
+            &ref_segment1,
+            ref_segment1.range.size(),
+            segment1_neighbor_extension_size
+        );
     }
 
     let spacer_size = refine_settings.two_region_alt_haplotype_spacer_size;
@@ -1566,7 +1605,9 @@ fn get_clipped_contig_alignment_segment(
         clipped_alignment.ref_offset -= left_extension_size;
 
         if debug {
-            eprintln!("segment{breakend_index} left_ext/right_ext {left_extension_size}/{right_extension_size}");
+            eprintln!(
+                "segment{breakend_index} left_ext/right_ext {left_extension_size}/{right_extension_size}"
+            );
             eprintln!(
                 "segment{breakend_index} input alignment {:?}",
                 ref_segment_alignment
@@ -1996,7 +2037,10 @@ fn align_multi_ref_region_assemblies(
     for (assembly_index, assembly) in assemblies.iter().enumerate() {
         if assembly.supporting_read_count() < refine_settings.min_assembly_read_support {
             if debug {
-                eprintln!("MultiRef cluster_id/assembly_id {cluster_index}/{assembly_index} - filtered for low read support: {}", assembly.supporting_read_count());
+                eprintln!(
+                    "MultiRef cluster_id/assembly_id {cluster_index}/{assembly_index} - filtered for low read support: {}",
+                    assembly.supporting_read_count()
+                );
             }
             continue;
         }
@@ -2004,7 +2048,9 @@ fn align_multi_ref_region_assemblies(
         // Loop over multiple contigs for each assembly -- typically this means there's a contig with longer reference flanks to try out if the smaller one fails
         for (contig_index, assembly_contig) in assembly.contigs.iter().enumerate() {
             if debug {
-                eprintln!("MultiRef cluster_id/assembly_id/contig_id {cluster_index}/{assembly_index}/{contig_index} - START");
+                eprintln!(
+                    "MultiRef cluster_id/assembly_id/contig_id {cluster_index}/{assembly_index}/{contig_index} - START"
+                );
             }
 
             let (_aligment_score, mut assembly_contig_to_alt_hap_alignment) =

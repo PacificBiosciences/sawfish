@@ -1,7 +1,7 @@
 use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
 
-use log::{info, log_enabled, Level};
+use log::{Level, info, log_enabled};
 use rust_vc_utils::ProgressReporter;
 
 use super::{SampleJointCallData, SharedJointCallData};
@@ -10,10 +10,10 @@ use crate::log_utils::debug_msg;
 use crate::refine_sv::SVFilterType;
 use crate::run_stats::ScoreStats;
 use crate::score_sv::{
-    score_and_assess_refined_sv_group, SampleScoreData, ScoreDebugSettings, ScoreSVSettings,
+    SampleScoreData, ScoreDebugSettings, ScoreSVSettings, score_and_assess_refined_sv_group,
 };
 use crate::sv_group::SVGroup;
-use crate::worker_thread_data::{get_bam_reader_worker_thread_data, BamReaderWorkerThreadDataSet};
+use crate::worker_thread_data::{BamReaderWorkerThreadDataSet, get_bam_reader_worker_thread_data};
 
 type ScoreWorkerReturnType = (Duration, SVGroup);
 

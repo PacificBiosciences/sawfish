@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use camino::Utf8Path;
 use log::info;
 use rust_htslib::bam;
-use rust_vc_utils::{bigwig_utils, ArraySegmenter, ChromList, MeanTracker};
+use rust_vc_utils::{ArraySegmenter, ChromList, MeanTracker, bigwig_utils};
 use serde::{Deserialize, Serialize};
 use unwrap::unwrap;
 

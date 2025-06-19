@@ -1,5 +1,5 @@
 use clap::Args;
-use simple_error::{bail, SimpleResult};
+use simple_error::{SimpleResult, bail};
 
 #[derive(Args)]
 pub struct SharedSettings {

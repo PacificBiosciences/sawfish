@@ -4,7 +4,7 @@ use camino::Utf8Path;
 use itertools::Itertools;
 use log::info;
 use rust_htslib::bcf::{self, Read};
-use rust_vc_utils::{bigwig_utils, ChromList};
+use rust_vc_utils::{ChromList, bigwig_utils};
 use serde::{Deserialize, Serialize};
 use unwrap::unwrap;
 
@@ -58,7 +58,10 @@ pub fn scan_maf_file(filename: &str, chrom_list: &ChromList, sample_names: &[&st
                     x.push(output_chrom_index);
                 }
                 None => {
-                    panic!("Input alignment file does not includes chromosome '{}' from minor allele frequency file '{}'", vcf_chrom_name, filename);
+                    panic!(
+                        "Input alignment file does not includes chromosome '{}' from minor allele frequency file '{}'",
+                        vcf_chrom_name, filename
+                    );
                 }
             }
         }
@@ -100,7 +103,10 @@ pub fn scan_maf_file(filename: &str, chrom_list: &ChromList, sample_names: &[&st
             let mut testx = x.iter().filter_map(|&x| x).sorted().collect::<Vec<_>>();
             testx.sort();
             for (sample_index, sample_name) in sample_names.iter().enumerate() {
-                assert_eq!(testx[sample_index], sample_index, "Can't find sample '{sample_name}' in minor allele frequency input file: '{filename}'");
+                assert_eq!(
+                    testx[sample_index], sample_index,
+                    "Can't find sample '{sample_name}' in minor allele frequency input file: '{filename}'"
+                );
             }
         }
         x
@@ -145,7 +151,9 @@ pub fn scan_maf_file(filename: &str, chrom_list: &ChromList, sample_names: &[&st
                 if v.len() != 2 {
                     if !(v.len() == 1 && v[0] == missing_int) {
                         let rstr = rec.to_vcf_string().unwrap();
-                        panic!("Failed to process allele depth from minor allele frequency file record:\n\n{rstr}");
+                        panic!(
+                            "Failed to process allele depth from minor allele frequency file record:\n\n{rstr}"
+                        );
                     }
                 } else if v.iter().all(|&x| x != missing_int) {
                     maf_data.samples[output_sample_index].data[output_chrom_index]

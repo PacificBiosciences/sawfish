@@ -4,8 +4,8 @@ use rust_vc_utils::bam_utils::cigar::{
     update_hard_clipped_read_pos, update_ref_pos,
 };
 
-use super::util;
 use super::TwoRegionAltHapInfo;
+use super::util;
 use crate::int_range::IntRange;
 use crate::simple_alignment::SimpleAlignment;
 use crate::utils::get_seq_pos_flanks;

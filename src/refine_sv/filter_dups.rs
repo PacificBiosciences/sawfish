@@ -1,7 +1,7 @@
 use rust_vc_utils::ChromList;
 
-use crate::breakpoint::{get_breakpoint_span, get_breakpoint_vcf_sv_type, VcfSVType};
-use crate::genome_segment::{is_strict_order, GenomeSegment, IntRange};
+use crate::breakpoint::{VcfSVType, get_breakpoint_span, get_breakpoint_vcf_sv_type};
+use crate::genome_segment::{GenomeSegment, IntRange, is_strict_order};
 use crate::sv_group::SVGroup;
 use crate::utils::drop_true;
 

@@ -13,13 +13,13 @@ use self::joint_call_all_samples::joint_genotype_all_samples;
 use self::merge_cnv::merge_sv_with_depth_info;
 use self::merge_haplotypes::merge_haplotypes;
 pub use self::read_sample_data::SampleJointCallData;
-use self::read_sample_data::{read_all_sample_data, SharedJointCallData};
+use self::read_sample_data::{SharedJointCallData, read_all_sample_data};
 use self::sample_output::setup_sample_output;
 
 use crate::cli::{JointCallSettings, SharedSettings};
 use crate::globals::PROGRAM_VERSION;
-use crate::large_variant_output::{write_indexed_sv_vcf_file, VcfSettings};
-use crate::run_stats::{delete_run_stats, write_joint_call_run_stats, JointCallRunStats, RunStep};
+use crate::large_variant_output::{VcfSettings, write_indexed_sv_vcf_file};
+use crate::run_stats::{JointCallRunStats, RunStep, delete_run_stats, write_joint_call_run_stats};
 
 pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSettings) {
     // Now that we're committed to a run, remove any possible older run stats file that could be present in case this is a clobber run
@@ -34,6 +34,7 @@ pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSett
     setup_sample_output(
         &settings.output_dir,
         &shared_data.chrom_list,
+        &shared_data,
         &all_sample_data,
     );
 

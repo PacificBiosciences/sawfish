@@ -2,13 +2,16 @@ use std::sync::mpsc::channel;
 
 use camino::Utf8Path;
 use log::info;
-use rust_vc_utils::{bigwig_utils, genome_ref, ArraySegmenter, ChromList};
+use rust_vc_utils::{ArraySegmenter, ChromList, bigwig_utils, genome_ref};
 use serde::{Deserialize, Serialize};
 use unwrap::unwrap;
 
 use crate::bam_scanner::SampleAlignmentScanResult;
-use crate::depth_bins::{self, ChromDepthBins, DepthBin};
-use crate::discover::{GENOME_GC_LEVELS_MESSAGEPACK_FILENAME, SAMPLE_GC_BIAS_MESSAGEPACK_FILENAME};
+use crate::depth_bins::{self, ChromDepthBins, DepthBin, GenomeDepthBins};
+use crate::discover::{
+    GC_BIAS_CORRECTED_DEPTH_BINS_BIGWIG_FILENAME, GENOME_GC_LEVELS_MESSAGEPACK_FILENAME,
+    SAMPLE_GC_BIAS_MESSAGEPACK_FILENAME,
+};
 
 /// GC content information for a region
 ///
@@ -197,7 +200,12 @@ pub fn get_depth_bin_gc_content(
         }
         let chrom_ref = chrom_ref.unwrap();
         if chrom_ref.len() != chrom_info.length as usize {
-            panic!("Length of chromosome '{}' differs between alignment file header '{}' and fasta reference genome input '{}'", chrom_info.label, chrom_ref.len(), chrom_info.length);
+            panic!(
+                "Length of chromosome '{}' differs between alignment file header '{}' and fasta reference genome input '{}'",
+                chrom_info.label,
+                chrom_ref.len(),
+                chrom_info.length
+            );
         }
     }
 
@@ -554,7 +562,7 @@ fn write_gc_depth_reduction_debug_output(output_dir: &Utf8Path, gc_depth_reducti
 fn gc_scale_sample_depth(
     depth_bins: &[ChromDepthBins],
     sample_gc_bias_data: &SampleGCBiasCorrectionData,
-    gc_levels: &GenomeGCLevels,
+    genome_gc_levels: &GenomeGCLevels,
 ) -> Vec<ChromDepthBins> {
     // This application requires the reciprocal of the depth reduction factor used for the
     // emission prob correction, so go ahead and setup the reciprocal value array here:
@@ -566,7 +574,7 @@ fn gc_scale_sample_depth(
 
     let mut gc_scaled_depth_bins = Vec::new();
     for (chrom_index, chrom_depth_bins) in depth_bins.iter().enumerate() {
-        let chrom_gc_levels = &gc_levels[chrom_index];
+        let chrom_gc_levels = &genome_gc_levels[chrom_index];
 
         let bin_count = chrom_depth_bins.len();
         let mut gc_scaled_chrom_depth_bins = Vec::with_capacity(bin_count);
@@ -589,24 +597,24 @@ fn gc_scale_sample_depth(
 
 /// Scale depth by gc correction factors and write these scaled depths out to bigwig format
 ///
-fn write_gc_scaled_depth_track_files(
+pub fn write_gc_scaled_depth_track_files(
     output_dir: &Utf8Path,
     chrom_list: &ChromList,
-    gc_bias_data: &GCBiasCorrectionData,
-    sample_scan_result: &SampleAlignmentScanResult,
+    sample_gc_bias_data: &SampleGCBiasCorrectionData,
+    genome_gc_levels: &GenomeGCLevels,
+    genome_depth_bins: &GenomeDepthBins,
 ) {
-    let sample_gc_correction = &gc_bias_data.sample_gc_bias_data;
-    let gc_scaled_depth_filename = output_dir.join("gc_scaled_depth.bw");
+    let gc_scaled_depth_filename = output_dir.join(GC_BIAS_CORRECTED_DEPTH_BINS_BIGWIG_FILENAME);
 
     let gc_scaled_depth_bins = gc_scale_sample_depth(
-        &sample_scan_result.genome_depth_bins.depth_bins,
-        sample_gc_correction,
-        &gc_bias_data.genome_gc_levels,
+        &genome_depth_bins.depth_bins,
+        sample_gc_bias_data,
+        genome_gc_levels,
     );
 
     depth_bins::write_depth_bigwig_file(
         &gc_scaled_depth_filename,
-        sample_scan_result.genome_depth_bins.bin_size,
+        genome_depth_bins.bin_size,
         &gc_scaled_depth_bins,
         chrom_list,
         "gc scaled depth",
@@ -697,7 +705,13 @@ pub fn write_gc_correction_debug_output(
         &gc_bias_data.sample_gc_bias_data.gc_depth_reduction,
     );
 
-    write_gc_scaled_depth_track_files(output_dir, chrom_list, gc_bias_data, sample_scan_result);
+    write_gc_scaled_depth_track_files(
+        output_dir,
+        chrom_list,
+        &gc_bias_data.sample_gc_bias_data,
+        &gc_bias_data.genome_gc_levels,
+        &sample_scan_result.genome_depth_bins,
+    );
 
     write_gc_reduction_track_files(output_dir, chrom_list, gc_bias_data, sample_scan_result);
 }

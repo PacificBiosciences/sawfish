@@ -257,8 +257,7 @@ directory for some common human reference genomes. The recommended exclusion tra
 exclude region set is provided. Annotation-based excluded regions include assembly gaps,centromeres, and alpha satellite
 sequences. Common CNV excluded regions specify where sawfish calls the same CNV type in a high fraction of samples within a
 diverse sample cohort. In this case the common CNV regions indicate that the CNV type is present in at least 50% of the 47
-[HPRC year1 cohort samples]
-(https://raw.githubusercontent.com/human-pangenomics/HPP_Year1_Data_Freeze_v1.0/main/sample_metadata/hprc_year1_sample_metadata.txt).
+[HPRC year1 cohort samples](https://raw.githubusercontent.com/human-pangenomics/HPP_Year1_Data_Freeze_v1.0/main/sample_metadata/hprc_year1_sample_metadata.txt).
 
 For other genomes, 'annotation_only' excluded region tracks are provided. These files are named with the pattern
 `annotation_only.${genome_tag}.bed.gz`, where the genome_tag value may be `hg38`, `hg19` or `hs37d5`. For reference
@@ -414,13 +413,23 @@ order that samples are listed on command-line for the `joint-call` step.
 ##### Copy-number segmentation track
 
 The final copy-number segmentation result for the given sample is provided in `copynum.bedgraph`, where the copy number
-value is listed in column 4. Not that any region segmented into the 'excluded' state will be represented as an uncovered
+value is listed in column 4. Note that any region segmented into the 'excluded' state will be represented as an uncovered
 gap in the region coverage.
+
+##### GC-bias corrected depth track
+
+The bigwig file `gc_bias_corrected_depth.bw` provides binned depth values enumerated from the sample alignment file and
+rescaled to correct for the GC-bias pattern inferred from the sample.
+
+This track can be especially useful to visualize and interpret CNV calls. Note that the copy number segmentation model
+does not directly operate on the values in this track -- instead it uses the original depth values together with the
+local GC-bias estimate for each bin. During segmentation, the GC-bias estimate is used to modify the expected
+depth rather than scaling the observed depth.
 
 ##### Depth track
 
-The depth bin values used as input to the segmentation process for each sample are provided in bigwig format in the file
-`depth.bw`. This track can be useful to visualize and interpret the CNV output.
+The binned depth values enumerated from the sample alignment file and used as input to the segmentation process are
+provided in bigwig format in the file `depth.bw`.
 
 ##### Minor allele frequency track
 
@@ -567,8 +576,10 @@ The `discover` step should typically require less than 8Gb/thread so long as at 
 
 ### Discover step input file path storage
 
-Sawfish accesses several files associated with each sample during joint-genotyping in the `joint-call` step. For
-instance, this is done to test read support for each allele by accessing the sample alignment file.
+In the `joint-call` step, sawfish primarily relies on the files it has written to the discover step output directory for
+each sample. For two of the file paths provided as input to the `discover` step, sawfish relies on being able to access
+the original path provided during the discover step. These two files are the input alignment file (specified with
+`--bam`), and the reference fasta file (specified with `--ref`).
 
 To find these files for each sample, input file paths are stored from the `discover` step in a configuration file
 written to the output directory here:

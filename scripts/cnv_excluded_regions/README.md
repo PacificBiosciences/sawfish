@@ -70,8 +70,7 @@ samples contained the same type of CNV (deletion or duplication). These regions 
 excluded regions as described in the final step below.
 
 For the pre-computed GRCh38 excluded regions track provided with sawfish, the common CNV mask was generated from the [47
-HPRC year1 cohort samples]
-(https://raw.githubusercontent.com/human-pangenomics/HPP_Year1_Data_Freeze_v1.0/main/sample_metadata/hprc_year1_sample_metadata.txt).
+HPRC year1 cohort samples](https://raw.githubusercontent.com/human-pangenomics/HPP_Year1_Data_Freeze_v1.0/main/sample_metadata/hprc_year1_sample_metadata.txt).
 
 ## Combining results to create a full excluded region set
 
