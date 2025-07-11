@@ -94,7 +94,7 @@ pub fn validate_and_fix_settings(settings: Settings) -> Settings {
     match validate_and_fix_settings_impl(settings) {
         Ok(x) => x,
         Err(msg) => {
-            eprintln!("Invalid command-line setting: {}", msg);
+            eprintln!("Invalid command-line setting: {msg}");
             std::process::exit(exitcode::USAGE);
         }
     }

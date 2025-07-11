@@ -79,12 +79,10 @@ fn get_sv_vcf_header(
         br#"##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">"#,]);
 
     let contig_pos = format!(
-        "##INFO=<ID={},Number=1,Type=Integer,Description=\"SV position in the contig sequence before breakend1\">",
-        CONTIG_POS_INFO_KEY
+        "##INFO=<ID={CONTIG_POS_INFO_KEY},Number=1,Type=Integer,Description=\"SV position in the contig sequence before breakend1\">"
     );
     let overlap_asm = format!(
-        "##INFO=<ID={},Number=.,Type=Integer,Description=\"Assembly indices of overlapping haplotypes\">",
-        OVERLAP_ASM_INFO_KEY
+        "##INFO=<ID={OVERLAP_ASM_INFO_KEY},Number=.,Type=Integer,Description=\"Assembly indices of overlapping haplotypes\">"
     );
 
     if candidate_mode {
@@ -364,10 +362,7 @@ fn get_sv_genotype(
                     }
                 }
                 Genotype::Het => {
-                    panic!(
-                        "Unexpected haploid GT value. sample_score: {:?}",
-                        sample_score
-                    );
+                    panic!("Unexpected haploid GT value. sample_score: {sample_score:?}");
                 }
             },
             None => (

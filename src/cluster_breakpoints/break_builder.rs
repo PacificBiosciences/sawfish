@@ -437,7 +437,7 @@ impl<'a> BreakBuilder<'a> {
             let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
             eprintln!("SA segments for read: {qname}");
             for seg in seq_order_read_split_segments.iter() {
-                eprintln!("Sorted Segment: {:?}", seg);
+                eprintln!("Sorted Segment: {seg:?}");
             }
         }
 

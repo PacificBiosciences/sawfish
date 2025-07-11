@@ -224,7 +224,7 @@ impl SVGroup {
     pub fn assert_validity(&self, treat_single_copy_as_haploid: bool) {
         let test_result = self.get_validity_test(treat_single_copy_as_haploid);
         if !test_result.is_valid() {
-            error!("Invalid sv_group: {:?}\nreason: {:?}", self, test_result);
+            error!("Invalid sv_group: {self:?}\nreason: {test_result:?}");
             for refined_sv in self.refined_svs.iter() {
                 error!("RefinedSVID: {:?}", refined_sv.id);
             }

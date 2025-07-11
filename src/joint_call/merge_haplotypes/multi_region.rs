@@ -109,10 +109,7 @@ fn merge_duplicated_candidates(
     assert!(!duplicate_candidate_pool.is_empty());
 
     if debug {
-        eprintln!(
-            "Multi-Merge: Processing duplicate candidate pool: {:?}",
-            duplicate_candidate_pool
-        );
+        eprintln!("Multi-Merge: Processing duplicate candidate pool: {duplicate_candidate_pool:?}");
     }
 
     let sv_groups = duplicate_candidate_pool

@@ -218,10 +218,7 @@ fn convert_breakend_to_haplotype_contig_flank_seq<'a>(
     if let Some(flank_range) = flank_range {
         if debug {
             let bel = if is_breakend1 { '1' } else { '2' };
-            eprintln!(
-                "Haplotype {:?} breakend{bel} flank range: {flank_range:?}",
-                hap_id
-            );
+            eprintln!("Haplotype {hap_id:?} breakend{bel} flank range: {flank_range:?}");
         }
         Some(&breakend_contig_alignment.contig_seq[flank_range])
     } else {
@@ -247,7 +244,7 @@ fn get_contig_flank_seqs<'a>(
     let breakend1_contig_alignment = &haplotype_info.contig_info.contig_alignments[0];
     let contig_size = breakend1_contig_alignment.contig_seq.len();
     if debug {
-        eprintln!("Contig size: {}", contig_size,);
+        eprintln!("Contig size: {contig_size}");
     }
 
     let breakend1_flank = convert_breakend_to_haplotype_contig_flank_seq(
@@ -1253,7 +1250,7 @@ fn set_allele_depth_counts_for_single_sample_and_sv_allele(
         if debug {
             eprintln!("Best alleles under all test conditions:");
             for (best_allele_index, best_allele) in best_allele_tests.iter().enumerate() {
-                eprintln!("best_allele{best_allele_index} {:?}", best_allele);
+                eprintln!("best_allele{best_allele_index} {best_allele:?}");
             }
         }
 
@@ -1270,7 +1267,7 @@ fn set_allele_depth_counts_for_single_sample_and_sv_allele(
         if debug {
             eprintln!("Best alleles under all test conditions after sort:");
             for (best_allele_index, best_allele) in best_allele_tests.iter().enumerate() {
-                eprintln!("best_allele{best_allele_index} {:?}", best_allele);
+                eprintln!("best_allele{best_allele_index} {best_allele:?}");
             }
         }
 
@@ -2552,7 +2549,7 @@ fn score_refined_sv_group(
     );
 
     if debug_settings.debug {
-        eprintln!("sv_group before guest: {:?}", sv_group);
+        eprintln!("sv_group before guest: {sv_group:?}");
     }
 
     add_guest_haplotypes(
@@ -2564,7 +2561,7 @@ fn score_refined_sv_group(
     );
 
     if debug_settings.debug {
-        eprintln!("sv_group after guest: {:?}", sv_group);
+        eprintln!("sv_group after guest: {sv_group:?}");
     }
 
     // Redo sample_sv_order after add_guest_haplotypes

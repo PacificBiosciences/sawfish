@@ -277,8 +277,7 @@ pub fn scan_sample_bam_for_sv_evidence(
                 Some(x) => x,
                 None => {
                     error!(
-                        "Chromosome \"{}\" detected in BAM file, but not in reference file",
-                        chrom_label
+                        "Chromosome \"{chrom_label}\" detected in BAM file, but not in reference file"
                     );
                     std::process::exit(exitcode::DATAERR);
                 }

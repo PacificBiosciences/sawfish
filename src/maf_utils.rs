@@ -59,8 +59,7 @@ pub fn scan_maf_file(filename: &str, chrom_list: &ChromList, sample_names: &[&st
                 }
                 None => {
                     panic!(
-                        "Input alignment file does not includes chromosome '{}' from minor allele frequency file '{}'",
-                        vcf_chrom_name, filename
+                        "Input alignment file does not includes chromosome '{vcf_chrom_name}' from minor allele frequency file '{filename}'"
                     );
                 }
             }

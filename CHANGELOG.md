@@ -1,6 +1,11 @@
 # Change Log
 
-## v2.0.1 - 2026-06-18
+## v2.0.2 - 2025-07-11
+
+### Added
+- Add support for cram file inputs which include bzip2 and lzma codec blocks [PacificBiosciences/sawfish#19]
+
+## v2.0.1 - 2025-06-18
 
 ### Added
 - CR-497 Add GC-bias corrected depth track to the per-sample output from joint-call
@@ -23,7 +28,7 @@ have some level of depth segmentation support, enabling more precise large varia
 ## v1.0.1 - 2025-04-13
 
 ### Fixed
-- CR-468 Fix high memory usage when joint-genotyping from CRAM (github #15)
+- CR-468 Fix high memory usage when joint-genotyping from CRAM [PacificBiosciences/sawfish#15]
   - This issue only impacts analysis from CRAM, all BAM-input analysis is unaffected.
   - The excess memory usage had only a minor effect on single-sample analysis, but could become very large at higher sample and thread counts.
 - CR-469 Fix very low-frequency non-deterministic genotyping result
@@ -44,7 +49,7 @@ reported in the sawfish paper.
 ## v0.12.10 - 2025-02-24
 
 ### Fixed
-- Fix handling of chromosome names with colons, eg. 'HLA-DRB1*10:01:01' (github #11)
+- Fix handling of chromosome names with colons, eg. 'HLA-DRB1*10:01:01' [PacificBiosciences/sawfish#11]
 
 ## v0.12.9 - 2025-01-10
 
@@ -55,14 +60,14 @@ reported in the sawfish paper.
 ## v0.12.8 - 2024-12-13
 
 ### Fixed
-- Increase system open file limit (github #9)
+- Increase system open file limit [PacificBiosciences/sawfish#9]
   - May simplify joint-call for large pedigrees at high thread counts
-- Improve error message when split reads map to an unknown chromosome (github #8)
+- Improve error message when split reads map to an unknown chromosome [PacificBiosciences/sawfish#8]
 
 ## v0.12.7 - 2024-10-23
 
 ### Fixed
-- Fix "Illegal Instruction" error reported for some use cases (github #3)
+- Fix "Illegal Instruction" error reported for some use cases [PacificBiosciences/sawfish#3]
   - Removed gcc native cpu optimization in WFA2-lib believed to be causing this issue
   - Added additional `--debug` output to discover mode contig alignment logic
 

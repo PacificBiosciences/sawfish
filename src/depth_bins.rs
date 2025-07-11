@@ -226,7 +226,7 @@ pub fn write_depth_wig_file(
     use std::fs::File;
     use std::io::{BufWriter, Write};
 
-    info!("Writing wiggle depth track to file: '{}'", filename);
+    info!("Writing wiggle depth track to file: '{filename}'");
 
     let f = unwrap!(
         File::create(filename),
@@ -251,7 +251,7 @@ pub fn write_depth_wig_file(
             for bin_index in depth_bin_segment_range.clone() {
                 match chrom_depth_bins[bin_index] {
                     DepthBin::Depth(depth) => {
-                        writeln!(f, "{:.2}", depth).unwrap();
+                        writeln!(f, "{depth:.2}").unwrap();
                     }
                     DepthBin::Excluded => {
                         panic!("Unexpected depth bin state");

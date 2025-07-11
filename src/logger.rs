@@ -52,7 +52,7 @@ pub fn setup_output_dir_and_logger(output_dir: &Utf8Path, clobber: bool, debug: 
 
     if let Err(msg) = cli::check_novel_dirname(output_dir, "Output directory") {
         if !(clobber || output_dir.is_dir()) {
-            eprintln!("Invalid command-line setting: {}", msg);
+            eprintln!("Invalid command-line setting: {msg}");
             std::process::exit(exitcode::USAGE);
         }
     };

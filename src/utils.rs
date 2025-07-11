@@ -201,7 +201,7 @@ pub fn pairwise_alignment_printer(width: usize, lines: &[&[u8]]) {
             );
         };
 
-        eprintln!("{}", ruler);
+        eprintln!("{ruler}");
         print_line(0);
         let mismatches = get_pairwise_alignment_mismatch_line(lines, start, end);
         eprintln!("{mismatches}");
@@ -221,7 +221,7 @@ pub fn print_fasta(width: usize, lines: &[&[u8]]) {
         let len = seq.len();
         let rows = len.div_ceil(width);
 
-        eprintln!("> {}", seq_index);
+        eprintln!("> {seq_index}");
         for row_index in 0..rows {
             let start = width * row_index;
             let end = std::cmp::min(start + width, len);

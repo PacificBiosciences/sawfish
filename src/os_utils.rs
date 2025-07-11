@@ -16,7 +16,7 @@ pub fn create_dir_all(dir: &Utf8Path, label: &str) {
         match std::fs::create_dir_all(dir) {
             Ok(_) => {}
             Err(e) => {
-                panic!("Can't create new {} directory at '{}': {}", label, dir, e);
+                panic!("Can't create new {label} directory at '{dir}': {e}");
             }
         }
     }

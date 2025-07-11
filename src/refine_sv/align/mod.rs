@@ -242,8 +242,7 @@ fn flanking_gap_compressed_identity_filter(
 
     if debug {
         eprintln!(
-            "clusterID:assemblyID {}:{}, prefix/suffix gci: {}/{}",
-            cluster_index, assembly_index, prefix_gci, suffix_gci
+            "clusterID:assemblyID {cluster_index}:{assembly_index}, prefix/suffix gci: {prefix_gci}/{suffix_gci}"
         );
     }
 
@@ -855,8 +854,7 @@ fn get_remote_breakend_info(
 
     if debug {
         eprintln!(
-            "target breakend {:?} local neighbor breakend: {:?} remote neighbor breakend {:?}",
-            target_breakend, local_neighbor_breakend, remote_neighbor_breakend
+            "target breakend {target_breakend:?} local neighbor breakend: {local_neighbor_breakend:?} remote neighbor breakend {remote_neighbor_breakend:?}"
         );
     }
 
@@ -1000,15 +998,14 @@ fn extract_reference_segment_info(
     if debug {
         eprintln!("Starting extract_reference_segment_info");
         eprintln!(
-            "breakend{} target_segment {:?} left_ref_flank_size/right_ref_flank_size {}/{}",
-            breakend_index, target_segment, left_ref_flank_size, right_ref_flank_size
+            "breakend{breakend_index} target_segment {target_segment:?} left_ref_flank_size/right_ref_flank_size {left_ref_flank_size}/{right_ref_flank_size}"
         );
         if let Some(breakend_neighbor) = breakend_neighbor {
             eprintln!(
                 "Breakend neighbor defined. Index: {} bp: {:?}",
                 breakend_neighbor.breakend_index, breakend_neighbor.breakpoint
             );
-            eprintln!("Breakend neighbor target breakend: {:?}", target_breakend);
+            eprintln!("Breakend neighbor target breakend: {target_breakend:?}");
         }
     }
 
@@ -1084,20 +1081,10 @@ fn extract_reference_segment_info(
         eprintln!("Finished extract_reference_segment_info");
         eprintln!("extended_ref_segment: {:?}", &extended_ref_segment);
         eprintln!(
-            "actual_left_flank_seq_size/actual_left_flank_range_size/left_ref_flank/left_seq_trim/left_range_trim: {}/{}/{}/{}/{}",
-            actual_left_flank_seq_size,
-            actual_left_flank_range_size,
-            left_ref_flank_size,
-            left_seq_trim,
-            left_range_trim
+            "actual_left_flank_seq_size/actual_left_flank_range_size/left_ref_flank/left_seq_trim/left_range_trim: {actual_left_flank_seq_size}/{actual_left_flank_range_size}/{left_ref_flank_size}/{left_seq_trim}/{left_range_trim}"
         );
         eprintln!(
-            "actual_right_flank_seq_size/actual_right_flank_range_size/right_ref_flank/right_seq_trim/right_range_trim: {}/{}/{}/{}/{}",
-            actual_right_flank_seq_size,
-            actual_right_flank_range_size,
-            right_ref_flank_size,
-            right_seq_trim,
-            right_range_trim
+            "actual_right_flank_seq_size/actual_right_flank_range_size/right_ref_flank/right_seq_trim/right_range_trim: {actual_right_flank_seq_size}/{actual_right_flank_range_size}/{right_ref_flank_size}/{right_seq_trim}/{right_range_trim}"
         );
     }
 
@@ -1139,8 +1126,7 @@ fn get_segment_neighbor_extension_size(
     let rsize = segment.range.size() as usize;
     if slen < rsize {
         panic!(
-            "get_segment_neighbor_extension_size failed for cluster: {} segment{}. seq len: {} seg: {:?}",
-            cluster_index, segment_index, slen, segment
+            "get_segment_neighbor_extension_size failed for cluster: {cluster_index} segment{segment_index}. seq len: {slen} seg: {segment:?}"
         );
     } else {
         slen - rsize
@@ -1162,8 +1148,7 @@ fn get_two_region_alt_hap_info(
     let debug = false;
     if debug {
         eprintln!(
-            "starting get_two_region_alt_hap_info for cluster_index {cluster_index} target_segments {:?}",
-            target_segments
+            "starting get_two_region_alt_hap_info for cluster_index {cluster_index} target_segments {target_segments:?}"
         );
     }
 
@@ -1608,14 +1593,8 @@ fn get_clipped_contig_alignment_segment(
             eprintln!(
                 "segment{breakend_index} left_ext/right_ext {left_extension_size}/{right_extension_size}"
             );
-            eprintln!(
-                "segment{breakend_index} input alignment {:?}",
-                ref_segment_alignment
-            );
-            eprintln!(
-                "segment{breakend_index} output alignment {:?}",
-                clipped_alignment
-            );
+            eprintln!("segment{breakend_index} input alignment {ref_segment_alignment:?}");
+            eprintln!("segment{breakend_index} output alignment {clipped_alignment:?}");
         }
 
         &Box::new(clipped_alignment)
@@ -1871,10 +1850,7 @@ fn get_two_region_refined_sv_candidate(
     // the SV caller.
     if !(breakend1.is_valid_range(chrom_list) && breakend2.is_valid_range(chrom_list)) {
         if debug {
-            eprintln!(
-                "Cluster/Assembly ID: {}/{} - bp: {:?}",
-                cluster_index, assembly_index, bp
-            );
+            eprintln!("Cluster/Assembly ID: {cluster_index}/{assembly_index} - bp: {bp:?}");
             eprintln!("Filtered for invalid breakend extending off contig");
         }
         return None;
@@ -1884,13 +1860,9 @@ fn get_two_region_refined_sv_candidate(
         let contig_pos = (insert_range.start as i64) + ref1_homology_range.start - 1;
         if contig_pos < 0 {
             if debug {
+                eprintln!("Cluster/Assembly ID: {cluster_index}/{assembly_index} - bp: {bp:?}");
                 eprintln!(
-                    "Cluster/Assembly ID: {}/{} - bp: {:?}",
-                    cluster_index, assembly_index, bp
-                );
-                eprintln!(
-                    "Invalid contig_pos value {contig_pos}. ir {:?} r1hr {:?}",
-                    insert_range, ref1_homology_range
+                    "Invalid contig_pos value {contig_pos}. ir {insert_range:?} r1hr {ref1_homology_range:?}"
                 );
             }
             return None;
@@ -2057,7 +2029,7 @@ fn align_multi_ref_region_assemblies(
                 match aligner.align(&assembly_contig.seq) {
                     (score, Some(x)) => {
                         if debug {
-                            eprintln!("assembly_contig_to_alt_hap_alignment: {:?}", x);
+                            eprintln!("assembly_contig_to_alt_hap_alignment: {x:?}");
                         }
                         (score, x)
                     }
@@ -2089,7 +2061,7 @@ fn align_multi_ref_region_assemblies(
                 match alt_hap_left_right_component_alignment_info {
                     Some(x) => {
                         if debug {
-                            eprintln!("alt_hap_left_right_component_alignment_info: {:?}", x);
+                            eprintln!("alt_hap_left_right_component_alignment_info: {x:?}");
                         }
                         x
                     }
@@ -2125,8 +2097,7 @@ fn align_multi_ref_region_assemblies(
 
             if debug {
                 eprintln!(
-                    "alt_hap_ref_segment_alignment_info: {:?}",
-                    alt_hap_ref_segment_alignment_info
+                    "alt_hap_ref_segment_alignment_info: {alt_hap_ref_segment_alignment_info:?}"
                 );
             }
 

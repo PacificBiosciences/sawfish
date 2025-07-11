@@ -293,7 +293,7 @@ fn validate_discover_settings_data_impl(
         let bam_reader = match bam::IndexedReader::from_path(&settings.bam_filename) {
             Ok(x) => x,
             Err(error) => {
-                error!("Failed to open input alignment file: {}", error);
+                error!("Failed to open input alignment file: {error}");
                 return Err(SettingValidationError::NotFound);
             }
         };

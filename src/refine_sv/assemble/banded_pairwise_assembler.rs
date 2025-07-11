@@ -180,8 +180,8 @@ fn add_trimmed_read_to_candidate_backbones(
     );
 
     if extra_debug {
-        eprintln!("rank1_alignment: {:?}", rank1_alignment);
-        eprintln!("rank2_alignment: {:?}", rank2_alignment);
+        eprintln!("rank1_alignment: {rank1_alignment:?}");
+        eprintln!("rank2_alignment: {rank2_alignment:?}");
     }
 
     let reject_rank1_alignment =

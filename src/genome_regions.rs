@@ -175,10 +175,7 @@ impl GenomeRegions {
         if !self.overlaps_allowed && chrom_regions.intersect(start, end) {
             //TODO: may want to handle this problem as an error instead of a panic, so that e.g.
             // filename can get injected into error msg at higher level
-            panic!(
-                "Overlaps are not allowed but were detected: {} {} {}",
-                chrom, start, end
-            );
+            panic!("Overlaps are not allowed but were detected: {chrom} {start} {end}");
         }
 
         //check if we have a value to load for the track

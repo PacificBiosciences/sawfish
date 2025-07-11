@@ -92,7 +92,7 @@ fn main() {
     );
 
     if let Err(err) = run(&settings) {
-        eprintln!("{}", err);
+        eprintln!("{err}");
         process::exit(2);
     }
 }

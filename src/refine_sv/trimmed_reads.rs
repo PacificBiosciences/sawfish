@@ -209,10 +209,7 @@ fn get_split_candidate_read_range(
     //
     if is_hard_clipped(&record.cigar()) {
         let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
-        eprintln!(
-            "ERROR: Unsupported hard-clipped split alignment in read: {}",
-            qname
-        );
+        eprintln!("ERROR: Unsupported hard-clipped split alignment in read: {qname}");
         std::process::exit(exitcode::DATAERR);
     }
 
@@ -708,11 +705,8 @@ pub fn get_sv_breakpoint_candidate_trimmed_reads(
     );
 
     if debug {
-        eprintln!("Starting trimmed read search for bp {:?}", bp);
-        eprintln!(
-            "Expanded trimmed read search segment: {:?}",
-            trimmed_reads_search_segment
-        );
+        eprintln!("Starting trimmed read search for bp {bp:?}");
+        eprintln!("Expanded trimmed read search segment: {trimmed_reads_search_segment:?}",);
     }
 
     // for a first version just read everything from the breakend 1 region, since we aren't including
@@ -743,7 +737,7 @@ pub fn get_sv_breakpoint_candidate_trimmed_reads(
         let gci = get_gap_compressed_identity(&record, chrom_sequence);
         if gci < refine_settings.min_gap_compressed_identity {
             if debug {
-                eprintln!("Filtering read gci: {}", gci);
+                eprintln!("Filtering read gci: {gci}");
             }
             continue;
         }
@@ -763,7 +757,7 @@ pub fn get_sv_breakpoint_candidate_trimmed_reads(
         };
 
         if debug {
-            eprintln!("read range {:?}", read_range);
+            eprintln!("read range {read_range:?}");
         }
         if let Some(read_range) = read_range {
             trimmed_reads.push(get_trimmed_read_from_read_range(

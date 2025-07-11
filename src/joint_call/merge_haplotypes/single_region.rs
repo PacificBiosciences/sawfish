@@ -281,14 +281,8 @@ fn test_for_duplicate_haplotypes(
 ) -> bool {
     let debug_duptest = false;
     if debug_duptest {
-        eprintln!(
-            "Single-Merge: hap1_index: {} bps: {:?}",
-            haplotype1_index, haplotype1_breakpoints
-        );
-        eprintln!(
-            "Single-Merge: hap2_index: {} bps: {:?}",
-            haplotype2_index, haplotype2_breakpoints
-        );
+        eprintln!("Single-Merge: hap1_index: {haplotype1_index} bps: {haplotype1_breakpoints:?}");
+        eprintln!("Single-Merge: hap2_index: {haplotype2_index} bps: {haplotype2_breakpoints:?}");
     }
 
     // Use bp match as a quick shortcut test
@@ -411,8 +405,7 @@ fn get_haplotype_merge_pools(
             ) {
                 if debug {
                     eprintln!(
-                        "Single-Merge: merging haplotype indexes: {}/{}",
-                        haplotype1_index, haplotype2_index
+                        "Single-Merge: merging haplotype indexes: {haplotype1_index}/{haplotype2_index}"
                     );
                 }
 
@@ -467,8 +460,7 @@ fn merge_duplicated_candidates(
 
     if debug {
         eprintln!(
-            "Single-Merge: Processing duplicate candidate pool: {:?}",
-            duplicate_candidate_pool
+            "Single-Merge: Processing duplicate candidate pool: {duplicate_candidate_pool:?}"
         );
     }
 
@@ -507,10 +499,7 @@ fn merge_duplicated_candidates(
     }
 
     if debug {
-        eprintln!(
-            "Merged duplicate pool sv_group before consolidation: {:?}",
-            merged_sv_group
-        );
+        eprintln!("Merged duplicate pool sv_group before consolidation: {merged_sv_group:?}");
     }
 
     // Step 4: Run simple pairwise search to create similar haplotype pools
@@ -594,10 +583,7 @@ fn merge_duplicated_candidates(
     drop_true(&mut merged_sv_group.sv_haplotype_map, &sv_delete_list);
 
     if debug {
-        eprintln!(
-            "Merged duplicate pool sv_group after consolidation: {:?}",
-            merged_sv_group
-        );
+        eprintln!("Merged duplicate pool sv_group after consolidation: {merged_sv_group:?}");
     }
 
     vec![merged_sv_group]

@@ -1,7 +1,7 @@
 [
   {
     "name": "adler2",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "authors": "Jonas Schievink <jonasschievink@gmail.com>|oyvindln <oyvindln@users.noreply.github.com>",
     "repository": "https://github.com/oyvindln/adler2",
     "license": "0BSD OR Apache-2.0 OR MIT",
@@ -46,7 +46,7 @@
   },
   {
     "name": "anstream",
-    "version": "0.6.18",
+    "version": "0.6.19",
     "authors": null,
     "repository": "https://github.com/rust-cli/anstyle.git",
     "license": "Apache-2.0 OR MIT",
@@ -55,7 +55,7 @@
   },
   {
     "name": "anstyle",
-    "version": "1.0.10",
+    "version": "1.0.11",
     "authors": null,
     "repository": "https://github.com/rust-cli/anstyle.git",
     "license": "Apache-2.0 OR MIT",
@@ -64,7 +64,7 @@
   },
   {
     "name": "anstyle-parse",
-    "version": "0.2.6",
+    "version": "0.2.7",
     "authors": null,
     "repository": "https://github.com/rust-cli/anstyle.git",
     "license": "Apache-2.0 OR MIT",
@@ -73,7 +73,7 @@
   },
   {
     "name": "anstyle-query",
-    "version": "1.1.2",
+    "version": "1.1.3",
     "authors": null,
     "repository": "https://github.com/rust-cli/anstyle.git",
     "license": "Apache-2.0 OR MIT",
@@ -82,7 +82,7 @@
   },
   {
     "name": "anstyle-wincon",
-    "version": "3.0.7",
+    "version": "3.0.9",
     "authors": null,
     "repository": "https://github.com/rust-cli/anstyle.git",
     "license": "Apache-2.0 OR MIT",
@@ -109,7 +109,7 @@
   },
   {
     "name": "autocfg",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "authors": "Josh Stone <cuviper@gmail.com>",
     "repository": "https://github.com/cuviper/autocfg",
     "license": "Apache-2.0 OR MIT",
@@ -136,7 +136,7 @@
   },
   {
     "name": "bindgen",
-    "version": "0.71.1",
+    "version": "0.72.0",
     "authors": "Jyun-Yan You <jyyou.tw@gmail.com>|Emilio Cobos Álvarez <emilio@crisal.io>|Nick Fitzgerald <fitzgen@gmail.com>|The Servo project developers",
     "repository": "https://github.com/rust-lang/rust-bindgen",
     "license": "BSD-3-Clause",
@@ -190,7 +190,7 @@
   },
   {
     "name": "bumpalo",
-    "version": "3.17.0",
+    "version": "3.19.0",
     "authors": "Nick Fitzgerald <fitzgen@gmail.com>",
     "repository": "https://github.com/fitzgen/bumpalo",
     "license": "Apache-2.0 OR MIT",
@@ -208,7 +208,7 @@
   },
   {
     "name": "bytecount",
-    "version": "0.6.8",
+    "version": "0.6.9",
     "authors": "Andre Bogus <bogusandre@gmail.de>|Joshua Landau <joshua@landau.ws>",
     "repository": "https://github.com/llogiq/bytecount",
     "license": "Apache-2.0 OR MIT",
@@ -217,7 +217,7 @@
   },
   {
     "name": "bytemuck",
-    "version": "1.23.0",
+    "version": "1.23.1",
     "authors": "Lokathor <zefria@gmail.com>",
     "repository": "https://github.com/Lokathor/bytemuck",
     "license": "Apache-2.0 OR MIT OR Zlib",
@@ -234,8 +234,17 @@
     "description": "Library for reading/writing numbers in big-endian and little-endian."
   },
   {
+    "name": "bzip2-sys",
+    "version": "0.1.13+1.0.8",
+    "authors": "Alex Crichton <alex@alexcrichton.com>",
+    "repository": "https://github.com/alexcrichton/bzip2-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Bindings to libbzip2 for bzip2 compression and decompression exposed as Reader/Writer streams."
+  },
+  {
     "name": "camino",
-    "version": "1.1.9",
+    "version": "1.1.10",
     "authors": "Without Boats <saoirse@without.boats>|Ashley Williams <ashley666ashley@gmail.com>|Steve Klabnik <steve@steveklabnik.com>|Rain <rain@sunshowers.io>",
     "repository": "https://github.com/camino-rs/camino",
     "license": "Apache-2.0 OR MIT",
@@ -244,7 +253,7 @@
   },
   {
     "name": "cc",
-    "version": "1.2.23",
+    "version": "1.2.29",
     "authors": "Alex Crichton <alex@alexcrichton.com>",
     "repository": "https://github.com/rust-lang/cc-rs",
     "license": "Apache-2.0 OR MIT",
@@ -262,9 +271,9 @@
   },
   {
     "name": "cfg-if",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "authors": "Alex Crichton <alex@alexcrichton.com>",
-    "repository": "https://github.com/alexcrichton/cfg-if",
+    "repository": "https://github.com/rust-lang/cfg-if",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "A macro to ergonomically define an item depending on a large number of #[cfg] parameters. Structured like an if-else chain, the first matching branch is the item that gets emitted."
@@ -289,7 +298,7 @@
   },
   {
     "name": "clap",
-    "version": "4.5.38",
+    "version": "4.5.41",
     "authors": null,
     "repository": "https://github.com/clap-rs/clap",
     "license": "Apache-2.0 OR MIT",
@@ -298,7 +307,7 @@
   },
   {
     "name": "clap_builder",
-    "version": "4.5.38",
+    "version": "4.5.41",
     "authors": null,
     "repository": "https://github.com/clap-rs/clap",
     "license": "Apache-2.0 OR MIT",
@@ -307,7 +316,7 @@
   },
   {
     "name": "clap_derive",
-    "version": "4.5.32",
+    "version": "4.5.41",
     "authors": null,
     "repository": "https://github.com/clap-rs/clap",
     "license": "Apache-2.0 OR MIT",
@@ -316,7 +325,7 @@
   },
   {
     "name": "clap_lex",
-    "version": "0.7.4",
+    "version": "0.7.5",
     "authors": null,
     "repository": "https://github.com/clap-rs/clap",
     "license": "Apache-2.0 OR MIT",
@@ -343,7 +352,7 @@
   },
   {
     "name": "colorchoice",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "authors": null,
     "repository": "https://github.com/rust-cli/anstyle.git",
     "license": "Apache-2.0 OR MIT",
@@ -450,6 +459,15 @@
     "description": "Bare bones CSV parsing with no_std support."
   },
   {
+    "name": "curl-sys",
+    "version": "0.4.82+curl-8.14.1",
+    "authors": "Alex Crichton <alex@alexcrichton.com>",
+    "repository": "https://github.com/alexcrichton/curl-rust",
+    "license": "MIT",
+    "license_file": null,
+    "description": "Native bindings to the libcurl library"
+  },
+  {
     "name": "custom_derive",
     "version": "0.1.7",
     "authors": "Daniel Keep <daniel.keep@gmail.com>",
@@ -460,7 +478,7 @@
   },
   {
     "name": "cxx",
-    "version": "1.0.158",
+    "version": "1.0.160",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/cxx",
     "license": "Apache-2.0 OR MIT",
@@ -469,7 +487,7 @@
   },
   {
     "name": "cxx-build",
-    "version": "1.0.158",
+    "version": "1.0.160",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/cxx",
     "license": "Apache-2.0 OR MIT",
@@ -478,7 +496,7 @@
   },
   {
     "name": "cxxbridge-flags",
-    "version": "1.0.158",
+    "version": "1.0.160",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/cxx",
     "license": "Apache-2.0 OR MIT",
@@ -487,7 +505,7 @@
   },
   {
     "name": "cxxbridge-macro",
-    "version": "1.0.158",
+    "version": "1.0.160",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/cxx",
     "license": "Apache-2.0 OR MIT",
@@ -649,7 +667,7 @@
   },
   {
     "name": "errno",
-    "version": "0.3.12",
+    "version": "0.3.13",
     "authors": "Chris Wong <lambda.fairy@gmail.com>|Dan Gohman <dev@sunfishcode.online>",
     "repository": "https://github.com/lambda-fairy/rust-errno",
     "license": "Apache-2.0 OR MIT",
@@ -685,7 +703,7 @@
   },
   {
     "name": "fern",
-    "version": "0.6.2",
+    "version": "0.7.1",
     "authors": "David Ross <daboross@daboross.net>",
     "repository": "https://github.com/daboross/fern",
     "license": "MIT",
@@ -703,7 +721,7 @@
   },
   {
     "name": "flate2",
-    "version": "1.1.1",
+    "version": "1.1.2",
     "authors": "Alex Crichton <alex@alexcrichton.com>|Josh Triplett <josh@joshtriplett.org>",
     "repository": "https://github.com/rust-lang/flate2-rs",
     "license": "Apache-2.0 OR MIT",
@@ -784,7 +802,7 @@
   },
   {
     "name": "hashbrown",
-    "version": "0.15.3",
+    "version": "0.15.4",
     "authors": "Amanieu d'Antras <amanieu@gmail.com>",
     "repository": "https://github.com/rust-lang/hashbrown",
     "license": "Apache-2.0 OR MIT",
@@ -802,7 +820,7 @@
   },
   {
     "name": "hermit-abi",
-    "version": "0.3.9",
+    "version": "0.5.2",
     "authors": "Stefan Lankes",
     "repository": "https://github.com/hermit-os/hermit-rs",
     "license": "Apache-2.0 OR MIT",
@@ -883,7 +901,7 @@
   },
   {
     "name": "icu_properties",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "authors": "The ICU4X Project Developers",
     "repository": "https://github.com/unicode-org/icu4x",
     "license": "Unicode-3.0",
@@ -892,7 +910,7 @@
   },
   {
     "name": "icu_properties_data",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "authors": "The ICU4X Project Developers",
     "repository": "https://github.com/unicode-org/icu4x",
     "license": "Unicode-3.0",
@@ -946,7 +964,7 @@
   },
   {
     "name": "indexmap",
-    "version": "2.9.0",
+    "version": "2.10.0",
     "authors": null,
     "repository": "https://github.com/indexmap-rs/indexmap",
     "license": "Apache-2.0 OR MIT",
@@ -1054,7 +1072,7 @@
   },
   {
     "name": "libc",
-    "version": "0.2.172",
+    "version": "0.2.174",
     "authors": "The Rust Project Developers",
     "repository": "https://github.com/rust-lang/libc",
     "license": "Apache-2.0 OR MIT",
@@ -1063,7 +1081,7 @@
   },
   {
     "name": "libloading",
-    "version": "0.8.7",
+    "version": "0.8.8",
     "authors": "Simonas Kazlauskas <libloading@kazlauskas.me>",
     "repository": "https://github.com/nagisa/rust_libloading/",
     "license": "ISC",
@@ -1134,6 +1152,15 @@
     "description": "A lightweight logging facade for Rust"
   },
   {
+    "name": "lzma-sys",
+    "version": "0.1.20",
+    "authors": "Alex Crichton <alex@alexcrichton.com>",
+    "repository": "https://github.com/alexcrichton/xz2-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Raw bindings to liblzma which contains an implementation of LZMA and xz stream encoding/decoding.  High level Rust bindings are available in the `xz2` crate."
+  },
+  {
     "name": "matrixmultiply",
     "version": "0.3.10",
     "authors": "bluss|R. Janis Goldschmidt",
@@ -1144,7 +1171,7 @@
   },
   {
     "name": "memchr",
-    "version": "2.7.4",
+    "version": "2.7.5",
     "authors": "Andrew Gallant <jamslam@gmail.com>|bluss",
     "repository": "https://github.com/BurntSushi/memchr",
     "license": "MIT OR Unlicense",
@@ -1162,7 +1189,7 @@
   },
   {
     "name": "miniz_oxide",
-    "version": "0.8.8",
+    "version": "0.8.9",
     "authors": "Frommi <daniil.liferenko@gmail.com>|oyvindln <oyvindln@users.noreply.github.com>|Rich Geldreich richgel99@gmail.com",
     "repository": "https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide",
     "license": "Apache-2.0 OR MIT OR Zlib",
@@ -1180,30 +1207,12 @@
   },
   {
     "name": "nalgebra",
-    "version": "0.32.6",
-    "authors": "Sébastien Crozet <developer@crozet.re>",
-    "repository": "https://github.com/dimforge/nalgebra",
-    "license": "BSD-3-Clause",
-    "license_file": null,
-    "description": "General-purpose linear algebra library with transformations and statically-sized or dynamically-sized matrices."
-  },
-  {
-    "name": "nalgebra",
     "version": "0.33.2",
     "authors": "Sébastien Crozet <developer@crozet.re>",
     "repository": "https://github.com/dimforge/nalgebra",
     "license": "Apache-2.0",
     "license_file": null,
     "description": "General-purpose linear algebra library with transformations and statically-sized or dynamically-sized matrices."
-  },
-  {
-    "name": "nalgebra-macros",
-    "version": "0.2.2",
-    "authors": "Andreas Longva|Sébastien Crozet <developer@crozet.re>",
-    "repository": "https://github.com/dimforge/nalgebra",
-    "license": "Apache-2.0",
-    "license_file": null,
-    "description": "Procedural macros for nalgebra"
   },
   {
     "name": "ndarray",
@@ -1306,7 +1315,7 @@
   },
   {
     "name": "num_cpus",
-    "version": "1.16.0",
+    "version": "1.17.0",
     "authors": "Sean McArthur <sean@seanmonstar.com>",
     "repository": "https://github.com/seanmonstar/num_cpus",
     "license": "Apache-2.0 OR MIT",
@@ -1341,6 +1350,33 @@
     "description": "Single assignment cells and lazy values."
   },
   {
+    "name": "once_cell_polyfill",
+    "version": "1.70.1",
+    "authors": null,
+    "repository": "https://github.com/polyfill-rs/once_cell_polyfill",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Polyfill for `OnceCell` stdlib feature for use with older MSRVs"
+  },
+  {
+    "name": "openssl-src",
+    "version": "300.5.1+3.5.1",
+    "authors": "Alex Crichton <alex@alexcrichton.com>",
+    "repository": "https://github.com/alexcrichton/openssl-src-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Source of OpenSSL and logic to build it."
+  },
+  {
+    "name": "openssl-sys",
+    "version": "0.9.109",
+    "authors": "Alex Crichton <alex@alexcrichton.com>|Steven Fackler <sfackler@gmail.com>",
+    "repository": "https://github.com/sfackler/rust-openssl",
+    "license": "MIT",
+    "license_file": null,
+    "description": "FFI bindings to OpenSSL"
+  },
+  {
     "name": "ordered-float",
     "version": "5.0.0",
     "authors": "Jonathan Reem <jonathan.reem@gmail.com>|Matt Brubeck <mbrubeck@limpet.net>",
@@ -1369,7 +1405,7 @@
   },
   {
     "name": "petgraph",
-    "version": "0.8.1",
+    "version": "0.8.2",
     "authors": "bluss|mitchmindtree",
     "repository": "https://github.com/petgraph/petgraph",
     "license": "Apache-2.0 OR MIT",
@@ -1387,7 +1423,7 @@
   },
   {
     "name": "portable-atomic",
-    "version": "1.11.0",
+    "version": "1.11.1",
     "authors": null,
     "repository": "https://github.com/taiki-e/portable-atomic",
     "license": "Apache-2.0 OR MIT",
@@ -1432,7 +1468,7 @@
   },
   {
     "name": "prettyplease",
-    "version": "0.2.32",
+    "version": "0.2.35",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/prettyplease",
     "license": "Apache-2.0 OR MIT",
@@ -1477,7 +1513,7 @@
   },
   {
     "name": "r-efi",
-    "version": "5.2.0",
+    "version": "5.3.0",
     "authors": null,
     "repository": "https://github.com/r-efi/r-efi",
     "license": "Apache-2.0 OR LGPL-2.1-or-later OR MIT",
@@ -1603,7 +1639,7 @@
   },
   {
     "name": "rust-htslib",
-    "version": "0.49.0",
+    "version": "0.50.0",
     "authors": "Christopher Schröder <christopher.schroeder@tu-dortmund.de>|Johannes Köster <johannes.koester@tu-dortmund.de>",
     "repository": "https://github.com/rust-bio/rust-htslib.git",
     "license": "MIT",
@@ -1684,7 +1720,7 @@
   },
   {
     "name": "rustversion",
-    "version": "1.0.20",
+    "version": "1.0.21",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/rustversion",
     "license": "Apache-2.0 OR MIT",
@@ -1720,7 +1756,7 @@
   },
   {
     "name": "sawfish",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "authors": "Chris Saunders <csaunders@pacificbiosciences.com>",
     "repository": null,
     "license": null,
@@ -1819,15 +1855,6 @@
   },
   {
     "name": "simba",
-    "version": "0.8.1",
-    "authors": "sebcrozet <developer@crozet.re>",
-    "repository": "https://github.com/dimforge/simba",
-    "license": "Apache-2.0",
-    "license_file": null,
-    "description": "SIMD algebra for Rust"
-  },
-  {
-    "name": "simba",
     "version": "0.9.0",
     "authors": "sebcrozet <developer@crozet.re>",
     "repository": "https://github.com/dimforge/simba",
@@ -1846,7 +1873,7 @@
   },
   {
     "name": "smallvec",
-    "version": "1.15.0",
+    "version": "1.15.1",
     "authors": "The Servo Project Developers",
     "repository": "https://github.com/servo/rust-smallvec",
     "license": "Apache-2.0 OR MIT",
@@ -1888,15 +1915,6 @@
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "New standard library, old compiler."
-  },
-  {
-    "name": "statrs",
-    "version": "0.17.1",
-    "authors": "Michael Ma",
-    "repository": "https://github.com/statrs-dev/statrs",
-    "license": "MIT",
-    "license_file": null,
-    "description": "Statistical computing library for Rust"
   },
   {
     "name": "statrs",
@@ -1962,8 +1980,26 @@
     "description": "Helpful macros for working with enums and strings"
   },
   {
+    "name": "strum",
+    "version": "0.27.1",
+    "authors": "Peter Glotfelty <peter.glotfelty@microsoft.com>",
+    "repository": "https://github.com/Peternator7/strum",
+    "license": "MIT",
+    "license_file": null,
+    "description": "Helpful macros for working with enums and strings"
+  },
+  {
     "name": "strum_macros",
     "version": "0.26.4",
+    "authors": "Peter Glotfelty <peter.glotfelty@microsoft.com>",
+    "repository": "https://github.com/Peternator7/strum",
+    "license": "MIT",
+    "license_file": null,
+    "description": "Helpful macros for working with enums and strings"
+  },
+  {
+    "name": "strum_macros",
+    "version": "0.27.1",
     "authors": "Peter Glotfelty <peter.glotfelty@microsoft.com>",
     "repository": "https://github.com/Peternator7/strum",
     "license": "MIT",
@@ -1981,7 +2017,7 @@
   },
   {
     "name": "syn",
-    "version": "2.0.101",
+    "version": "2.0.104",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/syn",
     "license": "Apache-2.0 OR MIT",
@@ -2152,7 +2188,7 @@
   },
   {
     "name": "unicode-width",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "authors": "kwantam <kwantam@gmail.com>|Manish Goregaokar <manishsmail@gmail.com>",
     "repository": "https://github.com/unicode-rs/unicode-width",
     "license": "Apache-2.0 OR MIT",
@@ -2269,7 +2305,7 @@
   },
   {
     "name": "wasi",
-    "version": "0.11.0+wasi-snapshot-preview1",
+    "version": "0.11.1+wasi-snapshot-preview1",
     "authors": "The Cranelift Project Developers",
     "repository": "https://github.com/bytecodealliance/wasi",
     "license": "Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT",
@@ -2350,7 +2386,7 @@
   },
   {
     "name": "wide",
-    "version": "0.7.32",
+    "version": "0.7.33",
     "authors": "Lokathor <zefria@gmail.com>",
     "repository": "https://github.com/Lokathor/wide",
     "license": "Apache-2.0 OR MIT OR Zlib",
@@ -2395,7 +2431,7 @@
   },
   {
     "name": "windows-core",
-    "version": "0.61.1",
+    "version": "0.61.2",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2422,7 +2458,7 @@
   },
   {
     "name": "windows-link",
-    "version": "0.1.1",
+    "version": "0.1.3",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2431,7 +2467,7 @@
   },
   {
     "name": "windows-result",
-    "version": "0.3.3",
+    "version": "0.3.4",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2440,7 +2476,7 @@
   },
   {
     "name": "windows-strings",
-    "version": "0.4.1",
+    "version": "0.4.2",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2450,6 +2486,15 @@
   {
     "name": "windows-sys",
     "version": "0.59.0",
+    "authors": "Microsoft",
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Rust for Windows"
+  },
+  {
+    "name": "windows-sys",
+    "version": "0.60.2",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2467,7 +2512,7 @@
   },
   {
     "name": "windows-targets",
-    "version": "0.53.0",
+    "version": "0.53.2",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2656,7 +2701,7 @@
   },
   {
     "name": "zerocopy",
-    "version": "0.8.25",
+    "version": "0.8.26",
     "authors": "Joshua Liebow-Feeser <joshlf@google.com>|Jack Wrenn <jswrenn@amazon.com>",
     "repository": "https://github.com/google/zerocopy",
     "license": "Apache-2.0 OR BSD-2-Clause OR MIT",
@@ -2665,7 +2710,7 @@
   },
   {
     "name": "zerocopy-derive",
-    "version": "0.8.25",
+    "version": "0.8.26",
     "authors": "Joshua Liebow-Feeser <joshlf@google.com>|Jack Wrenn <jswrenn@amazon.com>",
     "repository": "https://github.com/google/zerocopy",
     "license": "Apache-2.0 OR BSD-2-Clause OR MIT",

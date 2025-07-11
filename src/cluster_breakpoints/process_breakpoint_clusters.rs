@@ -184,10 +184,7 @@ mod cluster {
         let debug = false;
 
         if debug {
-            eprintln!(
-                "add_breakpoint_observation_to_clusters: New Breakpoint obs: {:?}",
-                bpo
-            );
+            eprintln!("add_breakpoint_observation_to_clusters: New Breakpoint obs: {bpo:?}");
         }
         let dir_type_index = bpo.breakpoint.get_dir_type_index();
         let dir_type_clusters = &mut cluster_buffer[dir_type_index];
@@ -205,7 +202,7 @@ mod cluster {
             let dist = get_breakpoint_manhattan_distance(&cluster.breakpoint, &bpo.breakpoint);
 
             if debug {
-                eprintln!("bp dist to cluster: {:?}", dist);
+                eprintln!("bp dist to cluster: {dist:?}");
             }
 
             // Only keep the minimum cluster distance:
@@ -661,8 +658,7 @@ fn annotate_close_breakends(
         }
         if debug {
             eprintln!(
-                "Annotating close breakend connection between:\nlast: {:?}\nnext: {:?}",
-                last_bei, next_bei
+                "Annotating close breakend connection between:\nlast: {last_bei:?}\nnext: {next_bei:?}"
             );
         }
 

@@ -98,7 +98,7 @@ pub fn print_msa(alignments: &[CString]) {
     for row_index in 0..rows {
         let start = WIDTH * row_index;
         let end = std::cmp::min(start + WIDTH, len);
-        eprintln!("{}", ruler);
+        eprintln!("{ruler}");
         for &seq in bytes.iter() {
             eprintln!("{}", std::str::from_utf8(&seq[start..end]).unwrap());
         }

@@ -58,10 +58,10 @@ pub type AllWorkerDebugInfo = Arc<Vec<Mutex<Option<WorkerDebugInfo>>>>;
 
 fn worker_status_report(worker_debug_info: &AllWorkerDebugInfo) {
     let now = chrono::Local::now();
-    eprintln!("[{}] Refinement worker thread status", now);
+    eprintln!("[{now}] Refinement worker thread status");
     for (worker_id, x) in worker_debug_info.iter().enumerate() {
         let worker_id_debug_info = &*x.lock().unwrap();
-        eprint!("Worker {} Status: ", worker_id);
+        eprint!("Worker {worker_id} Status: ");
         match worker_id_debug_info {
             Some(x) => {
                 let duration = x.cluster_start_time.elapsed();

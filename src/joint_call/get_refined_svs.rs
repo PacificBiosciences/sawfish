@@ -227,8 +227,7 @@ fn parse_bnd_alt_allele(chrom_list: &ChromList, alt_allele: &[u8], homlen: i64) 
     assert_eq!(
         words.len(),
         3,
-        "Unexpected BND alt allele format `{}`",
-        alt_allele
+        "Unexpected BND alt allele format `{alt_allele}`"
     );
 
     let (breakend2_chrom_index, breakend2_raw_pos) = {
@@ -237,8 +236,7 @@ fn parse_bnd_alt_allele(chrom_list: &ChromList, alt_allele: &[u8], homlen: i64) 
         assert_eq!(
             mate_location.len(),
             2,
-            "Unexpected BND alt allele format `{}`",
-            alt_allele
+            "Unexpected BND alt allele format `{alt_allele}`"
         );
 
         let breakend2_chrom_name = mate_location[1];
@@ -552,7 +550,7 @@ fn process_rsv_cluster_to_sv_group(
 
     let debug = false;
     if debug {
-        eprintln!("max_haplotype_count {}", max_haplotype_count);
+        eprintln!("max_haplotype_count {max_haplotype_count}");
         eprintln!("contig_map {:?}", &first_arsv.contig_map);
     }
 
@@ -591,7 +589,7 @@ fn process_rsv_cluster_to_sv_group(
                     .map(|x| &x.hap_id)
                     .collect::<Vec<_>>()
             );
-            eprintln!("sv_haplotype_map {:?}", sv_haplotype_map);
+            eprintln!("sv_haplotype_map {sv_haplotype_map:?}");
             eprintln!(
                 "refined_svs {:?}",
                 refined_svs.iter().map(|x| &x.id).collect::<Vec<_>>()
@@ -661,7 +659,7 @@ fn process_rsv_cluster_to_sv_group(
                     .map(|x| &x.hap_id)
                     .collect::<Vec<_>>()
             );
-            eprintln!("sv_haplotype_map {:?}", sv_haplotype_map);
+            eprintln!("sv_haplotype_map {sv_haplotype_map:?}");
             eprintln!(
                 "refined_svs {:?}",
                 refined_svs.iter().map(|x| &x.id).collect::<Vec<_>>()

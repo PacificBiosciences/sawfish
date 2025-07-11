@@ -172,7 +172,7 @@ impl fmt::Debug for InsertInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             InsertInfo::SizeRange(x) => {
-                write!(f, "SizeRange({:?})", x)
+                write!(f, "SizeRange({x:?})")
             }
             InsertInfo::Seq(x) => {
                 write!(f, "Seq({:?})", std::str::from_utf8(x).unwrap())

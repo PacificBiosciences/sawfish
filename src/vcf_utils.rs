@@ -41,7 +41,7 @@ pub fn get_basic_vcf_header(
     header.push_record(format!("##fileDate={date_string}").as_bytes());
     header.push_record(format!("##reference=file://{ref_filename}").as_bytes());
     let prog_name = env!("CARGO_PKG_NAME");
-    header.push_record(format!("##source=\"{prog_name} {}\"", PROGRAM_VERSION).as_bytes());
+    header.push_record(format!("##source=\"{prog_name} {PROGRAM_VERSION}\"").as_bytes());
     let cmdline = std::env::args().collect::<Vec<_>>().join(" ");
     header.push_record(format!("##{prog_name}_cmdline=\"{cmdline}\"").as_bytes());
 

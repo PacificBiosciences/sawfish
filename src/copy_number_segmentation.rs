@@ -117,8 +117,7 @@ pub fn get_haploid_genome_coverage(
 
     assert!(
         chrom_match,
-        "Diploid chromosome regex '{}' does not match any sample chromosome names.",
-        coverage_est_regex
+        "Diploid chromosome regex '{coverage_est_regex}' does not match any sample chromosome names."
     );
     assert!(
         count > 0.0,
@@ -1132,11 +1131,11 @@ fn refine_multi_sample_chrom_cn_segments(
         eprintln!("rms: after filtration");
         eprintln!("rms: cnb_loss_bin_count: {}", cnb_info.losses.len());
         for x in cnb_info.losses.keys() {
-            eprintln!("rms: cnb_loss_bin: {:?}", x);
+            eprintln!("rms: cnb_loss_bin: {x:?}");
         }
         eprintln!("rms: cnb_gain_bin_count: {}", cnb_info.gains.len());
         for x in cnb_info.gains.keys() {
-            eprintln!("rms: cnb_gain_bin: {:?}", x);
+            eprintln!("rms: cnb_gain_bin: {x:?}");
         }
     }
 
@@ -1163,11 +1162,11 @@ fn refine_multi_sample_chrom_cn_segments(
     if debug {
         eprintln!("rms: cnb_loss_shifts: {}", cnb_loss_shifts.len());
         for x in cnb_loss_shifts.iter() {
-            eprintln!("rms: cnb_loss_shift: {:?}", x);
+            eprintln!("rms: cnb_loss_shift: {x:?}");
         }
         eprintln!("rms: cnb_gain_shifts: {}", cnb_gain_shifts.len());
         for x in cnb_gain_shifts.iter() {
-            eprintln!("rms: cnb_gain_shift: {:?}", x);
+            eprintln!("rms: cnb_gain_shift: {x:?}");
         }
     }
 

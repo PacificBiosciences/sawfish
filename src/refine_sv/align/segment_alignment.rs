@@ -137,8 +137,7 @@ pub fn transform_alt_hap_alignment_into_left_right_components(
     if debug {
         eprintln!("Starting transform_alt_hap_alignment_into_left_right_components");
         eprintln!(
-            "alt_hap_segment_boundary 1/2 {}/{}",
-            alt_hap_segment_boundary1, alt_hap_segment_boundary2
+            "alt_hap_segment_boundary 1/2 {alt_hap_segment_boundary1}/{alt_hap_segment_boundary2}"
         );
     }
 
@@ -340,10 +339,7 @@ pub fn transform_alt_hap_alignment_into_left_right_components(
         eprintln!("alt_hap_seq 10 bases below/above sv_alt_hap_range.end: {before}/{after}");
         let (before, after) = get_seq_pos_flanks(contig, sv_contig_range.start, 10);
         eprintln!("contig_seq 10 bases below/above contig_seq.start: {before}/{after}");
-        eprintln!(
-            "left_right_hrange: {:?}",
-            left_right_breakend_homology_range
-        );
+        eprintln!("left_right_hrange: {left_right_breakend_homology_range:?}");
     }
 
     Some(AltHapLeftRightComponentAlignmentInfo {

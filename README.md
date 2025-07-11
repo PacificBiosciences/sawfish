@@ -2,7 +2,7 @@
 
 <h1 align="center">Sawfish</h1>
 
-<h4 align="center">Joint structural variant and copy number variant caller for HiFi sequencing data</h3>
+<h4 align="center">Joint structural variant and copy number variant caller for HiFi sequencing data</h4>
 
 Sawfish is a joint structural variant (SV) and copy number variant (CNV) caller for mapped HiFi sequencing reads. It discovers germline structural variants from local sequence assembly and jointly genotypes these variants across multiple samples. Sawfish additionally applies copy number segmentation on each sample's sequencing coverage levels, synchronizing structural variant breakpoints with copy number change boundaries in the process to improve classification of breakpoint-based structural variant calls, in addition to calling copy number variants.
 
