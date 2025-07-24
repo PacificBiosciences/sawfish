@@ -1,6 +1,6 @@
 use std::sync::mpsc::channel;
 
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use log::info;
 use rust_vc_utils::{ChromList, GenomeRef, get_genome_ref_from_fasta};
 use unwrap::unwrap;
@@ -32,6 +32,9 @@ pub(super) struct SharedJointCallData {
 }
 
 pub struct SampleJointCallData {
+    /// This is the actual path given on the joint-call command-line, not the one in the discover_settings json file
+    pub discover_dir: Utf8PathBuf,
+
     /// Sample's order within the joint-call run
     pub sample_index: usize,
 
@@ -43,7 +46,7 @@ pub struct SampleJointCallData {
     /// Vector indexed on cluster index, containing the assembly regions for that cluster
     //pub assembly_regions: Vec<Vec<GenomeSegment>>,
     pub genome_depth_bins: GenomeDepthBins,
-    pub sample_gc_bias_data: SampleGCBiasCorrectionData,
+    pub sample_gc_bias_data: Option<SampleGCBiasCorrectionData>,
     pub copy_number_segments: SampleCopyNumberSegments,
 
     pub expected_copy_number_regions: Option<GenomeRegionsByChromIndex>,
@@ -89,7 +92,7 @@ fn get_sample_joint_call_data(
         eprintln!("Reading sample discovery input from '{discover_dir}'");
     }
 
-    let disover_run_stats = unwrap!(read_discover_run_stats(discover_dir));
+    let discover_run_stats = unwrap!(read_discover_run_stats(discover_dir));
 
     let genome_max_sv_depth_regions = {
         let filename = discover_dir.join(discover::MAX_SV_DEPTH_FILENAME);
@@ -108,9 +111,18 @@ fn get_sample_joint_call_data(
     );
 
     let genome_depth_bins = deserialize_genome_depth_bins(discover_dir);
-    let sample_gc_bias_data = deserialize_sample_gc_bias_data(discover_dir);
 
-    let copy_number_segments = deserialize_copy_number_segments(discover_dir);
+    let sample_gc_bias_data = if !discover_settings.disable_cnv {
+        Some(deserialize_sample_gc_bias_data(discover_dir))
+    } else {
+        None
+    };
+
+    let copy_number_segments = if !discover_settings.disable_cnv {
+        deserialize_copy_number_segments(discover_dir)
+    } else {
+        SampleCopyNumberSegments::new(genome_depth_bins.bin_size, chrom_list)
+    };
 
     let maf_data = if discover_settings.maf_filename.is_some() {
         Some(deserialize_maf_data(discover_dir))
@@ -119,8 +131,9 @@ fn get_sample_joint_call_data(
     };
 
     SampleJointCallData {
+        discover_dir: discover_dir.to_owned(),
         sample_index,
-        sample_name: disover_run_stats.sample_name,
+        sample_name: discover_run_stats.sample_name,
         discover_settings,
         genome_max_sv_depth_regions,
         sv_groups,
@@ -139,7 +152,10 @@ fn get_all_sample_joint_call_data(
     target_regions: &GenomeRegions,
     all_discover_settings: Vec<DiscoverSettings>,
 ) -> Vec<SampleJointCallData> {
-    info!("Reading all sample discovery input");
+    info!(
+        "Reading sawfish-discover results from {} samples",
+        all_discover_settings.len()
+    );
 
     // Read and process all sample-specific discovery data
     let worker_pool = rayon::ThreadPoolBuilder::new()
@@ -232,10 +248,14 @@ pub(super) fn read_all_sample_data(
         all_discover_settings,
     );
 
-    // Read in genome GC levels from the first sample, since we've already checked for a
-    // reference match this can be shared across all samples
-    let first_sample_discover_dir = settings.sample.first().unwrap();
-    let genome_gc_levels = deserialize_genome_gc_levels(first_sample_discover_dir);
+    // Read in genome GC levels from the first sample with CNV enabled, or else return an empty vector
+    let genome_gc_levels = match all_sample_data
+        .iter()
+        .find(|x| !x.discover_settings.disable_cnv)
+    {
+        Some(x) => deserialize_genome_gc_levels(&x.discover_dir),
+        None => Vec::new(),
+    };
 
     let shared_data = SharedJointCallData {
         ref_filename,

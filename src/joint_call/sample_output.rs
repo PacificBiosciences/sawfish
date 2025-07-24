@@ -54,13 +54,15 @@ pub fn setup_sample_output(
             "depth",
         );
 
-        write_gc_scaled_depth_track_files(
-            &sample_dir,
-            chrom_list,
-            &sample_data.sample_gc_bias_data,
-            &shared_data.genome_gc_levels,
-            &sample_data.genome_depth_bins,
-        );
+        if let Some(sample_gc_bias_data) = sample_data.sample_gc_bias_data.as_ref() {
+            write_gc_scaled_depth_track_files(
+                &sample_dir,
+                chrom_list,
+                sample_gc_bias_data,
+                &shared_data.genome_gc_levels,
+                &sample_data.genome_depth_bins,
+            );
+        }
 
         if let Some(maf_data) = &sample_data.maf_data {
             write_maf_track_files(&sample_dir, chrom_list, maf_data, &sample_data.sample_name);

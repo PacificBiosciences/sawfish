@@ -72,6 +72,16 @@ pub struct GenomeGCBins {
     pub chroms: Vec<ChromGCBins>,
 }
 
+impl GenomeGCBins {
+    pub fn new(bin_size: u32, chrom_count: usize) -> Self {
+        Self {
+            bin_size,
+            genome_bin: GCContent::default(),
+            chroms: vec![Vec::new(); chrom_count],
+        }
+    }
+}
+
 ///
 /// Return a 2-tuple of
 /// (1) The GCContent data for all depth bins in the chromosome
@@ -170,15 +180,14 @@ fn get_chrom_depth_bin_gc_content(
 
 /// Return average gc content associated with each depth bin
 ///
-/// GC content of each depth bin is found for a window size extending from the center of the bin.
-/// The window size may be much larger than the size of the bin itself.
+/// GC content of each depth bin is found for a window size extending from the center of the bin. The window size may be
+/// much larger than the size of the bin itself.
 ///
 /// # Arguments
 ///
-/// * `gc_genome_window_size` - Size of the window centered on each depth bin, from which that bin's
-///   GC-fraction is taken. This window may be substantially different than the size of the bin itself
-///   (typically larger), so that we consider the effect of the larger scale GC-content on the reads
-///   overlapping the depth bin itself.
+/// * `gc_genome_window_size` - Size of the window centered on each depth bin, from which that bin's GC-fraction is
+///   taken. This window may be substantially different than the size of the bin itself (typically larger), so that we
+///   consider the effect of the larger scale GC-content on the reads overlapping the depth bin itself.
 ///
 pub fn get_depth_bin_gc_content(
     genome_ref: &genome_ref::GenomeRef,
@@ -192,13 +201,11 @@ pub fn get_depth_bin_gc_content(
     // Check that chrom_list labels exist in the reference, and have the expected length
     for chrom_info in chrom_list.data.iter() {
         let chrom_ref = genome_ref.chroms.get(chrom_info.label.as_str());
-        if chrom_ref.is_none() {
-            panic!(
-                "Can't find alignment file chromosome '{}' in the fasta reference genome input.",
-                chrom_info.label
-            );
-        }
-        let chrom_ref = chrom_ref.unwrap();
+        let chrom_ref = unwrap!(
+            chrom_ref,
+            "Can't find alignment file chromosome '{}' in the fasta reference genome input.",
+            chrom_info.label
+        );
         if chrom_ref.len() != chrom_info.length as usize {
             panic!(
                 "Length of chromosome '{}' differs between alignment file header '{}' and fasta reference genome input '{}'",
@@ -232,11 +239,7 @@ pub fn get_depth_bin_gc_content(
     });
 
     let chrom_count = chrom_list.data.len();
-    let mut depth_bin_gc_content = GenomeGCBins {
-        bin_size: depth_bin_size,
-        genome_bin: GCContent::default(),
-        chroms: vec![Vec::new(); chrom_count],
-    };
+    let mut depth_bin_gc_content = GenomeGCBins::new(depth_bin_size, chrom_count);
 
     for (chrom_index, (chrom_depth_bin_gc_content, chrom_gc_content)) in rx {
         depth_bin_gc_content.chroms[chrom_index] = chrom_depth_bin_gc_content;
@@ -341,7 +344,7 @@ fn gc_fraction_to_level(gc_fraction: f64, gc_level_count: usize) -> usize {
     )
 }
 
-/// Get the gc_bins which will be used in all samples
+/// Convert the GC and AT counts in each GC-bin into discrete GC-levels, over the whole genome
 ///
 /// These values will be used for GC correction in all samples
 ///
@@ -395,12 +398,12 @@ fn get_sample_gc_correction(
         }
     }
 
-    // Debug output
-    let write_debug_output = false;
-    if write_debug_output {
-        println!("gc_index\tgc_bins\tgc_depth\tgc_bin_depth");
+    let debug = false;
+    if debug {
+        eprintln!("get_sample_gc_correction: intermediate debug output of depth totals:");
+        eprintln!("gc_index\tgc_bins\tgc_depth\tgc_bin_depth");
         for (gc_index, gc_level) in gc_levels.iter().enumerate() {
-            println!(
+            eprintln!(
                 "{}\t{}\t{}\t{}",
                 gc_index,
                 gc_level.bins,
@@ -487,14 +490,12 @@ fn get_sample_gc_correction(
 ///
 /// # Arguments
 ///
-/// * `depth_bin_gc_content` - Count of GC and AT reference bases in a window centered on each depth
-///   bin
+/// * `depth_bin_gc_content` - Count of GC and AT reference bases in a window centered on each depth bin
 ///
-/// * `coverage_est_regex` - Regex used to select chromosomes for mean haploid coverage estimation.
-///   All selected chromosomes are assumed diploid.
+/// * `coverage_est_regex` - Regex used to select chromosomes for mean haploid coverage estimation. All selected
+///   chromosomes are assumed diploid.
 ///
-/// * `gc_level_count` - Number of equal divisions of the GC frequency range to use in the GC
-///   correction process
+/// * `gc_level_count` - Number of equal divisions of the GC frequency range to use in the GC correction process
 ///
 pub fn get_gc_correction(
     chrom_list: &ChromList,
@@ -762,7 +763,10 @@ pub fn deserialize_genome_gc_levels(discover_dir: &Utf8Path) -> GenomeGCLevels {
         std::fs::read(&filename),
         "Unable to open and read genome gc levels binary file: '{filename}'"
     );
-    rmp_serde::from_slice(&buf).unwrap()
+    unwrap!(
+        rmp_serde::from_slice(&buf),
+        "Unable to parse genome gc levels binary file: '{filename}'"
+    )
 }
 
 pub fn deserialize_sample_gc_bias_data(discover_dir: &Utf8Path) -> SampleGCBiasCorrectionData {
@@ -813,5 +817,17 @@ mod tests {
         let test_bin = &result.chroms[0][7];
         approx::assert_ulps_eq!(test_bin.at, 7.0);
         approx::assert_ulps_eq!(test_bin.gc, 0.0);
+    }
+
+    #[test]
+    fn test_gc_fraction_to_level() {
+        assert_eq!(gc_fraction_to_level(-0.1, 2), 0);
+        assert_eq!(gc_fraction_to_level(0.0, 2), 0);
+        assert_eq!(gc_fraction_to_level(0.1, 2), 0);
+        assert_eq!(gc_fraction_to_level(0.49, 2), 0);
+        assert_eq!(gc_fraction_to_level(0.51, 2), 1);
+        assert_eq!(gc_fraction_to_level(0.9, 2), 1);
+        assert_eq!(gc_fraction_to_level(1.0, 2), 1);
+        assert_eq!(gc_fraction_to_level(1.1, 2), 1);
     }
 }

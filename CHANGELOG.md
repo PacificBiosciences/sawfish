@@ -1,5 +1,15 @@
 # Change Log
 
+## v2.0.3 - 2025-07-24
+
+### Changed
+- CR-513 Add `disable-cnv` option to the discover step
+  - Disables GC-bias estimation, depth segmentation and CNV calling for the given sample
+  - May be helpful for certain non-WGS sample inputs
+
+### Fixed
+- CR-516 Fix panic which could infrequently occur during multi-sample copy number boundary sync
+
 ## v2.0.2 - 2025-07-11
 
 ### Added

@@ -25,7 +25,7 @@ pub fn get_bin_index(pos: u64, bin_size: u32) -> usize {
     (pos / bin_size as u64) as usize
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum DepthBin {
     Excluded,
     Depth(f64),

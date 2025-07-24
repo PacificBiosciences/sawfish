@@ -25,16 +25,15 @@ pub struct DiscoverSettings {
 
     /// Expected copy number values by genomic interval, in BED format.
     ///
-    /// Copy number will be read from column 5 of the input BED file. Column 4 is ignored and can
-    /// be used as a region label. The default copy number is 2 for unspecified regions. These copy
-    /// number values will be stored in discover output for each sample and automatically selected
-    /// for the given sample during joint-calling.
+    /// Copy number will be read from column 5 of the input BED file. Column 4 is ignored and can be used as a region
+    /// label. The default copy number is 2 for unspecified regions. These copy number values will be stored in discover
+    /// output for each sample and automatically selected for the given sample during joint-calling.
     ///
     /// Note this option is especially useful to clarify expected sex chromosome copy number in the sample.
     ///
     /// By default, the expected copy number only affects CNV calling behavior. If the option
-    /// "treat-single-copy-as-haploid" is given during joint calling, then SV genotyping is updated for
-    /// single copy regions as well.
+    /// "treat-single-copy-as-haploid" is given during joint calling, then SV genotyping is updated for single copy
+    /// regions as well.
     ///
     #[arg(long = "expected-cn", value_name = "FILE")]
     pub expected_copy_number_filename: Option<String>,
@@ -48,16 +47,15 @@ pub struct DiscoverSettings {
 
     /// Variant file used to generate minor allele frequency track for this sample, in VCF or BCF format.
     ///
-    /// The bigwig track file will be output for each sample in the joint-call step as 'maf.bw' in each
-    /// sample directory. The frequencies may also be used to improve copy-number segmentation in a future
-    /// update.
+    /// The bigwig track file will be output for each sample in the joint-call step as 'maf.bw' in each sample
+    /// directory. The frequencies may also be used to improve copy-number segmentation in a future update.
     ///
     #[arg(long = "maf", value_name = "FILE")]
     pub maf_filename: Option<String>,
 
     /// This mode is designed to more quickly run a CNV-focused analysis by analyzing only the larger-scale SV
-    /// breakpoint evidence that could be useful to improve CNV/large-variant accuracy, together with depth-based
-    /// CNV analysis which is run regardless of this mode setting.
+    /// breakpoint evidence that could be useful to improve CNV/large-variant accuracy, together with depth-based CNV
+    /// analysis which is run regardless of this mode setting.
     ///
     /// Smaller assembly regions are skipped in his mode, which will remove all insertions, and most deletions below
     /// about 1kb.
@@ -65,31 +63,36 @@ pub struct DiscoverSettings {
     #[arg(long)]
     pub fast_cnv_mode: bool,
 
-    /// Size of bins used for CNV depth track. The segmentation parameters are highly dependent on
-    /// this value so it cannot be changed independently of the transition probability and
-    /// dependency correction factors
+    /// Disable CNV calling
+    ///
+    /// Disable CNV calling and read depth GC-bias estimation for this sample.
+    ///
+    #[arg(long, conflicts_with = "fast_cnv_mode")]
+    #[serde(default)]
+    pub disable_cnv: bool,
+
+    /// Size of bins used for CNV depth track. The segmentation parameters are highly dependent on this value so it
+    /// cannot be changed independently of the transition probability and dependency correction factors
     #[arg(hide = true, long, default_value_t = 1000)]
     pub depth_bin_size: u32,
 
-    /// The transition probability for going away from the current copy number.
-    /// Stay probability is derived from this value.
+    /// The transition probability for going away from the current copy number. Stay probability is derived from this
+    /// value.
     #[arg(hide = true, long = "transition-probability", default_value_t = 0.02)]
     pub transition_prob: f64,
 
-    /// Depth bin Poisson emission probabilities are raised to this power to help correct
-    /// for their having dependencies on neighboring bins, even though they ar treated as
-    /// independent for segmentation and quality scoring.
+    /// Depth bin Poisson emission probabilities are raised to this power to help correct for their having dependencies
+    /// on neighboring bins, even though they ar treated as independent for segmentation and quality scoring.
     #[arg(hide = true, long = "dependency-correction", default_value_t = 0.02)]
     pub bin_dependency_correction_factor: f64,
 
-    /// Threshold for the gap-compressed identity filter, to filter out reads with identity to the
-    /// reference so low that they are likely to reflect a reference compression or other form
-    /// of mismapping.
+    /// Threshold for the gap-compressed identity filter, to filter out reads with identity to the reference so low that
+    /// they are likely to reflect a reference compression or other form of mismapping.
     #[arg(hide = true, long, default_value_t = MIN_GAP_COMPRESSED_IDENTITY)]
     pub min_gap_compressed_identity: f64,
 
-    /// Regex used to select chromosomes for mean haploid coverage estimation. All selected
-    /// chromosomes are assumed diploid.
+    /// Regex used to select chromosomes for mean haploid coverage estimation. All selected chromosomes are assumed
+    /// diploid.
     #[arg(
         long = "cov-regex",
         value_name = "REGEX",
@@ -99,9 +102,8 @@ pub struct DiscoverSettings {
 
     /// Number of equal divisions of the GC frequency range to use in the GC correction process
     ///
-    /// Depth will be estimated for each GC division, or 'level', which has enough support in the
-    /// genome, and the relative depth of each gc level will be used to implement the coverage
-    /// correction.
+    /// Depth will be estimated for each GC division, or 'level', which has enough support in the genome, and the
+    /// relative depth of each gc level will be used to implement the coverage correction.
     #[arg(hide = true, long, default_value_t = 40)]
     pub gc_level_count: usize,
 
@@ -109,56 +111,52 @@ pub struct DiscoverSettings {
     #[arg(hide = true, long)]
     pub debug_gc_correction: bool,
 
-    /// Each depth bin is GC corrected based on the GC content of a genomic segment of this size,
-    /// centered on the bin.
+    /// Each depth bin is GC corrected based on the GC content of a genomic segment of this size, centered on the bin.
     #[arg(hide = true, long, default_value_t = 20000)]
     pub gc_genome_window_size: u32,
 
-    /// Co-linear SVs must have either an insertion or deletion of this size or greater to be
-    /// included in the output. All other SV evidence patterns such as those consistent with
-    /// duplications, inversions and translocations will always be included in the output.
+    /// Co-linear SVs must have either an insertion or deletion of this size or greater to be included in the output.
+    /// All other SV evidence patterns such as those consistent with duplications, inversions and translocations will
+    /// always be included in the output.
     ///
     #[arg(long, default_value_t = 35)]
     pub min_indel_size: u32,
 
-    /// Specify how much noise is expected in the obs indel size near the minimum size threshold
-    ///
-    /// This is used to find the minimum evidence indel size, the size used to determine if an
-    /// assembly is triggered and stored for a locus. Allowing this trigger for indels smaller than
-    /// the reporting size serves several purposes:
-    /// 1. Adjacent small indels may merge into a larger indel.
-    /// 2. Smaller indels may form a complex haplotype that should be considered in the genotyping
-    ///    process, this will be a more accurate non-SV haplotype model then simply using the reference
-    ///    sequence
-    ///
-    #[arg(hide = true, long, default_value_t = 10)]
-    pub min_indel_size_noise_margin: u32,
-
-    /// Minimum MAPQ value for reads to be used in SV breakend finding. This does not change depth
-    /// analysis.
+    /// Minimum MAPQ value for reads to be used in SV breakend finding. This does not change depth analysis.
     ///
     #[arg(long, default_value_t = MIN_SV_MAPQ)]
     pub min_sv_mapq: u32,
 
     /// Reduce overlapping SV alleles to a single copy
     ///
-    /// Certain benchmarks like GIAB SV v0.6 tend to compress both alleles at a VNTR to a single
-    /// allele, often genotyped as homozygous. Using this flag will make the SV caller's output
-    /// more directly comparable to such representations, but should not be used otherwise.
+    /// Certain benchmarks like GIAB SV v0.6 tend to compress both alleles at a VNTR to a single allele, often genotyped
+    /// as homozygous. Using this flag will make the SV caller's output more directly comparable to such
+    /// representations, but should not be used otherwise.
     ///
     #[arg(long)]
     pub reduce_overlapping_sv_alleles: bool,
 
     /// Don't canonicalize input file paths
     ///
-    /// By default, all file paths input to the discover step are canonicalized and stored in the
-    /// discover output directory for use in follow-on joint-call steps. This flag disables all
-    /// canonicalization, which allows all paths to be stored as-is, including as relative paths. This
-    /// may be useful for situations where the sample discover and joint-call steps are run in
-    /// different directory structures.
+    /// By default, all file paths input to the discover step are canonicalized and stored in the discover output
+    /// directory for use in follow-on joint-call steps. This flag disables all canonicalization, which allows all paths
+    /// to be stored as-is, including as relative paths. This may be useful for situations where the sample discover and
+    /// joint-call steps are run in different directory structures.
     ///
     #[arg(long)]
     pub disable_path_canonicalization: bool,
+
+    // **** The section below is for hidden options intended primarily for debug/development ****
+    /// Specify how much noise is expected in the obs indel size near the minimum size threshold
+    ///
+    /// This is used to find the minimum evidence indel size, the size used to determine if an assembly is triggered and
+    /// stored for a locus. Allowing this trigger for indels smaller than the reporting size serves several purposes:
+    /// 1. Adjacent small indels may merge into a larger indel.
+    /// 2. Smaller indels may form a complex haplotype that should be considered in the genotyping process, this will be
+    ///    a more accurate non-SV haplotype model then simply using the reference sequence
+    ///
+    #[arg(hide = true, long, default_value_t = 10)]
+    pub min_indel_size_noise_margin: u32,
 
     /// Disable large insertion assembly to save memory/runtime.
     ///
@@ -174,8 +172,8 @@ pub struct DiscoverSettings {
     #[arg(hide = true, long, default_value_t = 10)]
     pub min_qual: i32,
 
-    /// Maximum distance between breakends for them to be treated as 'close' for the porpose of modifying
-    /// the alt haplotype model
+    /// Maximum distance between breakends for them to be treated as 'close' for the purpose of modifying the alt
+    /// haplotype model
     ///
     #[arg(hide = true, long, default_value_t = 2000)]
     pub max_close_breakend_distance: usize,

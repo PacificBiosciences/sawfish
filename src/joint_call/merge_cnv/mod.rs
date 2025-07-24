@@ -10,10 +10,10 @@ use self::transition_types::get_copynum_transition_types_from_breakends;
 use crate::breakpoint::BreakendDirection;
 use crate::cli::JointCallSettings;
 use crate::copy_number_segmentation::{
-    CopyNumberSegment, CopyNumberState, HaploidCoverage, SampleCopyNumberSegmentationInput,
-    SampleCopyNumberSegments, SampleTransitionTypes, TransitionProbInfo, get_depth_emission_lnprob,
-    get_haploid_genome_coverage, get_single_pass_sample_copy_number_segments,
-    write_copy_number_segment_file,
+    CopyNumberSegment, CopyNumberState, ExtendedCopyNumberState, HaploidCoverage,
+    SampleCopyNumberSegmentationInput, SampleCopyNumberSegments, SampleTransitionTypes,
+    get_depth_emission_lnprob, get_haploid_genome_coverage,
+    get_single_pass_sample_copy_number_segments, write_copy_number_segment_file,
 };
 use crate::depth_bins::DepthBin;
 use crate::expected_ploidy::get_majority_expected_copy_number_for_region;
@@ -33,7 +33,7 @@ use crate::utils::remove_sorted_indices;
 /// Return a vector of log likelihoods for each copy number state in the model
 ///
 fn get_sample_cn_state_lnlhoods(
-    cns: &CopyNumberSegment,
+    cn_segment: &CopyNumberSegment,
     chrom_depth_bins: &[DepthBin],
     chrom_gc_levels: &[usize],
     sample_gc_bias_data: &SampleGCBiasCorrectionData,
@@ -47,7 +47,7 @@ fn get_sample_cn_state_lnlhoods(
         let copy_num_state = CopyNumberState::from_repr(state_index).unwrap();
 
         let mut state_lnlhood = 0.0;
-        for bin_index in cns.begin_bin..cns.end_bin {
+        for bin_index in cn_segment.begin_bin..cn_segment.end_bin {
             let depth_bin_value = &chrom_depth_bins[bin_index];
             let gc_depth_reduction =
                 sample_gc_bias_data.gc_depth_reduction[chrom_gc_levels[bin_index]];
@@ -66,16 +66,16 @@ fn get_sample_cn_state_lnlhoods(
 
 /// Generate all copy number quality values for one CNV in one sample
 ///
-/// All quality scores are approximated from pre-computed copy number state likelihoods,
-/// themselves mostly computed from the emit probs for each cn state over the CNV segment.
+/// All quality scores are approximated from pre-computed copy number state likelihoods, themselves mostly computed from
+/// the emit probs for each cn state over the CNV segment.
 ///
 fn get_cnv_sample_qualities_from_cn_state_lnlhoods(
     max_qscore: u32,
-    cns: &CopyNumberSegment,
+    copy_number_info: &ExtendedCopyNumberState,
     state_lnlhoods: &[f64],
     sample_score: &mut CNVSampleScoreInfo,
 ) {
-    let copy_number = cns.copy_number_info.as_u32_depth();
+    let copy_number = copy_number_info.as_u32_depth();
 
     // Compute CNQ:
     let copy_number_qscore = {
@@ -86,7 +86,7 @@ fn get_cnv_sample_qualities_from_cn_state_lnlhoods(
         for cn_index in 0..cn_state_count {
             let cnq = std::cmp::min(
                 ln_error_prob_to_qphred(
-                    state_lnlhoods[cn_index] - state_lnlhoods[cns.copy_number_info.state as usize],
+                    state_lnlhoods[cn_index] - state_lnlhoods[copy_number_info.state as usize],
                 ),
                 max_qscore as i32,
             );
@@ -102,7 +102,7 @@ fn get_cnv_sample_qualities_from_cn_state_lnlhoods(
         cn_lhood_qscore
             .iter()
             .enumerate()
-            .filter(|(index, _)| *index != cns.copy_number_info.state as usize)
+            .filter(|(index, _)| *index != copy_number_info.state as usize)
             .min_by(|(_, a), (_, b)| a.cmp(b))
             .map(|(_, &a)| a)
             .unwrap()
@@ -138,14 +138,14 @@ fn convert_cn_segment_to_refined_cnv(
     max_qscore: u32,
     source_sample_index: usize,
     chrom_index: usize,
-    cns: &CopyNumberSegment,
+    cn_segment: &CopyNumberSegment,
     bin_size: u32,
     chrom_gc_levels: &[usize],
-    haploid_coverage_by_sample: &[HaploidCoverage],
+    sample_seg_input: &SampleCopyNumberSegmentationInput,
 ) -> Option<RefinedCNV> {
     let segment = GenomeSegment {
         chrom_index,
-        range: IntRange::from_pair(cns.begin_pos(bin_size), cns.end_pos(bin_size)),
+        range: IntRange::from_pair(cn_segment.begin_pos(bin_size), cn_segment.end_pos(bin_size)),
     };
 
     let mut score = CNVScoreInfo::default();
@@ -165,8 +165,8 @@ fn convert_cn_segment_to_refined_cnv(
     // Check whether this is a variant in the source sample. Return None if not.
     let source_sample_expected_copy_number =
         score.samples[source_sample_index].expected_copy_number;
-    if cns.copy_number_info.state as u32 == source_sample_expected_copy_number
-        || cns.copy_number_info.state == CopyNumberState::Unknown
+    if cn_segment.copy_number_info.state as u32 == source_sample_expected_copy_number
+        || cn_segment.copy_number_info.state == CopyNumberState::Unknown
     {
         return None;
     }
@@ -177,25 +177,24 @@ fn convert_cn_segment_to_refined_cnv(
     // of this method.
     //
     let sample_index = source_sample_index;
-    let sample_data = &all_sample_data[sample_index];
-    let chrom_depth_bins = &sample_data.genome_depth_bins.depth_bins[chrom_index];
-    let sample_gc_bias_data = &sample_data.sample_gc_bias_data;
-    let gc_corrected_haploid_coverage = haploid_coverage_by_sample[sample_index].gc_corrected_depth;
+    let chrom_depth_bins = &sample_seg_input.genome_depth_bins.depth_bins[chrom_index];
+    let sample_gc_bias_data = sample_seg_input.sample_gc_bias_data;
+    let gc_corrected_haploid_coverage = sample_seg_input.gc_corrected_haploid_coverage;
 
     let state_lnlhoods = get_sample_cn_state_lnlhoods(
-        cns,
+        cn_segment,
         chrom_depth_bins,
         chrom_gc_levels,
         sample_gc_bias_data,
         gc_corrected_haploid_coverage,
-        sample_data
+        sample_seg_input
             .discover_settings
             .bin_dependency_correction_factor,
     );
 
     get_cnv_sample_qualities_from_cn_state_lnlhoods(
         max_qscore,
-        cns,
+        &cn_segment.copy_number_info,
         &state_lnlhoods,
         &mut score.samples[sample_index],
     );
@@ -213,19 +212,26 @@ fn estimate_haploid_coverage_by_sample(
     shared_data: &SharedJointCallData,
     all_sample_data: &[SampleJointCallData],
     debug: bool,
-) -> Vec<HaploidCoverage> {
+) -> Vec<Option<HaploidCoverage>> {
     let mut x = Vec::new();
     for (sample_index, sample_data) in all_sample_data.iter().enumerate() {
-        let coverage_est_regex = sample_data.discover_settings.coverage_est_regex.as_str();
-        let copy_number_segments = Some(&sample_data.copy_number_segments);
-        let haploid_coverage = get_haploid_genome_coverage(
-            coverage_est_regex,
-            &shared_data.chrom_list,
-            &sample_data.genome_depth_bins,
-            &shared_data.genome_gc_levels,
-            &sample_data.sample_gc_bias_data,
-            copy_number_segments,
-        );
+        let haploid_coverage =
+            sample_data
+                .sample_gc_bias_data
+                .as_ref()
+                .map(|sample_gc_bias_data| {
+                    let coverage_est_regex =
+                        sample_data.discover_settings.coverage_est_regex.as_str();
+                    let copy_number_segments = Some(&sample_data.copy_number_segments);
+                    get_haploid_genome_coverage(
+                        coverage_est_regex,
+                        &shared_data.chrom_list,
+                        &sample_data.genome_depth_bins,
+                        &shared_data.genome_gc_levels,
+                        sample_gc_bias_data,
+                        copy_number_segments,
+                    )
+                });
 
         if debug {
             eprintln!("CNV haploid_coverage for sample {sample_index}:\n{haploid_coverage:?}");
@@ -281,32 +287,27 @@ fn get_refined_cnvs(
     max_qscore: u32,
     shared_data: &SharedJointCallData,
     all_sample_data: &[SampleJointCallData],
-    copy_number_segments: &[SampleCopyNumberSegments],
+    seg_input: &[SampleCopyNumberSegmentationInput],
+    cn_segments: &[SampleCopyNumberSegments],
     debug: bool,
 ) -> Vec<RefinedCNV> {
-    let sample_count = all_sample_data.len();
-    assert_eq!(sample_count, copy_number_segments.len());
-
-    let haploid_coverage_by_sample =
-        estimate_haploid_coverage_by_sample(shared_data, all_sample_data, debug);
-
     let mut refined_cnvs = Vec::new();
-    for (sample_index, sample_copy_number_segments) in copy_number_segments.iter().enumerate() {
-        for (chrom_index, chrom_segments) in
-            sample_copy_number_segments.cn_segments.iter().enumerate()
-        {
+    assert_eq!(seg_input.len(), cn_segments.len());
+    for (sample_seg_input, sample_cn_segments) in seg_input.iter().zip(cn_segments.iter()) {
+        let sample_index = sample_seg_input.sample_index;
+        for (chrom_index, chrom_cn_segments) in sample_cn_segments.cn_segments.iter().enumerate() {
             let chrom_gc_levels = &shared_data.genome_gc_levels[chrom_index];
 
-            for copy_number_segment in chrom_segments.iter() {
+            for cn_segment in chrom_cn_segments.iter() {
                 let rc_result = convert_cn_segment_to_refined_cnv(
                     all_sample_data,
                     max_qscore,
                     sample_index,
                     chrom_index,
-                    copy_number_segment,
-                    sample_copy_number_segments.bin_size,
+                    cn_segment,
+                    sample_cn_segments.bin_size,
                     chrom_gc_levels,
-                    &haploid_coverage_by_sample,
+                    sample_seg_input,
                 );
 
                 if let Some(refined_cnv) = rc_result {
@@ -316,6 +317,7 @@ fn get_refined_cnvs(
         }
     }
 
+    let sample_count = all_sample_data.len();
     let mut multisample_refined_cnvs = if sample_count <= 1 {
         refined_cnvs
     } else {
@@ -574,8 +576,6 @@ fn merge_cnv_with_sv(
     sv_groups: &mut [SVGroup],
     refined_cnvs: &mut Vec<RefinedCNV>,
 ) {
-    info!("Start CNV/SV merge");
-
     //
     // Hard code various parameters here for now
     //
@@ -794,7 +794,10 @@ fn merge_cnv_with_sv(
         rsv.score.update_cnv_alt_score(settings.max_qscore);
     }
 
-    info!("Merged {} CNVs into matching SVs", merged_cnv_indexes.len());
+    info!(
+        "Merged {} CNVs into corresponding breakpoint-based SVs",
+        merged_cnv_indexes.len()
+    );
 
     // Remove the CNVs that have been merged into similar SVs already:
     if !merged_cnv_indexes.is_empty() {
@@ -835,62 +838,48 @@ fn mark_unsupported_large_deldup_for_bnd_conversion(
     }
 }
 
-/// Jointly resegment depth for all samples, including new transition hints based on breakpoint locations
+/// Reformat contents of all_sample_data to provide inputs needed for segmentation and CNV calling
 ///
-/// This version resegments once without any change to the haploid depth estimates, it is assumed that
-/// resegmentation will primarily benefit smaller SVs, and thus this should not affect the genomic haploid
-/// depth estimate very much.
-///
-/// Input requirements, which we assume are checked by the public interface function calling this one:
-/// - The bin size used for genome_depth_bins in all samples must be the same
-///
-fn resegment_depth_tracks(
+fn get_segmentation_input<'a>(
     shared_data: &SharedJointCallData,
-    all_sample_data: &[SampleJointCallData],
-    haploid_coverage_by_sample: &[HaploidCoverage],
-    breakpoint_transition_factor: f64,
-    transition_types: &[SampleTransitionTypes],
-) -> Vec<SampleCopyNumberSegments> {
-    let mut seg_input = Vec::new();
+    all_sample_data: &'a [SampleJointCallData],
+    transition_types: &'a [SampleTransitionTypes],
+    debug: bool,
+) -> Vec<SampleCopyNumberSegmentationInput<'a>> {
+    let haploid_coverage_by_sample =
+        estimate_haploid_coverage_by_sample(shared_data, all_sample_data, debug);
 
-    let transition_prob = all_sample_data[0].discover_settings.transition_prob;
-    let transition_info = TransitionProbInfo::new(transition_prob, breakpoint_transition_factor);
-
+    let mut seg_input: Vec<SampleCopyNumberSegmentationInput<'_>> = Vec::new();
     for (sample_index, sample_data) in all_sample_data.iter().enumerate() {
-        let haploid_coverage = &haploid_coverage_by_sample[sample_index];
+        let haploid_coverage = match haploid_coverage_by_sample[sample_index].as_ref() {
+            Some(x) => x,
+            None => continue,
+        };
         let sample_transition_types = Some(&transition_types[sample_index]);
-
         let sample_seg_input = SampleCopyNumberSegmentationInput {
-            settings: &sample_data.discover_settings,
+            sample_index,
+            discover_settings: &sample_data.discover_settings,
             gc_corrected_haploid_coverage: haploid_coverage.gc_corrected_depth,
             genome_depth_bins: &sample_data.genome_depth_bins,
-            sample_gc_bias_data: &sample_data.sample_gc_bias_data,
+            sample_gc_bias_data: sample_data.sample_gc_bias_data.as_ref().unwrap(),
             sample_transition_types,
             expected_copy_number_regions: sample_data.expected_copy_number_regions.as_ref(),
         };
-
         seg_input.push(sample_seg_input);
     }
-
-    // Resegment all samples
-    get_single_pass_sample_copy_number_segments(
-        &shared_data.genome_gc_levels,
-        &transition_info,
-        &seg_input,
-    )
+    seg_input
 }
 
 fn estimate_high_state_depth_in_sample(
     shared_data: &SharedJointCallData,
-    sample_data: &SampleJointCallData,
-    gc_corrected_haploid_coverage: f64,
-    sample_segments: &mut SampleCopyNumberSegments,
+    sample_seg_input: &SampleCopyNumberSegmentationInput,
+    sample_cn_segments: &mut SampleCopyNumberSegments,
 ) {
-    let sample_gc_bias_data = &sample_data.sample_gc_bias_data;
-    let gc_corrected_haploid_depth_factor = 1. / gc_corrected_haploid_coverage;
+    let sample_gc_bias_data = sample_seg_input.sample_gc_bias_data;
+    let gc_corrected_haploid_depth_factor = 1. / sample_seg_input.gc_corrected_haploid_coverage;
 
-    for (chrom_index, chrom_cn_segments) in sample_segments.cn_segments.iter_mut().enumerate() {
-        let chrom_depth_bins = &sample_data.genome_depth_bins.depth_bins[chrom_index];
+    for (chrom_index, chrom_cn_segments) in sample_cn_segments.cn_segments.iter_mut().enumerate() {
+        let chrom_depth_bins = &sample_seg_input.genome_depth_bins.depth_bins[chrom_index];
         let chrom_gc_levels = &shared_data.genome_gc_levels[chrom_index];
 
         for segment in chrom_cn_segments
@@ -957,20 +946,12 @@ fn estimate_high_state_depth_in_sample(
 
 fn estimate_high_state_depth(
     shared_data: &SharedJointCallData,
-    all_sample_data: &[SampleJointCallData],
-    haploid_coverage_by_sample: &[HaploidCoverage],
-    segments: &mut [SampleCopyNumberSegments],
+    seg_input: &[SampleCopyNumberSegmentationInput],
+    cn_segments: &mut [SampleCopyNumberSegments],
 ) {
-    for (sample_index, sample_segments) in segments.iter_mut().enumerate() {
-        let sample_data = &all_sample_data[sample_index];
-        let gc_corrected_haploid_coverage =
-            haploid_coverage_by_sample[sample_index].gc_corrected_depth;
-        estimate_high_state_depth_in_sample(
-            shared_data,
-            sample_data,
-            gc_corrected_haploid_coverage,
-            sample_segments,
-        );
+    assert_eq!(seg_input.len(), cn_segments.len());
+    for (sample_seg_input, sample_cn_segments) in seg_input.iter().zip(cn_segments.iter_mut()) {
+        estimate_high_state_depth_in_sample(shared_data, sample_seg_input, sample_cn_segments);
     }
 }
 
@@ -978,24 +959,30 @@ fn write_resegment_results_to_file(
     output_dir: &Utf8Path,
     shared_data: &SharedJointCallData,
     all_sample_data: &[SampleJointCallData],
-    resegment_results: &[SampleCopyNumberSegments],
+    seg_input: &[SampleCopyNumberSegmentationInput],
+    cn_segments: &[SampleCopyNumberSegments],
 ) {
     use super::sample_output::get_sample_output_dir;
 
-    for (sample_index, sample_data) in all_sample_data.iter().enumerate() {
+    assert_eq!(seg_input.len(), cn_segments.len());
+    for (sample_seg_input, sample_cn_segments) in seg_input.iter().zip(cn_segments.iter()) {
+        let sample_index = sample_seg_input.sample_index;
+        let sample_data = &all_sample_data[sample_index];
         let sample_dir = get_sample_output_dir(output_dir, sample_index, &sample_data.sample_name);
-        write_copy_number_segment_file(
-            &sample_dir,
-            &shared_data.chrom_list,
-            &resegment_results[sample_index],
-        );
+        write_copy_number_segment_file(&sample_dir, &shared_data.chrom_list, sample_cn_segments);
     }
 }
 
 /// Merge joint-called SV output with CN segmentation information over all samples
 ///
-/// This function will both modify existing SVs based on depth information, and produce refined cnvs for independent VCF output for all
-/// other CNVs not merged into an SV.
+/// The merge operation has many components, as describe in sawfish methods. Major components include:
+/// 1. Resegment depth tracks in all samples based on SV breakpoint locations
+/// 2. Complete 'high-depth' state depth estimation
+/// 3. Write resegmented copy number to per-sample file outputs
+/// 4. Complete multi-sample CNV boundary reconsiliation
+/// 5. Merge CNVs and compute CN qualities
+/// 6. Merge SV/CNV records
+/// 7. Mark large unmerged SVs for BND conversion
 ///
 /// It is assumed that all CNV parameters are identical in all input samples. This is not
 /// actually checked anywhere yet.
@@ -1006,6 +993,8 @@ pub fn merge_sv_with_depth_info(
     all_sample_data: &[SampleJointCallData],
     sv_groups: &mut [SVGroup],
 ) -> Vec<RefinedCNV> {
+    info!("Starting joint CNV/SV refinement");
+
     let debug = false;
 
     let sample_count = all_sample_data.len();
@@ -1014,28 +1003,16 @@ pub fn merge_sv_with_depth_info(
     {
         assert!(sample_count > 0);
         let first_sample_data = &all_sample_data[0];
-        let bin_size = first_sample_data.copy_number_segments.bin_size;
+        let bin_size = first_sample_data.genome_depth_bins.bin_size;
 
         // Check that bin_size is the same in all samples:
         assert!(
             all_sample_data
                 .iter()
-                .all(|x| x.copy_number_segments.bin_size == bin_size),
+                .all(|x| x.genome_depth_bins.bin_size == bin_size),
             "All samples do not have the same bin_size"
         );
     }
-
-    // This is the top-level organizing function for all of the following (eventual steps)
-    // 1. TO ADD LATER?: Loop over and identify all large overlapping SVs in each sample (should we do this as part of SV/CNV overlap detection instead?)
-    // 2. Loop over and identify large non-overlapping SVs which have breakends that should trigger a resegmentation of the depth track in each sample
-    // 3. Resegment depth track for each sample
-    //   a. TO ADD LATER: Write out new resegmented CNV tracks for each sample. We need this because segmentation is currently occuring in discover and only
-    //      written there. Here we reseegment during joint-call, so now need a new file interface to write new CN segment tracks for every sample.
-    // 4. Convert new segments to RefinedCNV type
-
-    // --- Would these steps be left outside of the current function, in subsequent steps?:
-    // 5. Run SV/CNV overlap detection (transfer from old code)
-    // 6. Assign non-overlapping large SVs to breakpoint output (add later)
 
     //
     // Hard coded parameters for this section
@@ -1050,38 +1027,32 @@ pub fn merge_sv_with_depth_info(
     //
     let min_sv_required_depth_support_size = 50_000;
 
-    // Identify large overlapping SVs in each sample (skip for now)
+    // TO ADD LATER?: Loop over and identify all large overlapping SVs in each sample (should we do this as part of SV/CNV overlap detection instead?)
 
     // Find copy-number transition bonus locations from SV brekaends
     let transition_types =
         get_copynum_transition_types_from_breakends(shared_data, all_sample_data, sv_groups);
 
-    let haploid_coverage_by_sample =
-        estimate_haploid_coverage_by_sample(shared_data, all_sample_data, debug);
+    // Rearrange sample data references to get all required CNV-calling elements for each sample
+    let seg_input = get_segmentation_input(shared_data, all_sample_data, &transition_types, debug);
 
     // Resegment depth for every sample
-    let mut resegment_results = resegment_depth_tracks(
-        shared_data,
-        all_sample_data,
-        &haploid_coverage_by_sample,
+    let mut cn_segments = get_single_pass_sample_copy_number_segments(
+        &shared_data.genome_gc_levels,
         breakpoint_transition_factor,
-        &transition_types,
+        &seg_input,
     );
 
     // Estimate depth of "High" state segments
-    estimate_high_state_depth(
-        shared_data,
-        all_sample_data,
-        &haploid_coverage_by_sample,
-        &mut resegment_results,
-    );
+    estimate_high_state_depth(shared_data, &seg_input, &mut cn_segments);
 
     // Write new depth segments to file:
     write_resegment_results_to_file(
         &settings.output_dir,
         shared_data,
         all_sample_data,
-        &resegment_results,
+        &seg_input,
+        &cn_segments,
     );
 
     // Convert new segments to RefinedCNV type
@@ -1089,7 +1060,8 @@ pub fn merge_sv_with_depth_info(
         settings.max_qscore,
         shared_data,
         all_sample_data,
-        &resegment_results,
+        &seg_input,
+        &cn_segments,
         debug,
     );
 

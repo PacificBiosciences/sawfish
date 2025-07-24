@@ -80,7 +80,7 @@ impl fmt::Debug for GenomeSegment {
     }
 }
 
-/// Srict order here means that `a` comes before `b` without intersection
+/// Strict order here means that `a` comes before `b` without intersection
 ///
 pub fn is_strict_order(a: &GenomeSegment, b: &GenomeSegment) -> bool {
     a.chrom_index < b.chrom_index

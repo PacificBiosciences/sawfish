@@ -1,14 +1,14 @@
-use std::collections::BTreeMap;
+mod copy_number_boundary_sync;
 
 use camino::Utf8Path;
-use itertools::Itertools;
-use log::info;
+use log::{info, warn};
 use rust_vc_utils::ChromList;
 use serde::{Deserialize, Serialize};
 use statrs::distribution::Discrete;
 use strum::EnumCount;
 use unwrap::unwrap;
 
+use self::copy_number_boundary_sync::sync_chrom_copy_number_boundaries;
 use crate::bam_scanner::SampleAlignmentScanResult;
 use crate::cli;
 use crate::depth_bins::{DepthBin, GenomeDepthBins, get_bin_index, get_complete_bin_count};
@@ -25,17 +25,20 @@ pub struct HaploidCoverage {
     pub gc_corrected_depth: f64,
 }
 
-/// Get whole genome haploid coverage estimates
+/// Get whole genome haploid coverage estimates for one sample
 ///
-/// Averages the coverage over non-excluded non-zero depth bins in chromosomes matching
-/// coverage_est_regex.
+/// Averages the coverage over non-excluded and non-zero depth bins in chromosomes with names matching
+/// coverage_est_regex. GC-correction factor is applied such that haploid depth estimate should reflect the depth of the
+/// least biased GC window.
 ///
-/// GC-correction factor is applied such that haploid depth estimate should
-/// reflect the depth of the least biased GC window.
+/// # Arguments
 ///
-/// Also produces the corresponding midpoint_depth estimates, but uncorrected and gc-corrected
+/// * sample_gc_bias_data - Sample GC-bias data used to find the GC-corrected haploid depth estimate
 ///
-/// Returns full HaploidCoverage struct with all haploid depth estimates
+/// * copy_number_segments - By default copy number 2 is assumed across all eligible chromosomes for haploid depth
+///   estimation purposes. If copy number segments are provided these will be used to improve haploid depth accuracy.
+///
+/// Returns HaploidCoverage struct with both standard and GC-corrected haploid depth estimates
 ///
 pub fn get_haploid_genome_coverage(
     coverage_est_regex: &str,
@@ -48,8 +51,8 @@ pub fn get_haploid_genome_coverage(
     use regex::Regex;
     let chrom_include_regex = Regex::new(coverage_est_regex).unwrap();
 
-    // This application requires the reciprocal of the depth reduction factor used for the
-    // emission prob correction, so go ahead and setup the reciprocal value array here:
+    // This operation requires the reciprocal of the depth reduction factor used for the emission prob correction, so
+    // setup the reciprocal value array here:
     let gc_depth_correction = sample_gc_bias_data
         .gc_depth_reduction
         .iter()
@@ -65,8 +68,8 @@ pub fn get_haploid_genome_coverage(
     //
     let mut chrom_match = false;
 
-    // The total of the predicted copy number at each bin, meaning for a bin covering a 2-copy region in the
-    // sample we would add 2.
+    // The total of the predicted copy number at each bin, e.g. for a bin covering a 2-copy region in the sample we
+    // would add 2.
     let mut count = 0.0;
 
     for (chrom_index, chrom_entry) in chrom_list.data.iter().enumerate() {
@@ -410,8 +413,12 @@ fn get_expected_depth(
 ///
 /// # Arguments
 ///
-/// * `gc_bias_reduction` - Depth is multiplied by this factor to reflect reduction from theoretical full depth associated
-///   with the locale gc-bias level.
+/// * `gc_bias_reduction` - Depth is multiplied by this factor to reflect reduction from theoretical full depth
+///   associated with the local gc-bias level.
+///
+/// The return may be -inf, this can occur in particular for copy number state zero when depth is high. Note that the
+/// model has been designed to reduce the production of zero prob at copy state zero to help with gradient methods,
+/// etc... but some occurrence at higher depth can't be easily avoided.
 ///
 pub fn get_depth_emission_lnprob(
     gc_corrected_haploid_coverage: f64,
@@ -549,8 +556,9 @@ fn viterbi_copy_number_parse(
     let gc_corrected_haploid_coverage = sample_seg_input.gc_corrected_haploid_coverage;
     let sample_gc_bias_data = sample_seg_input.sample_gc_bias_data;
     let sample_transition_types = sample_seg_input.sample_transition_types;
-    let bin_dependency_correction_factor =
-        sample_seg_input.settings.bin_dependency_correction_factor;
+    let bin_dependency_correction_factor = sample_seg_input
+        .discover_settings
+        .bin_dependency_correction_factor;
     let init = get_sample_chrom_init_probs(
         sample_seg_input.expected_copy_number_regions,
         init_probs,
@@ -691,493 +699,10 @@ fn get_init_probs() -> Vec<Vec<f64>> {
     init_probs
 }
 
-#[derive(Clone)]
-struct CopyNumberBoundary {
-    sample_index: usize,
-
-    /// First bin affected by (ie. after) the copy-number change (zero-indexed)
-    bin_index: usize,
-
-    /// Index of the segment immediately before the bin change
-    before_segment_index: usize,
-
-    before_state: CopyNumberState,
-    after_state: CopyNumberState,
-}
-
-/// Prune all cnbs that are too far away form any other cnbs to be adjusted
-///
-/// This assumes the cnb map is all one type (loss or gain)
-///
-fn prune_copy_number_boundaries(max_bin_shift: usize, cnbs: &mut CopyNumberBoundarySet) {
-    let keys = cnbs.keys().cloned().collect::<Vec<_>>();
-
-    let mut is_prev_key_far = true;
-    for (key, next_key) in keys.into_iter().chain([0]).tuple_windows() {
-        let is_next_key_far = next_key == 0 || (next_key - key) > max_bin_shift;
-        if is_prev_key_far && is_next_key_far {
-            cnbs.remove(&key);
-        }
-        is_prev_key_far = is_next_key_far;
-    }
-}
-
-/// Return the segmentation score delta shifting from_cnb_set to to_bin, divided by the number of shifted samples
-///
-fn cnb_score_shift_per_sample(
-    genome_gc_levels: &GenomeGCLevels,
-    transition_info: &TransitionProbInfo,
-    seg_input: &[SampleCopyNumberSegmentationInput],
-    chrom_index: usize,
-    from_bin: usize,
-    from_cnb_set: &[CopyNumberBoundary],
-    to_bin: usize,
-) -> f64 {
-    // Hard code parameters for now
-    let shifted_cnb_transition_factor = 0.5;
-
-    if from_bin == to_bin {
-        return 0.0;
-    }
-
-    let (start_bin, end_bin, after_state_is_baseline) = if from_bin < to_bin {
-        (from_bin, to_bin, true)
-    } else {
-        (to_bin, from_bin, false)
-    };
-
-    let mut score_delta = 0.0;
-
-    let chrom_gc_levels = &genome_gc_levels[chrom_index];
-
-    // First find the difference in emit scores the difference between current and revised copy number
-    for cnb in from_cnb_set {
-        let sample_seg_input = &seg_input[cnb.sample_index];
-        let chrom_depth_bins = &sample_seg_input.genome_depth_bins.depth_bins[chrom_index];
-        let sample_gc_bias_data = sample_seg_input.sample_gc_bias_data;
-
-        let mut sample_emit_score_delta = 0.0;
-        for bin_index in start_bin..end_bin {
-            let after_state_emit_lnprob = get_depth_emission_lnprob(
-                sample_seg_input.gc_corrected_haploid_coverage,
-                cnb.after_state,
-                &chrom_depth_bins[bin_index],
-                sample_gc_bias_data.gc_depth_reduction[chrom_gc_levels[bin_index]],
-            );
-
-            let before_state_emit_lnprob = get_depth_emission_lnprob(
-                sample_seg_input.gc_corrected_haploid_coverage,
-                cnb.before_state,
-                &chrom_depth_bins[bin_index],
-                sample_gc_bias_data.gc_depth_reduction[chrom_gc_levels[bin_index]],
-            );
-
-            let (baseline_emit_lnprob, shifted_emit_lnprob) = if after_state_is_baseline {
-                (after_state_emit_lnprob, before_state_emit_lnprob)
-            } else {
-                (before_state_emit_lnprob, after_state_emit_lnprob)
-            };
-
-            sample_emit_score_delta += shifted_emit_lnprob - baseline_emit_lnprob;
-        }
-        // At this point we have the delta for emit values from all samples, so the bin_dependency correction factor applies to the entire score:
-        let bin_dependency_correction_factor =
-            sample_seg_input.settings.bin_dependency_correction_factor;
-        sample_emit_score_delta *= bin_dependency_correction_factor;
-
-        score_delta += sample_emit_score_delta;
-    }
-
-    // Next, find the difference in transition scores, accounting for the shared transition site bonus
-    for cnb in from_cnb_set {
-        let sample_seg_input = &seg_input[cnb.sample_index];
-        let sample_transition_types = sample_seg_input.sample_transition_types;
-
-        let baseline_transition_score = get_transition_lnprob(
-            transition_info,
-            sample_transition_types,
-            chrom_index,
-            from_bin,
-            cnb.before_state as usize,
-            cnb.after_state as usize,
-        );
-        let shifted_transition_score = get_transition_lnprob(
-            transition_info,
-            sample_transition_types,
-            chrom_index,
-            to_bin,
-            cnb.before_state as usize,
-            cnb.after_state as usize,
-        );
-
-        let sample_transition_score_delta =
-            (shifted_transition_score * shifted_cnb_transition_factor) - baseline_transition_score;
-        score_delta += sample_transition_score_delta;
-    }
-
-    // return the score change per shifted sample
-    score_delta / from_cnb_set.len() as f64
-}
-
-/// Given a set of CNBs within the close distance threshold, test possible consolidating shifts and
-/// report out the recommended changes as a set of from->to bin index transitions.
-///
-#[allow(clippy::needless_range_loop)]
-fn refine_close_cnb_set(
-    genome_gc_levels: &GenomeGCLevels,
-    transition_info: &TransitionProbInfo,
-    seg_input: &[SampleCopyNumberSegmentationInput],
-    chrom_index: usize,
-    cnb_set: &[(usize, &Vec<CopyNumberBoundary>)],
-    debug: bool,
-) -> Vec<(usize, usize)> {
-    if debug {
-        eprintln!(
-            "refine_close_cnb_set: start with cnb_set_len {}",
-            cnb_set.len()
-        );
-        for (key, val) in cnb_set.iter() {
-            eprintln!("cnb key {key} cnb_count {}", val.len());
-        }
-    }
-
-    // Ideally we could assert on this being len 2 or more, as a practical solution just allow this input but bail out
-    if cnb_set.len() < 2 {
-        return Vec::new();
-    }
-
-    // Get full set of shift scores that are possible between cnb_set members
-    #[derive(PartialEq, PartialOrd)]
-    struct ShiftScore {
-        score: f64,
-        from_key_index: usize,
-        to_key_index: usize,
-    }
-    let mut shift_scores = Vec::new();
-
-    let cnb_location_count = cnb_set.len();
-    for cnb_location_head_index in 0..cnb_location_count {
-        let (key1, cnb1) = cnb_set[cnb_location_head_index];
-
-        for cnb_location_compare_index in (cnb_location_head_index + 1)..cnb_location_count {
-            let (key2, cnb2) = cnb_set[cnb_location_compare_index];
-
-            let score_1to2 = cnb_score_shift_per_sample(
-                genome_gc_levels,
-                transition_info,
-                seg_input,
-                chrom_index,
-                key1,
-                cnb1,
-                key2,
-            );
-
-            shift_scores.push(ShiftScore {
-                score: score_1to2,
-                from_key_index: cnb_location_head_index,
-                to_key_index: cnb_location_compare_index,
-            });
-
-            let score_2to1 = cnb_score_shift_per_sample(
-                genome_gc_levels,
-                transition_info,
-                seg_input,
-                chrom_index,
-                key2,
-                cnb2,
-                key1,
-            );
-
-            shift_scores.push(ShiftScore {
-                score: score_2to1,
-                from_key_index: cnb_location_compare_index,
-                to_key_index: cnb_location_head_index,
-            });
-        }
-    }
-
-    // Convert shift_scores to cnb_shifts:
-    shift_scores.sort_by(|a, b| b.partial_cmp(a).unwrap());
-
-    let mut cnb_shifts = Vec::new();
-    let mut shift_from_locations = vec![false; cnb_location_count];
-    let mut shift_to_locations = vec![false; cnb_location_count];
-
-    for shift_score in shift_scores {
-        if shift_score.score <= 0.0 {
-            break;
-        }
-
-        if shift_from_locations[shift_score.from_key_index] {
-            // We've shifted out of this location already so can't shift out again
-            continue;
-        }
-
-        if shift_from_locations[shift_score.to_key_index] {
-            // We've shifted out of this location already so don't shift into it now
-            continue;
-        }
-
-        if shift_to_locations[shift_score.from_key_index] {
-            // We've shifted into this location already so don't shift out of it now
-            continue;
-        }
-
-        let from_key = cnb_set[shift_score.from_key_index].0;
-        let to_key = cnb_set[shift_score.to_key_index].0;
-        cnb_shifts.push((from_key, to_key));
-        shift_from_locations[shift_score.from_key_index] = true;
-        shift_to_locations[shift_score.to_key_index] = true;
-    }
-
-    cnb_shifts
-}
-
-/// Determine and report small syncronization shifts in the copy number boundaries over all samples
-///
-fn get_copy_number_boundary_shifts(
-    genome_gc_levels: &GenomeGCLevels,
-    transition_info: &TransitionProbInfo,
-    seg_input: &[SampleCopyNumberSegmentationInput],
-    chrom_index: usize,
-    max_bin_shift: usize,
-    cnbs: &CopyNumberBoundarySet,
-    debug: bool,
-) -> Vec<(usize, usize)> {
-    let mut cnb_shifts = Vec::new();
-
-    // Build CNBs into close sets, then process each set
-    let mut close_cnb_set = Vec::new();
-    let keys = cnbs.keys().cloned().collect::<Vec<_>>();
-    for (key, next_key) in keys.into_iter().chain([0]).tuple_windows() {
-        close_cnb_set.push((key, cnbs.get(&key).unwrap()));
-        if next_key == 0 || (next_key - key) > max_bin_shift {
-            let mut close_cnb_set_shifts = refine_close_cnb_set(
-                genome_gc_levels,
-                transition_info,
-                seg_input,
-                chrom_index,
-                &close_cnb_set,
-                debug,
-            );
-
-            cnb_shifts.append(&mut close_cnb_set_shifts);
-            close_cnb_set.clear();
-        }
-    }
-
-    cnb_shifts
-}
-
-fn update_chrom_cn_segment_shifts(
-    cnbs: &CopyNumberBoundarySet,
-    cnb_shifts: &[(usize, usize)],
-    chrom_cn_segments: &mut [Vec<CopyNumberSegment>],
-    debug: bool,
-) {
-    for (from_bin_index, to_bin_index) in cnb_shifts.iter() {
-        let from_bin_cnbs = cnbs.get(from_bin_index).unwrap();
-        if debug {
-            eprintln!(
-                "update_chrom_cn_segment_shifts: formi/toi/cnbs_len: {}/{}/{}",
-                from_bin_index,
-                to_bin_index,
-                from_bin_cnbs.len()
-            );
-        }
-
-        for from_bin_cnb in from_bin_cnbs.iter() {
-            let sample_chrom_cn_segments = &mut chrom_cn_segments[from_bin_cnb.sample_index];
-            let before_cn_segment = &sample_chrom_cn_segments[from_bin_cnb.before_segment_index];
-            let after_cn_segment = &sample_chrom_cn_segments[from_bin_cnb.before_segment_index + 1];
-
-            if from_bin_index < to_bin_index {
-                let bin_shift = to_bin_index - from_bin_index;
-                // Check that after_cn_segment has room for the shift
-                if after_cn_segment.begin_bin + bin_shift < after_cn_segment.end_bin {
-                    sample_chrom_cn_segments[from_bin_cnb.before_segment_index].end_bin +=
-                        bin_shift;
-                    sample_chrom_cn_segments[from_bin_cnb.before_segment_index + 1].begin_bin +=
-                        bin_shift;
-                }
-            } else {
-                let bin_shift = from_bin_index - to_bin_index;
-                // Check that before_cn_segment has room for the shift
-                if before_cn_segment.end_bin > bin_shift
-                    && before_cn_segment.end_bin - bin_shift > before_cn_segment.begin_bin
-                {
-                    sample_chrom_cn_segments[from_bin_cnb.before_segment_index].end_bin -=
-                        bin_shift;
-                    sample_chrom_cn_segments[from_bin_cnb.before_segment_index + 1].begin_bin -=
-                        bin_shift;
-                }
-            }
-        }
-    }
-}
-
-/// map key should be CopyNumberBoundary::bin_index
-type CopyNumberBoundarySet = BTreeMap<usize, Vec<CopyNumberBoundary>>;
-
-/// 'losses' mean the boundary goes from copy number N to N-1, while transitioning from bin_index to bin_index+1
-struct CopyNumberBoundaryInfo {
-    losses: CopyNumberBoundarySet,
-    gains: CopyNumberBoundarySet,
-}
-
-fn get_copy_number_boundary_info(
-    chrom_cn_segments: &mut [Vec<CopyNumberSegment>],
-) -> CopyNumberBoundaryInfo {
-    let mut losses = BTreeMap::new();
-    let mut gains = BTreeMap::new();
-
-    for (sample_index, sample_chrom_cn_segments) in chrom_cn_segments.iter().enumerate() {
-        let segment_count = sample_chrom_cn_segments.len();
-        for segment_index in 1..segment_count {
-            let before_segment_index = segment_index - 1;
-            let after_segment_index = segment_index;
-            let before_seg = &sample_chrom_cn_segments[before_segment_index];
-            let after_seg = &sample_chrom_cn_segments[after_segment_index];
-
-            let before_state = before_seg.copy_number_info.state;
-            let after_state = after_seg.copy_number_info.state;
-            if before_state == CopyNumberState::Unknown || after_state == CopyNumberState::Unknown {
-                continue;
-            }
-
-            // This should never happen
-            if before_state == after_state {
-                continue;
-            }
-
-            let cnb = CopyNumberBoundary {
-                sample_index,
-                bin_index: after_seg.begin_bin,
-                before_segment_index,
-                before_state,
-                after_state,
-            };
-
-            let cnbs = if before_state as usize > after_state as usize {
-                &mut losses
-            } else {
-                &mut gains
-            };
-
-            let x = cnbs.entry(cnb.bin_index).or_insert_with(Vec::new);
-            x.push(cnb);
-        }
-    }
-
-    CopyNumberBoundaryInfo { losses, gains }
-}
-
-/// Refine copy number segmentation boundaries to sync them across multiple samples
-///
-/// The goal here is to give a very minor bonus for syncing the bin at which same copy
-/// number shift direction occurs in multiple samples. The small bonus encourages
-/// shifting boundary differences caused by sampling noise only, with the goal that true
-/// differences can be preserved.
-///
-fn refine_multi_sample_chrom_cn_segments(
-    genome_gc_levels: &GenomeGCLevels,
-    transition_info: &TransitionProbInfo,
-    seg_input: &[SampleCopyNumberSegmentationInput],
-    chrom_index: usize,
-    depth_bin_size: u32,
-    chrom_cn_segments: &mut [Vec<CopyNumberSegment>],
-) {
-    let debug = false;
-    if debug {
-        eprintln!(
-            "rms: starting refine_multi_sample_chrom_cn_segments for chrom_index {chrom_index}"
-        );
-    }
-
-    let sample_count = chrom_cn_segments.len();
-
-    // The refine operation is only relevant to multi-sample analysis, so just pass-through
-    // single-sample
-    if sample_count < 2 {
-        return;
-    }
-
-    // Hard code parameters:
-    //
-
-    // Max distance in a segment boundary can be shifted in a single sync operation:
-    let max_shift = 5000;
-
-    // Translate max shift into a maximum bin shift:
-    let max_bin_shift = (max_shift / depth_bin_size) as usize;
-
-    // Test for another early exist condition
-    if max_bin_shift < 1 {
-        return;
-    }
-
-    let mut cnb_info = get_copy_number_boundary_info(chrom_cn_segments);
-
-    if debug {
-        eprintln!("rms: before filtration");
-        eprintln!("rms: cnb_loss_bin_count: {}", cnb_info.losses.len());
-        eprintln!("rms: cnb_gain_bin_count: {}", cnb_info.gains.len());
-    }
-
-    prune_copy_number_boundaries(max_bin_shift, &mut cnb_info.losses);
-    prune_copy_number_boundaries(max_bin_shift, &mut cnb_info.gains);
-
-    if debug {
-        eprintln!("rms: after filtration");
-        eprintln!("rms: cnb_loss_bin_count: {}", cnb_info.losses.len());
-        for x in cnb_info.losses.keys() {
-            eprintln!("rms: cnb_loss_bin: {x:?}");
-        }
-        eprintln!("rms: cnb_gain_bin_count: {}", cnb_info.gains.len());
-        for x in cnb_info.gains.keys() {
-            eprintln!("rms: cnb_gain_bin: {x:?}");
-        }
-    }
-
-    let cnb_loss_shifts = get_copy_number_boundary_shifts(
-        genome_gc_levels,
-        transition_info,
-        seg_input,
-        chrom_index,
-        max_bin_shift,
-        &cnb_info.losses,
-        debug,
-    );
-
-    let cnb_gain_shifts = get_copy_number_boundary_shifts(
-        genome_gc_levels,
-        transition_info,
-        seg_input,
-        chrom_index,
-        max_bin_shift,
-        &cnb_info.gains,
-        debug,
-    );
-
-    if debug {
-        eprintln!("rms: cnb_loss_shifts: {}", cnb_loss_shifts.len());
-        for x in cnb_loss_shifts.iter() {
-            eprintln!("rms: cnb_loss_shift: {x:?}");
-        }
-        eprintln!("rms: cnb_gain_shifts: {}", cnb_gain_shifts.len());
-        for x in cnb_gain_shifts.iter() {
-            eprintln!("rms: cnb_gain_shift: {x:?}");
-        }
-    }
-
-    // Final step is to adjust the original segments to reflect the cnb_shifts:
-    update_chrom_cn_segment_shifts(&cnb_info.losses, &cnb_loss_shifts, chrom_cn_segments, debug);
-    update_chrom_cn_segment_shifts(&cnb_info.gains, &cnb_gain_shifts, chrom_cn_segments, debug);
-}
-
 /// All per-sample inputs needed for copy-number segmentation
 pub struct SampleCopyNumberSegmentationInput<'a> {
-    pub settings: &'a cli::DiscoverSettings,
+    pub sample_index: usize,
+    pub discover_settings: &'a cli::DiscoverSettings,
     pub gc_corrected_haploid_coverage: f64,
     pub genome_depth_bins: &'a GenomeDepthBins,
     pub sample_gc_bias_data: &'a SampleGCBiasCorrectionData,
@@ -1185,35 +710,48 @@ pub struct SampleCopyNumberSegmentationInput<'a> {
     pub expected_copy_number_regions: Option<&'a GenomeRegionsByChromIndex>,
 }
 
-/// Run a joint copy-number segmentation over all samples to predict copy number state bins, and further reduce these into segments of continuous copy number
-/// for each sample
+/// Run a joint copy-number segmentation over all samples
 ///
-/// This is the simple version of copy number segmentation which runs once on a single haploid coverage estimate
+/// For each sample, predict copy number state bins and reduce these bin stats into segments of continuous copy number.
+/// This version of copy number segmentation runs once on a single haploid coverage estimate.
+///
+/// Following all sample-specific segment prediction, syncronize copy number boundaries across samples
+///
+/// Input contract which we assume are checked by the public interface function calling this one:
+/// - The bin size used for genome_depth_bins in all samples must be the same
+///
+/// # Arguments
+/// * `seg_input` - Array with one element for each CNV-enabled sample. Each element includes references to all
+///   CNV-segmentation input data.
+///
+/// Returns an array of copy number segmentation results matching the length of seg_input
 ///
 pub fn get_single_pass_sample_copy_number_segments(
     genome_gc_levels: &GenomeGCLevels,
-    transition_info: &TransitionProbInfo,
+    breakpoint_transition_factor: f64,
     seg_input: &[SampleCopyNumberSegmentationInput],
 ) -> Vec<SampleCopyNumberSegments> {
-    assert!(!seg_input.is_empty());
+    let cn_sample_count = seg_input.len();
+    if cn_sample_count == 0 {
+        return Vec::new();
+    }
+
+    let first_seg_input = &seg_input[0];
+    let depth_bin_size = first_seg_input.genome_depth_bins.bin_size;
+    let transition_prob = first_seg_input.discover_settings.transition_prob;
+    let transition_info = TransitionProbInfo::new(transition_prob, breakpoint_transition_factor);
 
     let init_probs = get_init_probs();
-    let sample_count = seg_input.len();
-
-    // Use settings fromt he first sample, leaning on the requirement that bin size is the same over all samples
-    assert!(sample_count > 0);
-    let depth_bin_size = seg_input[0].settings.depth_bin_size;
+    let mut cn_segments = (0..cn_sample_count).map(|_| Vec::new()).collect::<Vec<_>>();
 
     //Run a parse for each chromosome:
     let chrom_count = genome_gc_levels.len();
-    let mut cn_segments = (0..sample_count).map(|_| Vec::new()).collect::<Vec<_>>();
-
     for chrom_index in 0..chrom_count {
         let mut chrom_cn_segments = Vec::new();
         for sample_seg_input in seg_input.iter() {
             let sample_chrom_cn_segments = viterbi_copy_number_parse(
                 genome_gc_levels,
-                transition_info,
+                &transition_info,
                 sample_seg_input,
                 &init_probs,
                 depth_bin_size,
@@ -1222,34 +760,32 @@ pub fn get_single_pass_sample_copy_number_segments(
             chrom_cn_segments.push(sample_chrom_cn_segments);
         }
 
-        // Initial viterbi parse occurs independently for each sample over the chromosome.
+        // Initial viterbi parse occurs independently for each sample over the chromosome. The next step adjusts the
+        // segmentation based on joint-sample information over the chromosome
         //
-        // The next step adjusts the segmentation based on joint-sample information over the chromosome
-        //
-        refine_multi_sample_chrom_cn_segments(
+        sync_chrom_copy_number_boundaries(
             genome_gc_levels,
-            transition_info,
+            &transition_info,
             seg_input,
             chrom_index,
             depth_bin_size,
             &mut chrom_cn_segments,
         );
 
-        for (sample_index, sample_chrom_cn_segments) in chrom_cn_segments.into_iter().enumerate() {
-            cn_segments[sample_index].push(sample_chrom_cn_segments);
+        for (sample_chrom_cn_segments, sample_cn_segments) in
+            chrom_cn_segments.into_iter().zip(cn_segments.iter_mut())
+        {
+            sample_cn_segments.push(sample_chrom_cn_segments);
         }
     }
 
-    let mut sample_results = Vec::new();
-    for sample_cn_segments in cn_segments.into_iter() {
-        let sample_result = SampleCopyNumberSegments {
+    cn_segments
+        .into_iter()
+        .map(|x| SampleCopyNumberSegments {
             bin_size: depth_bin_size,
-            cn_segments: sample_cn_segments,
-        };
-        sample_results.push(sample_result);
-    }
-
-    sample_results
+            cn_segments: x,
+        })
+        .collect()
 }
 
 /// Write out a bedgraph track for copy number segments (for use in IGV)
@@ -1319,9 +855,12 @@ pub fn deserialize_copy_number_segments(discover_dir: &Utf8Path) -> SampleCopyNu
     let filename = discover_dir.join(COPYNUM_SEGMENT_MESSAGEPACK_FILENAME);
     let buf = unwrap!(
         std::fs::read(&filename),
-        "Unable to open and read copy number segments from binary file: '{filename}'"
+        "Unable to open copy number segment binary file: '{filename}'"
     );
-    rmp_serde::from_slice(&buf).unwrap()
+    unwrap!(
+        rmp_serde::from_slice(&buf),
+        "Unable to parse copy number segment binary file: '{filename}'"
+    )
 }
 
 #[derive(
@@ -1347,7 +886,7 @@ pub enum CopyNumberState {
 /// higher than some threshold, but after segmentation, we can still go back and get a better copy
 /// number estimate for reporting.
 ///
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ExtendedCopyNumberState {
     /// Copy number state used for segmentation
     pub state: CopyNumberState,
@@ -1373,7 +912,7 @@ impl ExtendedCopyNumberState {
 ///
 /// Interval defined by begin_bin,end_bin is zero-indexed, half-closed
 ///
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CopyNumberSegment {
     pub begin_bin: usize,
     pub end_bin: usize,
@@ -1398,8 +937,19 @@ impl CopyNumberSegment {
 #[derive(Deserialize, Serialize)]
 pub struct SampleCopyNumberSegments {
     pub bin_size: u32,
+
     /// Segments indexed on chromosome, then listed in order for each chromosome
     pub cn_segments: Vec<Vec<CopyNumberSegment>>,
+}
+
+impl SampleCopyNumberSegments {
+    pub fn new(bin_size: u32, chrom_list: &ChromList) -> Self {
+        let chrom_count = chrom_list.data.len();
+        Self {
+            bin_size,
+            cn_segments: vec![Vec::new(); chrom_count],
+        }
+    }
 }
 
 /// Parse the depth track of one sample into copy number state segments
@@ -1416,13 +966,11 @@ pub fn get_sample_copy_number_segments(
 ) -> SampleCopyNumberSegments {
     info!("Segmenting copy number");
 
-    let transition_info = TransitionProbInfo::new(settings.transition_prob, 1.0);
-
     // Iterate until the haploid coverage estimate converges or we reach max iteration count
-    let max_iter = 8;
+    let max_iteration = 8;
     let mut copy_number_segments = None;
     let mut last_coverage = 0.0;
-    for iter_index in 0..max_iter {
+    for iteration in 0..max_iteration {
         let haploid_coverage = get_haploid_genome_coverage(
             settings.coverage_est_regex.as_str(),
             chrom_list,
@@ -1434,13 +982,14 @@ pub fn get_sample_copy_number_segments(
 
         info!(
             "Haploid coverage estimate iteration {}. Uncorrected: {:.3} GC-Corrected: {:.3}",
-            (iter_index + 1),
+            (iteration + 1),
             haploid_coverage.depth,
             haploid_coverage.gc_corrected_depth
         );
 
-        let sample_cns_input = SampleCopyNumberSegmentationInput {
-            settings,
+        let sample_seg_input = SampleCopyNumberSegmentationInput {
+            sample_index: 0,
+            discover_settings: settings,
             gc_corrected_haploid_coverage: haploid_coverage.gc_corrected_depth,
             genome_depth_bins: &sample_scan_result.genome_depth_bins,
             sample_gc_bias_data: &gc_bias_data.sample_gc_bias_data,
@@ -1448,14 +997,29 @@ pub fn get_sample_copy_number_segments(
             expected_copy_number_regions: None,
         };
 
-        let mut cns = get_single_pass_sample_copy_number_segments(
+        let breakpoint_transition_factor = 1.0;
+        copy_number_segments = get_single_pass_sample_copy_number_segments(
             &gc_bias_data.genome_gc_levels,
-            &transition_info,
-            &[sample_cns_input],
-        );
-        copy_number_segments = Some(cns.pop().unwrap());
-        if iter_index > 0 && (last_coverage - haploid_coverage.gc_corrected_depth).abs() < 0.001 {
-            break;
+            breakpoint_transition_factor,
+            &[sample_seg_input],
+        )
+        .pop();
+
+        if iteration > 0 {
+            let iter_coverage_delta = (last_coverage - haploid_coverage.gc_corrected_depth).abs();
+            if iter_coverage_delta < 0.001 {
+                break;
+            } else if iter_coverage_delta > 10.0 {
+                panic!(
+                    "Estimation of haploid depth and GC-bias has become unstable on iteration {}. Consider disabling CNV calling with the '--disable-cnv' option as a workaround for this sample.",
+                    (iteration + 1)
+                );
+            }
+        }
+        if iteration + 1 == max_iteration {
+            warn!(
+                "Estimation of haploid depth and GC-bias has not converged after {max_iteration} iterations, halting estimation procedure"
+            );
         }
         last_coverage = haploid_coverage.gc_corrected_depth;
     }
@@ -1475,28 +1039,5 @@ mod tests {
         let emit =
             get_depth_emission_lnprob(5.0, CopyNumberState::Unknown, &DepthBin::Excluded, 1.0);
         approx::assert_ulps_eq!(emit, 0.0, max_ulps = 4);
-    }
-
-    #[test]
-    fn test_prune_copy_number_boundaries() {
-        let mut cnbs = [3, 6, 8, 10, 13]
-            .iter()
-            .map(|&x| {
-                (
-                    x,
-                    vec![CopyNumberBoundary {
-                        sample_index: 0,
-                        bin_index: x,
-                        before_segment_index: 0,
-                        before_state: CopyNumberState::Two,
-                        after_state: CopyNumberState::Two,
-                    }],
-                )
-            })
-            .collect();
-
-        prune_copy_number_boundaries(2, &mut cnbs);
-
-        assert!(cnbs.keys().cloned().eq([6, 8, 10]));
     }
 }

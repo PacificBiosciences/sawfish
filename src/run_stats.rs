@@ -121,13 +121,13 @@ pub fn read_discover_run_stats(discover_dir: &Utf8Path) -> SimpleResult<Discover
     let filename = discover_dir.join(RUN_STATS_FILENAME);
     let file = try_with!(
         File::open(&filename),
-        "Unable to read discover-mode run stats json file: `{filename}`"
+        "Unable to read discover-mode run statistics json file: '{filename}'"
     );
 
     let reader = BufReader::new(file);
     let run_stats = try_with!(
         serde_json::from_reader(reader),
-        "Unable to parse discover-mode settings from json file: `{filename}`"
+        "Unable to parse discover-mode run statistics from json file: '{filename}'"
     );
 
     Ok(run_stats)
@@ -158,7 +158,7 @@ pub fn delete_run_stats(output_dir: &Utf8Path) {
     if filename.exists() {
         unwrap!(
             remove_file(&filename),
-            "Can't remove original run stats file {filename}"
+            "Can't remove original run statistics json file: '{filename}'"
         );
     }
 }

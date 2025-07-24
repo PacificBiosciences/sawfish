@@ -194,11 +194,11 @@ input for improving CNV precision. See the [CNV excluded regions section](#cnv-e
 
 ### Input read alignments
 
-Read alignments for the query sample must be supplied in BAM or CRAM format as an argument in the discover step.
+HiFi read alignments for the query sample must be supplied in BAM or CRAM format as an argument in the discover step.
 
-Sawfish has been tested with sequencing reads mapped by [pbmm2](https://github.com/PacificBiosciences/pbmm2). In general
-it is designed to work on supplementary alignments without hard-clipping. If this requirement is fulfilled it may work
-with other mappers, but no others are tested or supported.
+Sawfish has been tested with HiFi sequencing reads mapped by [pbmm2](https://github.com/PacificBiosciences/pbmm2). In
+general it is designed to work on supplementary alignments without hard-clipping. If this requirement is fulfilled it
+may work with other mappers, but no others are tested or supported.
 
 When joint-calling over multiple samples, all input alignment files must have been mapped to the same reference genome.
 
@@ -416,6 +416,8 @@ The final copy-number segmentation result for the given sample is provided in `c
 value is listed in column 4. Note that any region segmented into the 'excluded' state will be represented as an uncovered
 gap in the region coverage.
 
+This file will not appear in the output for any sample run with the `--disable-cnv` discover step option.
+
 ##### GC-bias corrected depth track
 
 The bigwig file `gc_bias_corrected_depth.bw` provides binned depth values enumerated from the sample alignment file and
@@ -423,8 +425,10 @@ rescaled to correct for the GC-bias pattern inferred from the sample.
 
 This track can be especially useful to visualize and interpret CNV calls. Note that the copy number segmentation model
 does not directly operate on the values in this track -- instead it uses the original depth values together with the
-local GC-bias estimate for each bin. During segmentation, the GC-bias estimate is used to modify the expected
-depth rather than scaling the observed depth.
+local GC-bias estimate for each bin. During segmentation, the GC-bias estimate is used to modify the expected depth
+rather than scaling the observed depth.
+
+This file will not appear in the output for any sample run with the `--disable-cnv` discover step option.
 
 ##### Depth track
 
@@ -436,9 +440,9 @@ provided in bigwig format in the file `depth.bw`.
 When a minor allele frequency input file is provided for the sample, the corresponding minor allele frequency track will
 be output in bigwig format in the file `maf.bw`.This track can be useful to visualize and interpret the CNV output.
 
-#### Optional variant read support output
+#### Variant read support output
 
-To help show which reads support each SV allele, the optional `--report-supporting-reads` argument can be added to the
+To show which reads support each SV allele, the optional `--report-supporting-reads` argument can be added to the
 joint-call command line. When this is used a compressed json output file is provided in
 `${OUTPUT_DIR}/supporting_reads.json.gz`.
 
@@ -474,8 +478,8 @@ but the supporting reads for the breakends comprising each inversion are provide
 ### Discover step
 
 The discover step produces a number of output files in the discover output directory used by sawfish during the
-subsequent joint calling step. Although these are not documented or intended for end users, some of the more important
-files are noted below:
+subsequent joint calling step. Although these are not fully documented or intended for end users, some of the more
+important files are noted below:
 
 - `assembly.regions.bed` - Describes each region of the genome targeted for assembly.
 - `candidate.sv.bcf` - These are the candidate SVs expressed in a simplified format for each sample. These are used as
@@ -531,13 +535,19 @@ chr1    1651421 sawfish:0:92:0:0        GTAGCCCCTCTGAACGGTCTGTGACACACGCATGCTTTCA
 
 ## Other usage details
 
+### Disabling CNV / non-WGS input
+
+Sawfish CNV calling was designed with an assumption of HiFi WGS input. On various types of targeted data the GC-bias
+estimation and depth segmentation routines may not be able to complete, or may produce unhelpful results. All CNV
+processing can be disabled for given a sample in these cases by specifying the `--disable-cnv` option on the sawfish
+discover step.
+
 ### Faster analysis for CNV/Large variants only
 
 Sawfish has a faster CNV-focused mode which can be enabled by using the `--fast-cnv-mode` flag in the discover step of
 every sample. With this setting, sawfish analyzes only the larger-scale SV breakpoint evidence that could be useful to
-improve CNV/large-variant accuracy, together with the depth-based CNV analysis which would be run regardless of the mode
-setting. Smaller assembly regions are skipped, which will remove all insertions and most breakpoint-based deletions
-below about 1kb.
+improve CNV/large-variant accuracy, together with depth-based CNV analysis. Smaller assembly regions are skipped, which
+will remove all insertions and most breakpoint-based deletions below about 1kb.
 
 ### Determinism
 
