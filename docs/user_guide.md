@@ -340,7 +340,7 @@ Deletion records include both breakpoint-based SV deletions and copy-number loss
 and "DJ" indicates that the call is supported by both.
 
 All breakpoint-based deletions of 100kb or smaller are represented by directly writing the deleted sequence in the VCF
-`REF` field and any breakpoint insertion sequence in `ALT`. Deletions larger than 100kb, or lacking breakpiont support
+`REF` field and any breakpoint insertion sequence in `ALT`. Deletions larger than 100kb, or lacking breakpoint support
 are written as symbolic alleles using the ALT value of `<DEL>`.
 
 All candidate breakpoint-based deletions at least 50kb in length without depth support from copy-number segmentation
@@ -367,6 +367,15 @@ Copy-number gain CNV records without breakpoint-based support use a symbolic ALT
  All candidate breakpoint-based duplications at least 50kb in length without depth support from copy-number segmentation
  will be reported in the VCF output as a pair of breakend (`BND`) records instead.
 
+##### CNVs
+
+Per the above sections, most CNVs will be described as deletions `SVTYPE=DEL` or duplications `SVTYPE=DUP` whether or
+not they are merged with a breakpoint-based SV call.
+
+For CNVs that are not merged to a breakpoint-based SV in a multi-sample analysis, it is possible for some samples to show a copy
+number gain and other samples to show a copy number loss of the same genomic interval. Where such cases occur the output record
+will be given `SVTYPE=CNV`, with a `<CNV>` symbolic alt allele.
+
 ##### Breakpoints
 
 All SV breakpoints which can't be modeled as one of the simple SV types above will be output as a pair of breakend
@@ -385,7 +394,12 @@ in the VCF output but marked as filtered, such that full breakend details remain
 record and the filtered breakend records are given a shared VCF `EVENT` label so that their relationship can be
 identified.
 
-#### Overlapping SV formatting
+#### Genotype formatting
+
+The sawfish genotype output is designed to follow the VCF 4.4 spec wherever possible, but the following notes should
+supplement the spec to help interpret these results.
+
+##### Overlapping SV formatting
 
 All sawfish SVs are output so that only one allele is described in each VCF record, even if an overlapping SV allele is
 output at the same locus. The internal SV calling model accounts for up to 2 overlapping alleles per sample during
@@ -393,6 +407,15 @@ genotyping and quality scoring. Reads which support a 2nd alternate allele at an
 supporting the reference in output fields such as allele depth (`AD`). This protocol matches standard SV caller
 formatting conventions. Users interested in a more detailed output format, such as representing overlapping read support
 on the VCF `<*>` allele can request this for prioritization.
+
+##### CNV genotypes
+
+CNVs that have not been merged to a breakpoint-based SV call follow a slightly different genotype formatting convention
+compared to other SVs in the sawfish output. For a diploid region of the genome, all copy number 0 calls will have
+genotype `0/0`, and copy number 1 calls will have genotype `0/1`. For any copy number gain (copy number 3 or higher),
+the genotype will be `./1`, reflecting that sawfish has only analyzed the aggregate sample copy number without any
+allele-specific copy number estimate. The `./1` genotype reflects that one allele is duplicated, and the other allele's
+copy number status is unknown, it may be lost, unchanged, or, for copy number or 4 and up, duplicated as well.
 
 #### Phasing
 
@@ -570,14 +593,21 @@ and may be reformatted in future releases.
 
 #### Runtime
 
+In general, runtime response to thread count is expected to be nearly linear for both sawfish discover and joint-call steps.
+
 For a typical ~30x HiFi sample analyzed on 16 threads, the `discover` step should complete in about 30-40 minutes and
 the `joint-call` step should complete in about 5 minutes.
 
-Running the `joint-call` step on 10 samples at 30-100x depth completes in about 1 hour on 64 threads.
+The current joint calling scheme has been designed with pedigree-scale analysis in mind, so runtimes for typical small
+pedigrees should be practical. However the runtime is super-linear with sample count, so the method is not practical for
+larger cohorts at this time. The following examples should give an idea of what runtimes to expect for different
+joint-calling scenarios:
 
-In general, runtime response to thread count is expected to be nearly linear. The current joint calling scheme has been
-designed with pedigree-scale analysis in mind. Sawfish joint calling has completed on 47 HPRC samples in testing, but
-substantially larger cohorts would be difficult without further changes to the joint-calling design.
+|                | samples | sample type | threads | wall-time | core-hours |
+|----------------|:-------:|:-----------:|:-------:|:---------:|:----------:|
+| HG002          |    1    |  ~30x human |    16   |   ~5min   |   ~1.3     |
+| Plat Ped g2+g3 |   10    | >=30x human |    64   |   ~29min  |   ~31      |
+| HPRC Year1     |   47    |  ~30x human |    64   |   ~3hr    |   ~192     |
 
 #### Memory
 
