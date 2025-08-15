@@ -1776,12 +1776,12 @@ fn mark_within_sample_replicate_svs(sv_group: &mut SVGroup) {
         for &sv_index in sv_indexes {
             let refined_sv = &mut sv_group.refined_svs[sv_index];
             let sample_score = &mut refined_sv.score.samples[sample_index];
-            if let Some(&count) = bp_count.get(&refined_sv.bp) {
-                if count > 1 {
-                    sample_score.on_multiple_sample_haplotypes = true;
-                    if !bp_found.insert(refined_sv.bp.clone()) {
-                        sample_score.is_filtered_sv_replicate_within_sample = true;
-                    }
+            if let Some(&count) = bp_count.get(&refined_sv.bp)
+                && count > 1
+            {
+                sample_score.on_multiple_sample_haplotypes = true;
+                if !bp_found.insert(refined_sv.bp.clone()) {
+                    sample_score.is_filtered_sv_replicate_within_sample = true;
                 }
             }
         }
@@ -1806,15 +1806,15 @@ fn resolve_cross_sample_replicate_svs(svs: &mut [RefinedSV]) {
         // Arbitrarily choose the first matching SV to be the representative of the matching set
         let mut first_bp_in_group = BTreeMap::new();
         for (sv_index, refined_sv) in svs.iter().enumerate() {
-            if let Some(&count) = bp_count.get(&refined_sv.bp) {
-                if count > 1 {
-                    match first_bp_in_group.get(&refined_sv.bp) {
-                        Some(&first_sv_index) => {
-                            x.push((sv_index, first_sv_index));
-                        }
-                        None => {
-                            first_bp_in_group.insert(refined_sv.bp.clone(), sv_index);
-                        }
+            if let Some(&count) = bp_count.get(&refined_sv.bp)
+                && count > 1
+            {
+                match first_bp_in_group.get(&refined_sv.bp) {
+                    Some(&first_sv_index) => {
+                        x.push((sv_index, first_sv_index));
+                    }
+                    None => {
+                        first_bp_in_group.insert(refined_sv.bp.clone(), sv_index);
                     }
                 }
             }

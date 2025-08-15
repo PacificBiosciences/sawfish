@@ -80,8 +80,11 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         .map(|x| GenomeRegions::from_bed(x, "excluded", true, false));
 
     // Setup shared worker thread data structures:
-    let bam_reader_worker_thread_dataset =
-        get_bam_reader_worker_thread_data(shared_settings, &[settings]);
+    let bam_reader_worker_thread_dataset = get_bam_reader_worker_thread_data(
+        shared_settings,
+        &settings.ref_filename,
+        &[&settings.bam_filename],
+    );
 
     // Get sample name from bam header
     let sample_name = {

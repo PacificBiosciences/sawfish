@@ -104,9 +104,6 @@ pub fn write_merged_contig_alignments(
     shared_data: &SharedJointCallData,
     merged_sv_groups: &[SVGroup],
 ) {
-    let sample_count = settings.sample.len();
-    assert!(sample_count > 0);
-
     let cleanup_mode = !settings.no_contig_cleanup;
 
     let contig_alignments =

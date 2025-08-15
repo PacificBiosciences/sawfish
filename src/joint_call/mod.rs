@@ -16,12 +16,16 @@ pub use self::read_sample_data::SampleJointCallData;
 use self::read_sample_data::{SharedJointCallData, read_all_sample_data};
 use self::sample_output::setup_sample_output;
 
-use crate::cli::{JointCallSettings, SharedSettings};
+use crate::cli::{JointCallDerivedSettings, JointCallSettings, SharedSettings};
 use crate::globals::PROGRAM_VERSION;
 use crate::large_variant_output::{VcfSettings, write_indexed_sv_vcf_file};
 use crate::run_stats::{JointCallRunStats, RunStep, delete_run_stats, write_joint_call_run_stats};
 
-pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSettings) {
+pub fn run_joint_call(
+    shared_settings: &SharedSettings,
+    settings: &JointCallSettings,
+    derived_settings: &JointCallDerivedSettings,
+) {
     // Now that we're committed to a run, remove any possible older run stats file that could be present in case this is a clobber run
     //
     // The run stats file is used as a marker of a successfully finished run, so removing it here allows run completion to be determined
@@ -29,7 +33,8 @@ pub fn run_joint_call(shared_settings: &SharedSettings, settings: &JointCallSett
     //
     delete_run_stats(&settings.output_dir);
 
-    let (shared_data, all_sample_data) = read_all_sample_data(shared_settings, settings);
+    let (shared_data, all_sample_data) =
+        read_all_sample_data(shared_settings, settings, derived_settings);
 
     setup_sample_output(
         &settings.output_dir,

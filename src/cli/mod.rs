@@ -1,6 +1,7 @@
 mod discover;
 mod joint_call;
 mod shared;
+mod utils;
 
 use camino::Utf8Path;
 use chrono::Datelike;
@@ -12,8 +13,8 @@ pub use self::discover::{
     DiscoverSettings, read_discover_settings, validate_discover_settings_data,
     write_discover_settings,
 };
-pub use self::joint_call::JointCallSettings;
 use self::joint_call::validate_and_fix_joint_call_settings;
+pub use self::joint_call::{InputSampleData, JointCallDerivedSettings, JointCallSettings};
 pub use self::shared::SharedSettings;
 use self::shared::validate_and_fix_shared_settings;
 use crate::globals::PROGRAM_VERSION;
@@ -60,6 +61,15 @@ impl Settings {
     }
 }
 
+pub enum CommandDerivedSettings {
+    Discover,
+    JointCall(JointCallDerivedSettings),
+}
+
+pub struct DerivedSettings {
+    pub command: CommandDerivedSettings,
+}
+
 /// Checks if a directory does not exist
 ///
 pub fn check_novel_dirname(dirname: &Utf8Path, label: &str) -> SimpleResult<()> {
@@ -73,22 +83,33 @@ pub fn check_novel_dirname(dirname: &Utf8Path, label: &str) -> SimpleResult<()> 
 ///
 /// Assumes that the logger is not setup
 ///
-pub fn validate_and_fix_settings(settings: Settings) -> Settings {
-    fn validate_and_fix_settings_impl(mut settings: Settings) -> SimpleResult<Settings> {
+pub fn validate_and_fix_settings(settings: Settings) -> (Settings, DerivedSettings) {
+    fn validate_and_fix_settings_impl(
+        mut settings: Settings,
+    ) -> SimpleResult<(Settings, DerivedSettings)> {
         settings.shared = validate_and_fix_shared_settings(settings.shared)?;
 
-        settings.command = match settings.command {
+        let (command, derived_command) = match settings.command {
             Commands::Discover(x) => {
                 let x = validate_and_fix_discovery_settings(x)?;
-                Commands::Discover(x)
+                (Commands::Discover(x), CommandDerivedSettings::Discover)
             }
             Commands::JointCall(x) => {
-                let x = validate_and_fix_joint_call_settings(x)?;
-                Commands::JointCall(x)
+                let derived_settings = validate_and_fix_joint_call_settings(&x)?;
+                (
+                    Commands::JointCall(x),
+                    CommandDerivedSettings::JointCall(derived_settings),
+                )
             }
         };
 
-        Ok(settings)
+        settings.command = command;
+
+        let derived_settings = DerivedSettings {
+            command: derived_command,
+        };
+
+        Ok((settings, derived_settings))
     }
 
     match validate_and_fix_settings_impl(settings) {

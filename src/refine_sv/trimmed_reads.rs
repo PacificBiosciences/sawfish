@@ -394,12 +394,11 @@ pub fn does_alignment_region_have_sv_softclip_evidence(
     let mut ref_pos = record.pos();
 
     for c in record.cigar().iter() {
-        if let SoftClip(len) = c {
-            if *len > min_evidence_indel_size
-                && ref_range.intersect_range(&IntRange::from_int(ref_pos))
-            {
-                return true;
-            }
+        if let SoftClip(len) = c
+            && *len > min_evidence_indel_size
+            && ref_range.intersect_range(&IntRange::from_int(ref_pos))
+        {
+            return true;
         }
         update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_pos);
     }

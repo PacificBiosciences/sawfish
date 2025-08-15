@@ -50,11 +50,11 @@ pub fn setup_output_dir_and_logger(output_dir: &Utf8Path, clobber: bool, debug: 
     // We try to match the pre-logging error pattern used in the command-line settings verification methods
     //
 
-    if let Err(msg) = cli::check_novel_dirname(output_dir, "Output directory") {
-        if !(clobber || output_dir.is_dir()) {
-            eprintln!("Invalid command-line setting: {msg}");
-            std::process::exit(exitcode::USAGE);
-        }
+    if let Err(msg) = cli::check_novel_dirname(output_dir, "Output directory")
+        && !(clobber || output_dir.is_dir())
+    {
+        eprintln!("Invalid command-line setting: {msg}");
+        std::process::exit(exitcode::USAGE);
     };
     create_dir_all(output_dir, "output");
     setup_logger(Some(output_dir), debug).unwrap();

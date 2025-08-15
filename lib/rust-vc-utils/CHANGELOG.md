@@ -1,3 +1,8 @@
+## v0.30.0 - 2025-06-09
+
+### Changed 
+- Add immutable revcomp and add lower-case to revcomp to fit vcf DNA string spec.
+
 ## v0.29.0 - 2024-10-31
 
 ### Added

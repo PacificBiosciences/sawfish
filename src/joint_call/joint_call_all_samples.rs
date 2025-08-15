@@ -86,14 +86,16 @@ pub(super) fn joint_genotype_all_samples(
         .map(|x| x.to_sample_score_data())
         .collect::<Vec<_>>();
 
-    // Setup shared worker thread data structures:
-    let all_discover_settings_ref = all_sample_data
+    let bam_filenames = all_sample_data
         .iter()
-        .map(|x| &x.discover_settings)
+        .map(|x| x.bam_filename.as_str())
         .collect::<Vec<_>>();
 
-    let worker_thread_dataset =
-        &get_bam_reader_worker_thread_data(shared_settings, &all_discover_settings_ref);
+    let worker_thread_dataset = &get_bam_reader_worker_thread_data(
+        shared_settings,
+        &shared_data.ref_filename,
+        &bam_filenames,
+    );
 
     let worker_pool = rayon::ThreadPoolBuilder::new()
         .num_threads(shared_settings.thread_count)

@@ -7,7 +7,9 @@ use simple_error::{SimpleResult, bail};
 use unwrap::unwrap;
 
 use super::defaults::{MIN_GAP_COMPRESSED_IDENTITY, MIN_SV_MAPQ};
+use super::utils::{check_optional_filename, check_required_filename};
 use crate::discover::SETTINGS_FILENAME;
+use crate::utils::canonicalize_string_path;
 
 #[derive(Args, Default, Deserialize, Serialize)]
 pub struct DiscoverSettings {
@@ -198,25 +200,6 @@ impl DiscoverSettings {
 pub fn validate_and_fix_discovery_settings(
     settings: DiscoverSettings,
 ) -> SimpleResult<DiscoverSettings> {
-    fn check_required_filename(filename: &str, label: &str) -> SimpleResult<()> {
-        if filename.is_empty() {
-            bail!("Must specify {label} file");
-        }
-        if !std::path::Path::new(&filename).exists() {
-            bail!("Can't find specified {label} file: '{filename}'");
-        }
-        Ok(())
-    }
-
-    fn check_optional_filename(filename_opt: Option<&String>, label: &str) -> SimpleResult<()> {
-        if let Some(filename) = filename_opt {
-            if !std::path::Path::new(&filename).exists() {
-                bail!("Can't find specified {label} file: '{filename}'");
-            }
-        }
-        Ok(())
-    }
-
     check_required_filename(&settings.ref_filename, "reference")?;
 
     check_required_filename(&settings.bam_filename, "alignment")?;
@@ -242,14 +225,6 @@ pub fn validate_and_fix_discovery_settings(
             "--gc-genome-window-size is set below the depth bin size of {}",
             settings.depth_bin_size
         );
-    }
-
-    // Canonicalize file paths:
-    fn canonicalize_string_path(s: &str) -> String {
-        Utf8PathBuf::from(s)
-            .canonicalize_utf8()
-            .unwrap()
-            .to_string()
     }
 
     let mut settings = settings;

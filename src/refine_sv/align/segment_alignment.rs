@@ -36,18 +36,18 @@ fn does_alignment_support_alt_hap(
     for c in alt_hap_alignment.cigar.iter() {
         use Cigar::*;
         // Test the anchor criteria
-        if let Equal(len) = c {
-            if *len >= min_assembly_edge_anchor {
-                // Determine if min size occurs within one region and if so which one(s)
-                if (alt_hap_pos + min_assembly_edge_anchor as i64) < alt_hap_segment_boundary1 {
-                    left_segment_anchor = true;
-                }
+        if let Equal(len) = c
+            && *len >= min_assembly_edge_anchor
+        {
+            // Determine if min size occurs within one region and if so which one(s)
+            if (alt_hap_pos + min_assembly_edge_anchor as i64) < alt_hap_segment_boundary1 {
+                left_segment_anchor = true;
+            }
 
-                if alt_hap_pos + *len as i64 - min_assembly_edge_anchor as i64
-                    >= alt_hap_segment_boundary2
-                {
-                    right_segment_anchor = true;
-                }
+            if alt_hap_pos + *len as i64 - min_assembly_edge_anchor as i64
+                >= alt_hap_segment_boundary2
+            {
+                right_segment_anchor = true;
             }
         }
         update_ref_pos(c, &mut alt_hap_pos);

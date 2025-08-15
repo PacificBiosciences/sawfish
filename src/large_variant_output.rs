@@ -203,10 +203,10 @@ fn add_sv_vcf_filters(
         if is_max_scoring_depth {
             record.push_filter("MaxScoringDepth".as_bytes()).unwrap();
         }
-        if let Some(alt_score) = score.alt_score() {
-            if alt_score < settings.min_qual as f32 {
-                record.push_filter("MinQUAL".as_bytes()).unwrap();
-            }
+        if let Some(alt_score) = score.alt_score()
+            && alt_score < settings.min_qual as f32
+        {
+            record.push_filter("MinQUAL".as_bytes()).unwrap();
         }
         if is_inversion_filter {
             record.push_filter("InvBreakpoint".as_bytes()).unwrap();
@@ -230,12 +230,12 @@ fn add_inslen(bp: &Breakpoint, record: &mut bcf::Record) {
 }
 
 fn add_insseq(bp: &Breakpoint, record: &mut bcf::Record) {
-    if let InsertInfo::Seq(seq) = &bp.insert_info {
-        if !seq.is_empty() {
-            record
-                .push_info_string(b"INSSEQ", &[seq.as_slice()])
-                .unwrap();
-        }
+    if let InsertInfo::Seq(seq) = &bp.insert_info
+        && !seq.is_empty()
+    {
+        record
+            .push_info_string(b"INSSEQ", &[seq.as_slice()])
+            .unwrap();
     }
 }
 
@@ -465,14 +465,12 @@ fn add_sv_sample_info(
         }
 
         gts.extend(gt);
-        if enable_phasing {
-            if let Some(phase_set) = sv_score.phase_set {
-                pss.push(if is_sample_phased {
-                    phase_set
-                } else {
-                    bcf::record::Numeric::missing()
-                });
-            }
+        if enable_phasing && let Some(phase_set) = sv_score.phase_set {
+            pss.push(if is_sample_phased {
+                phase_set
+            } else {
+                bcf::record::Numeric::missing()
+            });
         }
 
         gqs.push(get_genotype_quality(&sample_score.shared));
@@ -1139,10 +1137,10 @@ fn add_cnv_qual(score: &CNVScoreInfo, record: &mut bcf::Record) {
 }
 
 fn add_cnv_vcf_filters(settings: &VcfSettings, score: &CNVScoreInfo, record: &mut bcf::Record) {
-    if let Some(alt_score) = score.alt_score {
-        if alt_score < settings.min_qual as f32 {
-            record.push_filter("MinQUAL".as_bytes()).unwrap();
-        }
+    if let Some(alt_score) = score.alt_score
+        && alt_score < settings.min_qual as f32
+    {
+        record.push_filter("MinQUAL".as_bytes()).unwrap();
     }
     if record.filters().peekable().peek().is_none() {
         record.push_filter("PASS".as_bytes()).unwrap();

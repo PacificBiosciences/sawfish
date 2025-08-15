@@ -313,10 +313,10 @@ impl Breakpoint {
             std::mem::swap(&mut self.breakend1, self.breakend2.as_mut().unwrap());
 
             // revcomp the inserted sequence if required:
-            if self.same_orientation() {
-                if let InsertInfo::Seq(seq) = &mut self.insert_info {
-                    rev_comp_in_place(seq);
-                }
+            if self.same_orientation()
+                && let InsertInfo::Seq(seq) = &mut self.insert_info
+            {
+                rev_comp_in_place(seq);
             }
         }
     }

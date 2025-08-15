@@ -55,16 +55,16 @@ release tarball, or via conda as described below.
 #### Install from GitHub
 
 To install sawfish from github, download the latest release tarball compiled for 64-bit Linux on the [github release
-channel](https://github.com/PacificBiosciences/sawfish/releases/latest), then unpack the tar file. Using v2.0.0 as an
+channel](https://github.com/PacificBiosciences/sawfish/releases/latest), then unpack the tar file. Using v2.0.4 as an
 example, the tar file can be downloaded and unpacked as follows:
 
     wget https://github.com/PacificBiosciences/sawfish/releases/download/v2.0.0/sawfish-v2.0.0-x86_64-unknown-linux-gnu.tar.gz
-    tar -xzf sawfish-v2.0.0-x86_64-unknown-linux-gnu.tar.gz
+    tar -xzf sawfish-v2.0.4-x86_64-unknown-linux-gnu.tar.gz
 
 The sawfish binary is found in the `bin/` directory of the unpacked file distribution. This can be run with the help
 option to test the binary and review latest usage details:
 
-    sawfish-v2.0.0-x86_64-unknown-linux-gnu/bin/sawfish --help
+    sawfish-v2.0.4-x86_64-unknown-linux-gnu/bin/sawfish --help
 
 #### Install from conda
 
@@ -96,13 +96,19 @@ Sawfish analyzes samples in 2 steps:
     - Merging of SV and CNV signatures corresponding to the same variant.
     - Merged SV and CNV results written out to VCF.
 
-### Calling SVs and CNVs on one sample
+### Quickstart Example 1: Calling SVs and CNVs on one sample
 
 To call SVs and CNVs in one sample, run `discover` on the mapped sample bam, and then run `joint-call` on the output
 directory of the discover step.
 
 The following example shows how this is done for a mapped sample bam named `HG002.GRCh38.bam`, using 16 threads for both
 the `discover` and the `joint-call` steps.
+
+#### Single sample discover step
+
+In this example the discover step is run on the given bam file input. The additional tracks for expected copy number and
+regions excluded from CNV calling are optional but substantially improve the value of sawfish's CNV output, these tracks are
+described in detail in the [inputs](#inputs) section of the user guide further below.
 
     sawfish discover \
       --threads 16  \
@@ -112,24 +118,51 @@ the `discover` and the `joint-call` steps.
       --cnv-excluded-regions ${DISTRO_ROOT_DIR}/data/cnv_excluded_regions/annotation_and_common_cnv.hg38.bed.gz \
       --output-dir HG002_discover_dir
 
+#### Single sample joint-call step
+
+The `joint-call` command can be specified in one of two styles, the first is to provide a path to each input discover
+directory using one or more `--sample` command-line entries. For the example case the joint-call command in this style
+would be as follows:
+
     sawfish joint-call \
       --threads 16 \
       --sample HG002_discover_dir \
       --output-dir HG002_joint_call_dir
 
-The primary output of the `joint-call` step can be found in `HG002_joint_call_dir/genotyped.sv.vcf.gz`. See the
-[outputs](#outputs) section below for discussion of this and all other output files.
+Note that when the `joint-call` step is called using the commands demonstrated in the above example, the reference fasta
+and sample bam path specified in the `discover` step are stored and reused in the subsequent `joint-call` step. This can
+be convenient for quick analysis of a small number of files on a persistent filesystem.
 
-Note that the reference fasta and sample bam path specified in the `discover` step are stored and reused in the
-subsequent `joint-call` step.
+The `joint-call` step can also be configured in a second style, by directly specifying the reference and specifying the
+bam path for each sample in a sample CSV file. In this style the joint-call command would be run as follows:
 
-### Joint calling SVs and CNVs across a set of samples
+    cat << END > all_samples.csv
+    HG002_discover_dir, HG002.GRCh38.bam
+    END
 
-To call SVs and CNVs on a set of samples, run `discover` separately on each mapped sample bam, and then run `joint-call`
+    sawfish joint-call \
+      --threads 16 \
+      --ref GRCh38.fa \
+      --sample-csv all_samples.csv \
+      --output-dir HG002_joint_call_dir
+
+Here the `--sample-csv` argument is used instead of the `--sample` argument. Besides allowing the specification of
+new bam file paths, this can be convenient as a way to specify larger numbers of input samples, see the trio example
+below for an example of how this file is input for a multi-sample analysis.
+
+Whichever style is used to run the `joint-call` command, the primary output of this step can be found in
+`HG002_joint_call_dir/genotyped.sv.vcf.gz`. See the [outputs](#outputs) section below for discussion of this and all
+other output files.
+
+### Quickstart Example 2: Joint calling SVs and CNVs on a trio
+
+To call SVs and CNVs jointly on multiple samples, run `discover` separately on each mapped sample bam, and then run `joint-call`
 on all `discover` step output directories.
 
 The following example shows how this is done for mapped sequences from the HG002 trio, given the following bam files:
 `HG004.GRCh38.bam`, `HG003.GRCh38.bam`, `HG002.GRCh38.bam`.
+
+#### Trio discover step
 
 As a first step, `discover` needs to be run on all 3 samples. In the example below 16 threads are used to process each
 sample. Note that these 3 commands are independent and could be run in parallel.
@@ -158,7 +191,14 @@ sample. Note that these 3 commands are independent and could be run in parallel.
       --cnv-excluded-regions ${DISTRO_ROOT_DIR}/data/cnv_excluded_regions/annotation_and_common_cnv.hg38.bed.gz \
       --output-dir HG002_discover_dir
 
-After all discover steps have completed, joint calling can be run over all 3 samples using the following command:
+#### Trio joint-call step
+
+After all discover steps have completed, everything is ready to run the joint-call step. As discussed for the
+single-sample example, there are two command-line styles that can be used to provide the sample inputs.
+
+The first style is shown in the command below, where the `--sample` option is provided multiple times to specify
+the 3 discover step results. When using this approach the reference and per-sample bam paths provided in the discover
+steps above will be re-used for joint-calling:
 
     sawfish joint-call \
       --threads 16 \
@@ -167,11 +207,30 @@ After all discover steps have completed, joint calling can be run over all 3 sam
       --sample HG002_discover_dir \
       --output-dir HG002_trio_joint_call_dir
 
-The primary output of the `joint-call` step can be found in `HG002_trio_joint_call_dir/genotyped.sv.vcf.gz`. See the
-[outputs](#outputs) section below for discussion of this and all other output files.
-
 Just as in the single-sample case, note that the reference fasta and all 3 sample bam paths specified in the `discover`
 steps are stored and reused in the subsequent `joint-call` step.
+
+The `joint-call` step can also be configured in a second style, by directly specifying the reference and specifying the
+bam path for each sample in a sample CSV file. In this style the joint-call command would be run as follows:
+
+    cat << END > all_samples.csv
+    HG002_discover_dir, HG002.GRCh38.bam
+    HG003_discover_dir, HG003.GRCh38.bam
+    HG004_discover_dir, HG004.GRCh38.bam
+    END
+
+    sawfish joint-call \
+      --threads 16 \
+      --ref GRCh38.fa \
+      --sample-csv all_samples.csv \
+      --output-dir HG002_trio_joint_call_dir
+
+Here, as in the single-sample example above, the `--sample-csv` argument is used instead of the `--sample` argument,
+allowing direct specification of all bam sample paths and unifying all input sample information to one file.
+
+Whichever style is used to run the `joint-call` command, the primary output of this step can be found in
+`HG002_trio_joint_call_dir/genotyped.sv.vcf.gz`. See the [outputs](#outputs) section below for discussion of this and
+all other output files.
 
 ### Upgrading to sawfish v2 from previous sawfish versions
 
@@ -192,7 +251,9 @@ input for improving CNV precision. See the [CNV excluded regions section](#cnv-e
 
 ## Inputs
 
-### Input read alignments
+### Discover step inputs
+
+#### Input read alignments
 
 HiFi read alignments for the query sample must be supplied in BAM or CRAM format as an argument in the discover step.
 
@@ -202,13 +263,14 @@ may work with other mappers, but no others are tested or supported.
 
 When joint-calling over multiple samples, all input alignment files must have been mapped to the same reference genome.
 
-### Reference fasta
+#### Reference fasta
 
-A genome reference sequence file in fasta format is required as input for every run at the discovery step. Every
-chromosome name in the input read alignment file must be be present in the reference sequence file. Their is no
-reciprocal requirement, the reference fasta may contain chromosome names not present in the input bam file.
+A genome reference sequence file in fasta format is required as input for every run at the discover step, as specified
+by the `--ref` argument. Every chromosome name in the input read alignment file must be be present in the reference
+sequence file. Their is no reciprocal requirement, the reference fasta may contain chromosome names not present in the
+input bam file.
 
-### Expected copy number
+#### Expected copy number
 
 An BED file can be provided for each sample during the discover step to set expected copy number per region of the
 genome, by using the `--expected-cn` option. Any regions not specified will have a default expected copy number of 2. If
@@ -244,7 +306,7 @@ default, and for general purpose calling this change is no longer recommended. I
 preferred, the `--treat-single-copy-as-haploid` option can be provided in the joint-call step to cause any region with
 copy number 1 to be treated as haploid (all other cases will continue to be treated as diploid).
 
-### CNV excluded regions
+#### CNV excluded regions
 
 Certain regions of each reference genome may present inherent difficulties to the prediction of meaningful CNV calls.
 Such regions can be marked as excluded for the purpose of CNV calling by providing the regions in BED file format using
@@ -267,7 +329,7 @@ expanded exclusion region track including common sawfish CNV calls from a backgr
 produce both annotation and common-cnv based excluded regions are described in the [cnv_excluded_regions script
 directory](../scripts/cnv_excluded_regions), which can be used to extend support to additional reference genomes.
 
-#### How excluded regions influence copy number calling
+##### How excluded regions influence copy number calling
 
 Excluded regions are designed to prevent any copy number segments from changing within the excluded region. While copy
 number variants spanning excluded regions are penalized, there an allowance for a longer copy number segment to span
@@ -282,7 +344,7 @@ unknown copy-number state -- the probability of all other copy number states are
 state. This means that a copy number change can span through a short excluded region if there is sufficient evidence on
 the left or right flank, but longer excluded regions should be segmented into an unknown state.
 
-### Minor allele frequency
+#### Minor allele frequency
 
 On the discover step command line for each sample, a small-variant VCF file for that sample can be provided as an
 argument to `--maf`. The given VCF will be parsed to create a minor allele frequency track for the genome. This
@@ -293,9 +355,47 @@ current release.
 Any small-variant caller VCF with an `AD` entry for the small-variant calls could work for this purpose, but the feature
 is tested and best supported for the output from [DeepVariant](https://github.com/google/deepvariant).
 
+### Joint-call step inputs
+
+#### Reference fasta
+
+A reference fasta file path can optionally be specified by the `--ref` argument for the `joint-call` step. If not specified,
+the reference fasta file path will be taken from the first sample discover step data.
+
+Directly specifying the reference path can be helpful when the filesystem context of the `discover` and `joint-call` steps is
+not the same and therefore the file is located on a different path. Note that the reference sequence contained in the file
+should be the same as that specified to all input sample discover-step runs.
+
+#### Sample input
+
+One or more samples can be specified to the joint-call step. There are two ways to specify the input samples, only one
+of these two approaches can be used at a time.
+
+##### Specify sample input directly on the command-line
+
+In this approach, each sample's sawfish discover output directory is specified using the `--sample` command-line
+argument. This argument can be specified once for each input sample. When using this approach, the bam path used in the
+sawfish discover step will be re-used for the joint-call step, so it is assumed the bam is still available in the same
+location.
+
+##### Specify sample input using a CSV file
+
+Using this approach, all samples inputs are listed in a CSV file, which is provided using the `--sample-csv`
+command-line argument. This approach also (optionally) allows a new bam file path to be provided for each sample, which
+can be useful if the input bam files are in a different location compared to when the sawfish discover step was run.
+
+The sample CSV file format is designed to be relatively flexible and has the following requirements:
+- The first column of each record must describe each sample's sawfish discover output directory
+- The second column is optional, and can be used to specify the sample's bam file path
+    - If the column is not present or blank, the bam file path will be extracted from the discover output directory (ie. it will be the same path provided on
+the discover step commmand-line)
+- Records can have differing number of columns, and for any record with more than 2 columns, the extra content will be
+ignored
+- The file can contain comments starting with the `#` character
+
 ## Outputs
 
-### Joint call step
+### Joint-call step outputs
 
 The primary output of the joint-calling step are the SV and CNV calls for all samples in VCF 4.4 format, written to
 `${OUTPUT_DIR}/genotyped.sv.vcf.gz`. Details of the SV and representation in this file are provided below.
@@ -303,16 +403,16 @@ The primary output of the joint-calling step are the SV and CNV calls for all sa
 #### Quality scores
 
 The primary quality metrics for each variant call are:
-1. `QUAL` - This is the phred-scaled confidence that the given alternate allele exists in the set of analyzed samples
+- `QUAL` - This is the phred-scaled confidence that the given alternate allele exists in the set of analyzed samples
     - For SV calls supported only by breakpoint evidence, it reflects the probability of any non-reference genotype in
       any sample.
     - For CNV calls supported only by depth evidence, it reflects the probability of that the segment copy number is not
       the expected copy number in any sample.
     - For merged SV/CNV calls, QUAL reflects the maximum of the breakpoint and depth-based QUAL values from the merged
       components
-2. `GQ` - This value is provided once for each sample in a breakpont-based call. It is the phred-scaled confidence that
+- `GQ` - This value is provided once for each sample in a breakpont-based call. It is the phred-scaled confidence that
    the given sample genotype is correct in this sample based on supporting read evidence at the breakpoint.
-2. `CNQ` - This value is provided once for each sample in a depth-based call. It is the phred-scaled confidence that the
+- `CNQ` - This value is provided once for each sample in a depth-based call. It is the phred-scaled confidence that the
    given copy number (`CN`) value is correct for this segment in the given sample.
 
 All phred-scaled quality scores in the VCF output have a maximum value of 999.
@@ -498,7 +598,7 @@ same variant/sample entry in the VCF, but this is not always an exact match. Als
 between supporting reads and variants, no output is provided for VCF records with the inversion (`<INV>`) allele type,
 but the supporting reads for the breakends comprising each inversion are provided.
 
-### Discover step
+### Discover step outputs
 
 The discover step produces a number of output files in the discover output directory used by sawfish during the
 subsequent joint calling step. Although these are not fully documented or intended for end users, some of the more
@@ -609,6 +709,26 @@ joint-calling scenarios:
 | Plat Ped g2+g3 |   10    | >=30x human |    64   |   ~29min  |   ~31      |
 | HPRC Year1     |   47    |  ~30x human |    64   |   ~3hr    |   ~192     |
 
+##### Factors that could lead to longer runtimes
+
+If a given case shows runtime scaling that is considerably longer than the above guidelines for either sawfish step, the
+points below may be helpful. One of the factors that could extend runtime is sawfish's alignment file access pattern. In
+both the discover and joint-call steps, sawfish will randomly access segments of the alignment file containing reads
+associated with candidate SV call breakends. This random access pattern relies on both good file I/O and reasonably fast
+decompression of alignment file segments. The following two cases should be considered in this context:
+
+- CRAM input files
+
+CRAM files, and especially 'archival' CRAM with higher compression levels may lead to considerably slower runtimes due
+to the burden of random access decompression. It may be worth making a temporary BAM copy of the sample
+CRAM file to use during the sawfish analysis in these cases.
+
+- Network storage
+
+Various types of network/cloud file storage system may have poor I/O or poor random-access I/O, even if they perform
+well in the context of a caller which reads the alignment file end-to-end. In these cases it may be worth copying the
+alignment files onto the local compute node storage (such as a /scratch drive) during sawfish analysis.
+
 #### Memory
 
 The `discover` step should typically require less than 8Gb/thread so long as at least several threads are selected. The
@@ -617,14 +737,22 @@ The `discover` step should typically require less than 8Gb/thread so long as at 
 ### Discover step input file path storage
 
 In the `joint-call` step, sawfish primarily relies on the files it has written to the discover step output directory for
-each sample. For two of the file paths provided as input to the `discover` step, sawfish relies on being able to access
-the original path provided during the discover step. These two files are the input alignment file (specified with
-`--bam`), and the reference fasta file (specified with `--ref`).
+each sample. For two of the file paths provided as input to the `discover` step, sawfish may rely on being able to
+access the original file path provided during the discover step. These two files are the input alignment file (specified
+with `--bam`), and the reference fasta file (specified with `--ref`).
 
-To find these files for each sample, input file paths are stored from the `discover` step in a configuration file
-written to the output directory here:
+Note that the sawfish joint-call step can be configured to eliminate any such original path reuse as follows:
+- If the `--ref` argument is provided in the `joint-call` command-line, then the reference file path will not be reused
+  from the discover step.
+- If the input samples are specified using the `--sample-csv` option, and a bam file path is provided in column 2 for
+  every sample, then no bam paths will be reused from the input discover steps.
 
-    ${OUTPUT_DIR}/discover.settings.json
+In the event that the above conditions do not apply, then the following details on how paths are reused may be helpful.
+
+The original file paths used in the discover step for each sample are stored in a configuration file written to the
+discover step output directory here:
+
+    ${DISCOVER_STEP_OUTPUT_DIR}/discover.settings.json
 
 These input file paths are normally canonicalized, so that relative paths can be reliably reused after any change to the
 working directory. In some cases it may be more convenient to store relative file paths. To do so the `discover` step
@@ -632,4 +760,5 @@ option `--disable-path-canonicalization` can be used to store all input paths as
 `discover` and `joint-call` steps are being run in different directory structures.
 
 Note that for even more complex situations, the paths in the above discover settings json file can be manually edited
-before running the `joint-call` step.
+before running the `joint-call` step, but in general the above mentioned `--sample-csv` sample specification option
+should provide a simpler path customization option.

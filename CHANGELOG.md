@@ -1,5 +1,14 @@
 # Change Log
 
+## v2.0.4 - 2025-08-14
+
+### Added
+- CR-523 Allow joint-call input sample data to be specified as a CSV file
+  - This update allows all input sample paths to be specified in one file provided with the `--sample-csv` argument
+  - The sample CSV file also allows alignment file paths to be specified for each sample, to avoid reusing the file paths specified during the discover step.
+  - Also added ability to optionally specify a new reference file path for joint-call
+  - All previous joint-call sample input command-line formatting is still valid
+
 ## v2.0.3 - 2025-07-24
 
 ### Changed

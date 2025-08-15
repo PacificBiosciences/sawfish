@@ -105,14 +105,14 @@ pub fn get_haploid_genome_coverage(
             for bin_index in cn_segment.begin_bin..cn_segment.end_bin {
                 let depth = &chrom_depth_bins[bin_index];
                 let gc_level = chrom_gc_levels[bin_index];
-                if let DepthBin::Depth(depth) = depth {
-                    if *depth > 0.0 {
-                        let gc_correction = gc_depth_correction[gc_level];
-                        total += depth;
-                        gc_corrected_total += depth * gc_correction;
+                if let DepthBin::Depth(depth) = depth
+                    && *depth > 0.0
+                {
+                    let gc_correction = gc_depth_correction[gc_level];
+                    total += depth;
+                    gc_corrected_total += depth * gc_correction;
 
-                        count += segment_copy_number;
-                    }
+                    count += segment_copy_number;
                 };
             }
         }

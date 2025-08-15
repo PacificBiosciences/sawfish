@@ -3,24 +3,12 @@ use std::collections::BTreeMap;
 use rust_htslib::bam::{self, record::Aux};
 use unwrap::unwrap;
 
-fn get_mm_tag(rec: &bam::Record) -> Option<Aux> {
-    if let Ok(value) = rec.aux(b"MM") {
-        Some(value)
-    } else if let Ok(value) = rec.aux(b"Mm") {
-        Some(value)
-    } else {
-        None
-    }
+fn get_mm_tag(rec: &bam::Record) -> Option<Aux<'_>> {
+    rec.aux(b"MM").ok().or(rec.aux(b"Mm").ok())
 }
 
-fn get_ml_tag(rec: &bam::Record) -> Option<Aux> {
-    if let Ok(value) = rec.aux(b"ML") {
-        Some(value)
-    } else if let Ok(value) = rec.aux(b"Ml") {
-        Some(value)
-    } else {
-        None
-    }
+fn get_ml_tag(rec: &bam::Record) -> Option<Aux<'_>> {
+    rec.aux(b"ML").ok().or(rec.aux(b"Ml").ok())
 }
 
 fn base_comp(b: u8) -> u8 {

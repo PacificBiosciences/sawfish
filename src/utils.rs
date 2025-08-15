@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+use camino::Utf8PathBuf;
+
 use std::collections::BTreeMap;
 
 /// Helper function to visualize sequence segments on each side of a breakend pos for debug output
@@ -247,6 +249,14 @@ pub fn drop_true<T>(vec: &mut Vec<T>, drop_list: &[bool]) {
     assert_eq!(vec.len(), drop_list.len());
     let mut drop = drop_list.iter();
     vec.retain(|_| !*drop.next().unwrap())
+}
+
+// Canonicalize string file paths:
+pub fn canonicalize_string_path(s: &str) -> String {
+    Utf8PathBuf::from(s)
+        .canonicalize_utf8()
+        .unwrap()
+        .to_string()
 }
 
 #[cfg(test)]

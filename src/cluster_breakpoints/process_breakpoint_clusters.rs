@@ -227,14 +227,14 @@ mod cluster {
 
         // Next test if the closest cluster is close enough to join bpo into it:
         let mut is_bpo_assigned = false;
-        if let Some(mcd) = min_cluster_dist {
-            if mcd <= cluster_distance {
-                if debug {
-                    eprintln!("assigning bpo to cluster index {min_cluster_index}");
-                }
-                dir_type_clusters[min_cluster_index].merge_breakpoint_observation(bpo);
-                is_bpo_assigned = true;
+        if let Some(mcd) = min_cluster_dist
+            && mcd <= cluster_distance
+        {
+            if debug {
+                eprintln!("assigning bpo to cluster index {min_cluster_index}");
             }
+            dir_type_clusters[min_cluster_index].merge_breakpoint_observation(bpo);
+            is_bpo_assigned = true;
         }
 
         if !is_bpo_assigned {

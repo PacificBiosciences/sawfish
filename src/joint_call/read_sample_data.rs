@@ -7,7 +7,10 @@ use unwrap::unwrap;
 
 use super::get_refined_svs::get_sample_sv_groups;
 
-use crate::cli::{DiscoverSettings, JointCallSettings, SharedSettings, read_discover_settings};
+use crate::cli::{
+    DiscoverSettings, InputSampleData, JointCallDerivedSettings, JointCallSettings, SharedSettings,
+    read_discover_settings,
+};
 use crate::copy_number_segmentation::{SampleCopyNumberSegments, deserialize_copy_number_segments};
 use crate::depth_bins::{GenomeDepthBins, deserialize_genome_depth_bins};
 use crate::discover;
@@ -38,6 +41,11 @@ pub struct SampleJointCallData {
     /// Sample's order within the joint-call run
     pub sample_index: usize,
 
+    /// The bam filename to use for joint-call, this may be different than the path from discover_settings.
+    ///
+    /// The path in discover settings should not be directly used except possibly by the methods initializing this struct
+    pub bam_filename: String,
+
     pub sample_name: String,
     pub discover_settings: DiscoverSettings,
     pub genome_max_sv_depth_regions: Vec<ChromRegions>,
@@ -56,7 +64,7 @@ pub struct SampleJointCallData {
 }
 
 impl SampleJointCallData {
-    pub fn to_sample_score_data(&self) -> SampleScoreData {
+    pub fn to_sample_score_data(&self) -> SampleScoreData<'_> {
         SampleScoreData {
             genome_max_sv_depth_regions: &self.genome_max_sv_depth_regions,
         }
@@ -77,62 +85,69 @@ fn read_expected_copy_number_regions(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn get_sample_joint_call_data(
     sample_index: usize,
     chrom_list: &ChromList,
     target_regions: &GenomeRegions,
     disable_small_indels: bool,
     treat_single_copy_as_haploid: bool,
-    discover_dir: &Utf8Path,
-    discover_settings: DiscoverSettings,
+    early_sample_data: EarlySampleData,
 ) -> SampleJointCallData {
     let debug = false;
     if debug {
-        eprintln!("Reading sample discovery input from '{discover_dir}'");
+        eprintln!(
+            "Reading sample discovery input from '{}'",
+            early_sample_data.discover_dir
+        );
     }
 
-    let discover_run_stats = unwrap!(read_discover_run_stats(discover_dir));
+    let EarlySampleData {
+        discover_dir,
+        discover_settings,
+        bam_filename,
+    } = early_sample_data;
+
+    let discover_run_stats = unwrap!(read_discover_run_stats(&discover_dir));
 
     let genome_max_sv_depth_regions = {
         let filename = discover_dir.join(discover::MAX_SV_DEPTH_FILENAME);
         read_genome_regions_from_bed("max sv depth", &filename, chrom_list, true, false)
     };
 
-    let expected_copy_number_regions = read_expected_copy_number_regions(chrom_list, discover_dir);
+    let expected_copy_number_regions = read_expected_copy_number_regions(chrom_list, &discover_dir);
 
     let sv_groups = get_sample_sv_groups(
         disable_small_indels,
         treat_single_copy_as_haploid,
-        discover_dir,
+        &discover_dir,
         chrom_list,
         target_regions,
         expected_copy_number_regions.as_ref(),
     );
 
-    let genome_depth_bins = deserialize_genome_depth_bins(discover_dir);
+    let genome_depth_bins = deserialize_genome_depth_bins(&discover_dir);
 
     let sample_gc_bias_data = if !discover_settings.disable_cnv {
-        Some(deserialize_sample_gc_bias_data(discover_dir))
+        Some(deserialize_sample_gc_bias_data(&discover_dir))
     } else {
         None
     };
 
     let copy_number_segments = if !discover_settings.disable_cnv {
-        deserialize_copy_number_segments(discover_dir)
+        deserialize_copy_number_segments(&discover_dir)
     } else {
         SampleCopyNumberSegments::new(genome_depth_bins.bin_size, chrom_list)
     };
 
-    let maf_data = if discover_settings.maf_filename.is_some() {
-        Some(deserialize_maf_data(discover_dir))
-    } else {
-        None
-    };
+    let maf_data = discover_settings
+        .maf_filename
+        .as_ref()
+        .map(|_| deserialize_maf_data(&discover_dir));
 
     SampleJointCallData {
-        discover_dir: discover_dir.to_owned(),
+        discover_dir,
         sample_index,
+        bam_filename,
         sample_name: discover_run_stats.sample_name,
         discover_settings,
         genome_max_sv_depth_regions,
@@ -150,13 +165,8 @@ fn get_all_sample_joint_call_data(
     settings: &JointCallSettings,
     chrom_list: &ChromList,
     target_regions: &GenomeRegions,
-    all_discover_settings: Vec<DiscoverSettings>,
+    all_early_sample_data: Vec<EarlySampleData>,
 ) -> Vec<SampleJointCallData> {
-    info!(
-        "Reading sawfish-discover results from {} samples",
-        all_discover_settings.len()
-    );
-
     // Read and process all sample-specific discovery data
     let worker_pool = rayon::ThreadPoolBuilder::new()
         .num_threads(shared_settings.thread_count)
@@ -166,12 +176,7 @@ fn get_all_sample_joint_call_data(
     let (tx, rx) = channel();
 
     worker_pool.scope(move |scope| {
-        for (sample_index, (discover_dir, discover_settings)) in settings
-            .sample
-            .iter()
-            .zip(all_discover_settings.into_iter())
-            .enumerate()
-        {
+        for (sample_index, early_sample_data) in all_early_sample_data.into_iter().enumerate() {
             let tx = tx.clone();
             scope.spawn(move |_| {
                 let sample_data = get_sample_joint_call_data(
@@ -180,8 +185,7 @@ fn get_all_sample_joint_call_data(
                     target_regions,
                     shared_settings.disable_small_indels,
                     settings.treat_single_copy_as_haploid,
-                    discover_dir,
-                    discover_settings,
+                    early_sample_data,
                 );
                 tx.send(sample_data).unwrap();
             });
@@ -193,40 +197,62 @@ fn get_all_sample_joint_call_data(
     all_sample_data
 }
 
-pub(super) fn read_all_sample_data(
-    shared_settings: &SharedSettings,
-    settings: &JointCallSettings,
-) -> (SharedJointCallData, Vec<SampleJointCallData>) {
-    // Open the discover mode settings for all input samples:
-    let all_discover_settings = settings
-        .sample
-        .iter()
-        .map(|x| read_discover_settings(x))
-        .collect::<Vec<_>>();
+struct EarlySampleData {
+    discover_dir: Utf8PathBuf,
+    discover_settings: DiscoverSettings,
+    bam_filename: String,
+}
 
-    // Check that bam headers match in all input samples, and store the first chrom list
+/// Get per-sample information that we need to aquire before the main sample information loop
+///
+fn get_all_early_sample_data(all_input_sample_data: &[InputSampleData]) -> Vec<EarlySampleData> {
+    let mut x = Vec::new();
+    for input_sample_data in all_input_sample_data.iter() {
+        let discover_settings = read_discover_settings(&input_sample_data.discover_dir);
+        let bam_filename = match input_sample_data.bam_filename.clone() {
+            Some(x) => x,
+            None => discover_settings.bam_filename.clone(),
+        }
+        .clone();
+
+        x.push(EarlySampleData {
+            discover_dir: input_sample_data.discover_dir.clone(),
+            discover_settings,
+            bam_filename,
+        });
+    }
+    x
+}
+
+/// Check that bam headers match in all input samples, and return the first chrom list as the shared reference copy to be used for all samples
+///
+fn get_multi_sample_chrom_list(all_early_sample_data: &[EarlySampleData]) -> ChromList {
     let mut chrom_list = None;
-    for discover_settings in all_discover_settings.iter() {
-        let sample_chrom_list = ChromList::from_bam_filename(&discover_settings.bam_filename);
+    for bam_filename in all_early_sample_data.iter().map(|x| &x.bam_filename) {
+        let sample_chrom_list = ChromList::from_bam_filename(bam_filename);
         if let Some(chrom_list) = &chrom_list {
             assert_eq!(
                 chrom_list, &sample_chrom_list,
-                "Sample bams do not have matching chromosome lists"
+                "Input sample bams do not have matching chromosome lists"
             );
         } else {
             chrom_list = Some(sample_chrom_list.clone());
         }
     }
-    let chrom_list = chrom_list.unwrap();
+    chrom_list.unwrap()
+}
 
-    // To keep target region logic as simple as possible, it is only used to filter SV groups during
-    // read-in, and not stored with other settings.
-    let target_regions =
-        GenomeRegions::from_target_regions(&chrom_list, &shared_settings.target_region_list, true);
-
-    let ref_filename = {
+/// Get the referenece filename either from joint-call settings or input sample data
+///
+fn get_multi_sample_ref_filename(
+    settings: &JointCallSettings,
+    all_sample_data: &[SampleJointCallData],
+) -> String {
+    if let Some(x) = settings.ref_filename.clone() {
+        x
+    } else {
         let mut ref_filename = None;
-        for discover_settings in all_discover_settings.iter() {
+        for discover_settings in all_sample_data.iter().map(|x| &x.discover_settings) {
             let sample_ref = &discover_settings.ref_filename;
             if let Some(ref_filename) = ref_filename.as_ref() {
                 assert_eq!(ref_filename, sample_ref);
@@ -235,18 +261,53 @@ pub(super) fn read_all_sample_data(
             }
         }
         ref_filename.unwrap()
-    };
+    }
+}
 
-    // Get genome reference sequence
-    let genome_ref = get_genome_ref_from_fasta(&ref_filename);
+pub(super) fn read_all_sample_data(
+    shared_settings: &SharedSettings,
+    settings: &JointCallSettings,
+    derived_settings: &JointCallDerivedSettings,
+) -> (SharedJointCallData, Vec<SampleJointCallData>) {
+    let all_early_sample_data = get_all_early_sample_data(&derived_settings.all_input_sample_data);
+
+    // Now that the information is collated in early_sample_data, this is the obviuus point to log all discover_dir and
+    // bam_filename
+    info!(
+        "Initializing joint-call process for {} input samples",
+        all_early_sample_data.len()
+    );
+    for (sample_index, early_sample_data) in all_early_sample_data.iter().enumerate() {
+        info!(
+            "Input sample {} discover_dir: '{}'",
+            sample_index + 1,
+            early_sample_data.discover_dir.as_str(),
+        );
+        info!(
+            "Input sample {} alignment_file: '{}'",
+            sample_index + 1,
+            early_sample_data.bam_filename
+        );
+    }
+
+    let chrom_list = get_multi_sample_chrom_list(&all_early_sample_data);
+
+    // To keep target region logic as simple as possible, it is only used to filter SV groups during
+    // read-in, and not stored with other settings.
+    let target_regions =
+        GenomeRegions::from_target_regions(&chrom_list, &shared_settings.target_region_list, true);
 
     let all_sample_data = get_all_sample_joint_call_data(
         shared_settings,
         settings,
         &chrom_list,
         &target_regions,
-        all_discover_settings,
+        all_early_sample_data,
     );
+
+    let ref_filename = get_multi_sample_ref_filename(settings, &all_sample_data);
+
+    let genome_ref = get_genome_ref_from_fasta(&ref_filename);
 
     // Read in genome GC levels from the first sample with CNV enabled, or else return an empty vector
     let genome_gc_levels = match all_sample_data

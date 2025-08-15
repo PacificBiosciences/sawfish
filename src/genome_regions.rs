@@ -35,7 +35,7 @@ impl ChromRegions {
         self.intersect(pos, pos + 1)
     }
 
-    pub fn find_overlaps(&self, start: i64, end: i64) -> IntervalTreeIterator<i64, u8> {
+    pub fn find_overlaps(&self, start: i64, end: i64) -> IntervalTreeIterator<'_, i64, u8> {
         self.regions.find(start..end)
     }
 
@@ -193,7 +193,7 @@ impl GenomeRegions {
         chrom: &str,
         start: i64,
         end: i64,
-    ) -> Option<IntervalTreeIterator<i64, u8>> {
+    ) -> Option<IntervalTreeIterator<'_, i64, u8>> {
         self.chroms
             .get(chrom)
             .map(|chrom_region| chrom_region.find_overlaps(start, end))
@@ -331,7 +331,7 @@ impl GenomeRegionsByChromIndex {
         chrom_index: usize,
         start: i64,
         end: i64,
-    ) -> IntervalTreeIterator<i64, u8> {
+    ) -> IntervalTreeIterator<'_, i64, u8> {
         self.chroms[chrom_index].find_overlaps(start, end)
     }
 }

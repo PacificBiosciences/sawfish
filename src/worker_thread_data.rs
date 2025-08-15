@@ -69,14 +69,10 @@ pub type BamReaderWorkerThreadDataSet = Arc<Vec<Mutex<BamReaderWorkerThreadData>
 
 pub fn get_bam_reader_worker_thread_data(
     shared_settings: &cli::SharedSettings,
-    discovery_settings: &[&cli::DiscoverSettings],
+    ref_filename: &str,
+    bam_filenames: &[&str],
 ) -> BamReaderWorkerThreadDataSet {
-    assert!(!discovery_settings.is_empty());
-    let bam_filenames = discovery_settings
-        .iter()
-        .map(|x| x.bam_filename.as_str())
-        .collect::<Vec<_>>();
-    let ref_filename = &discovery_settings[0].ref_filename;
+    assert!(!bam_filenames.is_empty());
 
     let mut worker_thread_data = Vec::new();
 
@@ -86,7 +82,7 @@ pub fn get_bam_reader_worker_thread_data(
     let mut refs: *mut htslib::refs_t = std::ptr::null_mut();
 
     for _ in 0..shared_settings.thread_count {
-        let mut x = BamReaderWorkerThreadData::new(&bam_filenames);
+        let mut x = BamReaderWorkerThreadData::new(bam_filenames);
         refs = x.enable_cram_shared_reference(ref_filename, refs);
         worker_thread_data.push(Mutex::new(x));
     }

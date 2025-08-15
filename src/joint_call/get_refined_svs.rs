@@ -689,15 +689,15 @@ fn process_rsv_cluster(
     group_arsvs: &mut Vec<AnnotatedRefinedSV>,
     sv_groups: &mut Vec<SVGroup>,
 ) {
-    if !group_arsvs.is_empty() {
-        if let Some(sv_group) = process_rsv_cluster_to_sv_group(
+    if !group_arsvs.is_empty()
+        && let Some(sv_group) = process_rsv_cluster_to_sv_group(
             treat_single_copy_as_haploid,
             contigs,
             expected_copy_number_regions,
             group_arsvs,
-        ) {
-            sv_groups.push(sv_group);
-        }
+        )
+    {
+        sv_groups.push(sv_group);
     }
 }
 

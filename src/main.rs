@@ -41,7 +41,7 @@ use std::{error, process};
 use hhmmss::Hhmmss;
 use log::info;
 
-use crate::cli::Commands;
+use crate::cli::{CommandDerivedSettings, Commands};
 use crate::discover::run_discover;
 use crate::globals::{PROGRAM_NAME, PROGRAM_VERSION};
 use crate::joint_call::run_joint_call;
@@ -53,7 +53,10 @@ fn system_configuration_prelude() {
     os_utils::attempt_max_open_file_limit();
 }
 
-fn run(settings: &cli::Settings) -> Result<(), Box<dyn error::Error>> {
+fn run(
+    settings: &cli::Settings,
+    derived_settings: &cli::DerivedSettings,
+) -> Result<(), Box<dyn error::Error>> {
     info!("Starting {PROGRAM_NAME} {PROGRAM_VERSION}");
     info!(
         "cmdline: {}",
@@ -68,7 +71,11 @@ fn run(settings: &cli::Settings) -> Result<(), Box<dyn error::Error>> {
             run_discover(&settings.shared, x);
         }
         Commands::JointCall(x) => {
-            run_joint_call(&settings.shared, x);
+            let jc_dirived_settings = match &derived_settings.command {
+                CommandDerivedSettings::JointCall(x) => x,
+                _ => panic!("Unexpected derived setting configuration"),
+            };
+            run_joint_call(&settings.shared, x, jc_dirived_settings);
         }
     }
 
@@ -82,7 +89,7 @@ fn run(settings: &cli::Settings) -> Result<(), Box<dyn error::Error>> {
 fn main() {
     system_configuration_prelude();
 
-    let settings = cli::validate_and_fix_settings(cli::parse_settings());
+    let (settings, derived_settings) = cli::validate_and_fix_settings(cli::parse_settings());
 
     // Setup logger, including creation of the output directory for the log file:
     setup_output_dir_and_logger(
@@ -91,7 +98,7 @@ fn main() {
         settings.shared.debug,
     );
 
-    if let Err(err) = run(&settings) {
+    if let Err(err) = run(&settings, &derived_settings) {
         eprintln!("{err}");
         process::exit(2);
     }

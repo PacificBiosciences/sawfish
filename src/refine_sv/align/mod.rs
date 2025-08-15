@@ -1474,11 +1474,11 @@ fn collapse_indels_at_breakpoint(
     let segment2_anchor_index = last_edit_before_segment2_anchor_index.unwrap();
 
     assert!(segment2_anchor_index >= segment1_anchor_index);
-    if segment1_anchor_index == segment2_anchor_index {
-        if let Cigar::Del(_) = assembly_contig_to_alt_hap_alignment.cigar[segment1_anchor_index] {
-            // In this case no breakpoint adjustment is needed
-            return;
-        }
+    if segment1_anchor_index == segment2_anchor_index
+        && let Cigar::Del(_) = assembly_contig_to_alt_hap_alignment.cigar[segment1_anchor_index]
+    {
+        // In this case no breakpoint adjustment is needed
+        return;
     }
 
     let mut new_cigar = Vec::new();
