@@ -234,7 +234,7 @@ all other output files.
 
 ### Upgrading to sawfish v2 from previous sawfish versions
 
-The sawfish version 2 release addd a substantial new CNV calling and integration feature. For users switching from
+The sawfish version 2 release adds a substantial new CNV calling and integration feature. For users switching from
 previous sawfish versions this can largely be treated as a gradual change, in that the accuracy of smaller SVs remains
 just as high and computational resource demands are similar. However, the following differences should be considered:
 
