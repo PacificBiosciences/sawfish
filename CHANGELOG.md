@@ -1,5 +1,13 @@
 # Change Log
 
+## v2.0.5 - 2025-08-27
+
+### Changed
+- CR-531 Improve verification of expected copy number file [PacificBiosciences/sawfish#26]
+
+### Fixed
+- CR-539 Consistently convert all non-ACGT bases from both reference and read sequences to `N` [PacificBiosciences/sawfish#27]
+
 ## v2.0.4 - 2025-08-14
 
 ### Added

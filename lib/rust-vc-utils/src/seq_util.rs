@@ -1,47 +1,39 @@
-pub fn rev_comp(dna: &[u8]) -> Vec<u8> {
-    let comp_base = |x: &u8| -> u8 {
-        match *x {
-            b'A' => b'T',
-            b'T' => b'A',
-            b'C' => b'G',
-            b'G' => b'C',
-            b'N' => b'N',
-            b'a' => b't',
-            b't' => b'a',
-            b'c' => b'g',
-            b'g' => b'c',
-            b'n' => b'n',
-            y => panic!("Unsupported DNA string character {y}"),
-        }
-    };
+pub fn comp_base(x: &u8) -> u8 {
+    match *x {
+        b'A' => b'T',
+        b'T' => b'A',
+        b'C' => b'G',
+        b'G' => b'C',
+        b'N' => b'N',
+        b'a' => b't',
+        b't' => b'a',
+        b'c' => b'g',
+        b'g' => b'c',
+        b'n' => b'n',
+        _ => b'N',
+    }
+}
 
+/// Return reverse complement sequence
+///
+/// Complements [ACGTacgt] and preserves case, any other base character is complemented as 'N'
+///
+pub fn rev_comp(dna: &[u8]) -> Vec<u8> {
     dna.iter().rev().map(comp_base).collect::<Vec<_>>()
 }
 
+/// Reverse complement sequence in-place
+///
+/// Complements [ACGTacgt] and preserves case, any other base character is complemented as 'N'
+///
 pub fn rev_comp_in_place(dna: &mut [u8]) {
-    let comp_base = |x: &mut u8| {
-        *x = match *x {
-            b'A' => b'T',
-            b'T' => b'A',
-            b'C' => b'G',
-            b'G' => b'C',
-            b'N' => b'N',
-            b'a' => b't',
-            b't' => b'a',
-            b'c' => b'g',
-            b'g' => b'c',
-            b'n' => b'n',
-            y => panic!("Unsupported DNA string character {y}"),
-        };
-    };
-
     let len = dna.len();
     let halflen = len - len / 2;
     for i in 0..halflen {
-        comp_base(&mut dna[i]);
+        dna[i] = comp_base(&dna[i]);
         let rev_i = len - 1 - i;
         if i != rev_i {
-            comp_base(&mut dna[rev_i]);
+            dna[rev_i] = comp_base(&dna[rev_i]);
             dna.swap(i, rev_i);
         }
     }

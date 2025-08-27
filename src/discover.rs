@@ -72,7 +72,11 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         ))
     };
 
-    let genome_ref = get_genome_ref_from_fasta(&settings.ref_filename);
+    let genome_ref = {
+        let mut x = get_genome_ref_from_fasta(&settings.ref_filename);
+        x.simplify_ambiguous_dna_bases();
+        x
+    };
 
     let cnv_excluded_regions = settings
         .cnv_excluded_regions_filename

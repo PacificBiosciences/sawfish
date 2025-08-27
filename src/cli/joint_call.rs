@@ -96,6 +96,11 @@ pub struct JointCallSettings {
     /// Disable SV/CNV merge, for internal debug only
     #[arg(hide = true, long)]
     pub disable_sv_cnv_merge: bool,
+
+    /// Disable any additional CNV segmentation and output. Note compared to the discover step
+    /// option of the same name, this disables CNV in all samples
+    #[arg(hide = true, long)]
+    pub disable_cnv: bool,
 }
 
 /// All per-sample input values to joint-call

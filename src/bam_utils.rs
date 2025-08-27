@@ -115,7 +115,7 @@ pub fn get_gap_compressed_identity_from_cigar_segment_range(
 pub fn get_gap_compressed_identity(record: &bam::Record, chrom_seq: &[u8]) -> f64 {
     get_gap_compressed_identity_from_alignment(
         record.pos(),
-        &record.seq().as_bytes(),
+        &get_simplified_dna_seq(record),
         record.cigar().as_slice(),
         chrom_seq,
     )
@@ -394,6 +394,27 @@ pub fn test_read_for_large_insertion_soft_clip(
 pub fn is_split_read(record: &bam::Record) -> bool {
     const SA_AUX_TAG: &[u8] = b"SA";
     is_aux_tag_found(record, SA_AUX_TAG)
+}
+
+pub fn get_allowed_u8_lut(allowed: &[u8]) -> [bool; 256] {
+    let mut x = [false; 256];
+    for &c in allowed.iter() {
+        x[c as usize] = true;
+    }
+    x
+}
+
+/// Get sequence form bam record, but convert any non-ACGT bases to N
+///
+pub fn get_simplified_dna_seq(record: &bam::Record) -> Vec<u8> {
+    let allowed_lut = get_allowed_u8_lut(b"ACGTN");
+    let seq = record.seq();
+    (0..seq.len())
+        .map(|i| {
+            let b = seq[i];
+            if allowed_lut[b as usize] { b } else { b'N' }
+        })
+        .collect()
 }
 
 /// Modify a cigar string so that the read is soft-clipped on the left side to achieve at least the specified reference start position shift

@@ -258,10 +258,13 @@ input for improving CNV precision. See the [CNV excluded regions section](#cnv-e
 HiFi read alignments for the query sample must be supplied in BAM or CRAM format as an argument in the discover step.
 
 Sawfish has been tested with HiFi sequencing reads mapped by [pbmm2](https://github.com/PacificBiosciences/pbmm2). In
-general it is designed to work on supplementary alignments without hard-clipping. If this requirement is fulfilled it
-may work with other mappers, but no others are tested or supported.
+general it is designed to work on supplementary alignments without hard-clipping, and exact CIGAR strings provided for
+split reads in the `SA` tag. If these requirements are fulfilled it may work with other mappers, but no others are
+tested or supported.
 
 When joint-calling over multiple samples, all input alignment files must have been mapped to the same reference genome.
+
+For all read sequences in the alignment file, any non-ACGT bases will be converted to `N`.
 
 #### Reference fasta
 
@@ -269,6 +272,8 @@ A genome reference sequence file in fasta format is required as input for every 
 by the `--ref` argument. Every chromosome name in the input read alignment file must be be present in the reference
 sequence file. Their is no reciprocal requirement, the reference fasta may contain chromosome names not present in the
 input bam file.
+
+All reference sequence input will be uppercased and any non-ACGT bases will be converted to `N`.
 
 #### Expected copy number
 

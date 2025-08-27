@@ -1630,7 +1630,7 @@
   },
   {
     "name": "rust-vc-utils",
-    "version": "0.30.0",
+    "version": "0.30.1",
     "authors": "Chris Saunders <csaunders@pacificbiosciences.com>",
     "repository": null,
     "license": null,
@@ -1729,7 +1729,7 @@
   },
   {
     "name": "sawfish",
-    "version": "2.0.4",
+    "version": "2.0.5",
     "authors": "Chris Saunders <csaunders@pacificbiosciences.com>",
     "repository": null,
     "license": null,

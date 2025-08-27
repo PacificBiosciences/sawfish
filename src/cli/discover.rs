@@ -9,6 +9,7 @@ use unwrap::unwrap;
 use super::defaults::{MIN_GAP_COMPRESSED_IDENTITY, MIN_SV_MAPQ};
 use super::utils::{check_optional_filename, check_required_filename};
 use crate::discover::SETTINGS_FILENAME;
+use crate::genome_regions::read_genome_regions_from_bed;
 use crate::utils::canonicalize_string_path;
 
 #[derive(Args, Default, Deserialize, Serialize)]
@@ -295,6 +296,17 @@ fn validate_discover_settings_data_impl(
             settings.coverage_est_regex
         );
         return Err(SettingValidationError::NoChromMatch);
+    }
+
+    // Verify expected copy number regions. Verification is added here because the file isn't otherwise parsed until joint-call
+    if let Some(expected_copy_number_filename) = &settings.expected_copy_number_filename {
+        let _ = read_genome_regions_from_bed(
+            "expected copy number",
+            &Utf8PathBuf::from(expected_copy_number_filename),
+            &chrom_list,
+            true,
+            true,
+        );
     }
 
     Ok(())

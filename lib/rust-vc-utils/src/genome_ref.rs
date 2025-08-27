@@ -11,6 +11,36 @@ pub struct GenomeRef {
     pub chroms: HashMap<String, Vec<u8>>,
 }
 
+impl GenomeRef {
+    /// Scan all GenomeRef seqeunces and convert any characters not in the allowed list to the unknown character
+    ///
+    pub fn convert_disallowed_characters(&mut self, allowed: &[u8], unknown: u8) {
+        let allowed_lut = {
+            // Build a lookup table for all possible u8 values
+            const TYPE_WIDTH: usize = (u8::MAX as usize) + 1;
+            let mut x = [false; TYPE_WIDTH];
+            for &c in allowed.iter() {
+                x[c as usize] = true;
+            }
+            x
+        };
+        for seq in self.chroms.values_mut() {
+            for c in seq.iter_mut().filter(|x| !allowed_lut[**x as usize]) {
+                *c = unknown;
+            }
+        }
+    }
+
+    /// Convert all bases besides "ACGTN" to "N"
+    pub fn simplify_ambiguous_dna_bases(&mut self) {
+        self.convert_disallowed_characters(b"ACGTN", b'N');
+    }
+}
+
+/// Read fasta file pointer into GenomeRef data structure
+///
+/// This method converts all input characters to upper-case
+///
 pub fn get_genome_ref_from_fasta_fp(file: File) -> GenomeRef {
     let reader = fasta::Reader::new(file);
 
@@ -35,6 +65,8 @@ pub fn get_genome_ref_from_fasta_fp(file: File) -> GenomeRef {
 }
 
 /// Read fasta file into GenomeRef data structure
+///
+/// This method converts all input characters to upper-case
 ///
 pub fn get_genome_ref_from_fasta(filename: &str) -> GenomeRef {
     info!("Reading reference genome from file '{filename}'");
@@ -70,5 +102,16 @@ mod tests {
             std::str::from_utf8(result.chroms.values().next().unwrap()).unwrap(),
             seq
         );
+    }
+
+    #[test]
+    fn test_simplify_ambiguous_dna_bases() {
+        let mut chroms = HashMap::default();
+        chroms.insert(String::from("foo"), b"ACGT1234acgtNNNNMMMM".to_vec());
+        let mut genome_ref = GenomeRef { chroms };
+
+        genome_ref.simplify_ambiguous_dna_bases();
+
+        assert_eq!(genome_ref.chroms["foo"], b"ACGTNNNNNNNNNNNNNNNN".to_vec());
     }
 }

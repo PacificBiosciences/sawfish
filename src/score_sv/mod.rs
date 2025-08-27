@@ -13,7 +13,8 @@ use unwrap::unwrap;
 use crate::bam_sa_parser::get_seq_order_read_split_segments;
 use crate::bam_utils::{
     TargetMatchType, bam_fetch_segment, get_alignment_closest_to_target_ref_pos,
-    get_bam_alignment_closest_to_target_ref_pos, get_gap_compressed_identity, is_split_read,
+    get_bam_alignment_closest_to_target_ref_pos, get_gap_compressed_identity,
+    get_simplified_dna_seq, is_split_read,
 };
 use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint};
 use crate::expected_ploidy::{SVLocusExpectedCNInfo, SVLocusPloidy};
@@ -813,7 +814,7 @@ fn get_read_support_scores_from_segment(
         let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
         let read_scores = scores.entry(qname).or_default();
 
-        let read = record.seq().as_bytes();
+        let read = get_simplified_dna_seq(&record);
 
         for breakend_index in 0..2 {
             // This filter is added for cases where the same qname is encountered multiple times as

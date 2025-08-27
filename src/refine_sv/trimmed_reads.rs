@@ -13,7 +13,8 @@ use unwrap::unwrap;
 use crate::bam_sa_parser::{SeqOrderSplitReadSegment, get_seq_order_read_split_segments};
 use crate::bam_utils::{
     LargeInsertionSoftClipState, bam_fetch_segment, get_gap_compressed_identity,
-    test_read_for_large_insertion_soft_clip, translate_ref_range_to_hardclipped_read_range,
+    get_simplified_dna_seq, test_read_for_large_insertion_soft_clip,
+    translate_ref_range_to_hardclipped_read_range,
 };
 use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint, BreakpointCluster, InsertInfo};
 use crate::genome_segment::{GenomeSegment, IntRange, get_int_range_distance};
@@ -36,7 +37,7 @@ fn get_trimmed_read_from_read_range(
 
     let trim_start = read_range.start as usize;
     let trim_end = read_range.end as usize;
-    let read = record.seq().as_bytes();
+    let read = get_simplified_dna_seq(record);
     let read_prefix = read[..trim_start].to_vec();
     let trimmed_read = read[trim_start..trim_end].to_vec();
     let read_suffix = read[trim_end..].to_vec();

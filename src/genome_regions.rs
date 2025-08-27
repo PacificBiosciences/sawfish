@@ -263,7 +263,13 @@ pub fn read_genome_regions_from_bed(
 
     let mut last_chrom_index = 0;
     let mut last_chrom = "";
+
+    // 1-indexed line number used for error messages
+    let mut line_no = 0;
+    let min_columns = if payload_required { 5 } else { 3 };
     for line in content.split('\n') {
+        line_no += 1;
+
         // The last line is expected to be empty
         if line.is_empty() {
             break;
@@ -271,23 +277,39 @@ pub fn read_genome_regions_from_bed(
 
         let words = line.split('\t').collect::<Vec<_>>();
 
-        assert!(words.len() >= 3);
+        assert!(
+            words.len() >= min_columns,
+            "{label} genome regions record has {} columns where at least {min_columns} are required, on line {line_no} of file: '{filename}'",
+            words.len()
+        );
         let chrom = words[0];
-        let start = words[1].parse::<i64>().unwrap();
-        let end = words[2].parse::<i64>().unwrap();
+        let start = unwrap!(
+            words[1].parse::<i64>(),
+            "{label} genome regions record column 2 value, '{}', cannot be parsed as an integer, on line {line_no} of file: '{filename}'",
+            words[1]
+        );
+        let end = unwrap!(
+            words[2].parse::<i64>(),
+            "{label} genome regions record column 3 value, '{}', cannot be parsed as an integer, on line {line_no} of file: '{filename}'",
+            words[2]
+        );
 
         if chrom != last_chrom {
             last_chrom = chrom;
             last_chrom_index = *unwrap!(
                 chrom_list.label_to_index.get(chrom),
-                "{label} genome regions include unknown chromosome name` `{chrom}` in file: '{filename}'"
+                "{label} genome regions include unknown chromosome name` '{chrom}' on line {line_no} of file: '{filename}'"
             );
         }
         let regions = &mut chrom_regions[last_chrom_index];
 
         //check if we have a value to load for the track
         if words.len() >= 5 {
-            let value = words[4].parse::<u8>().unwrap();
+            let value = unwrap!(
+                words[4].parse::<u8>(),
+                "{label} genome regions record column 5 value, '{}', cannot be parsed as an integer from [0-255], on line {line_no} of file: '{filename}'",
+                words[4]
+            );
             regions.add_region_value(start, end, value);
         } else {
             assert!(!payload_required);

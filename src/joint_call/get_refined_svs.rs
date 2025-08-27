@@ -7,6 +7,7 @@ use rust_vc_utils::{ChromList, rev_comp_in_place};
 use unwrap::unwrap;
 
 use crate::bam_sa_parser::get_seq_order_read_split_segments;
+use crate::bam_utils::get_simplified_dna_seq;
 use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint, InsertInfo};
 use crate::contig_output::{CONTIG_AUX_TAG, SA_AUX_TAG};
 use crate::discover;
@@ -122,7 +123,7 @@ fn update_sample_assemblies_from_bam_record(
     let high_quality_contig_range = get_high_quality_contig_range(record).unwrap();
 
     let primary_segment_alignment = {
-        let contig_seq = record.seq().as_bytes().to_vec();
+        let contig_seq = get_simplified_dna_seq(record);
         let contig_alignment = SimpleAlignment {
             ref_offset: record.pos(),
             cigar: record.cigar().to_vec(),
@@ -145,7 +146,7 @@ fn update_sample_assemblies_from_bam_record(
             .into_iter()
             .filter(|x| !x.from_primary_bam_record)
         {
-            let mut contig_seq = record.seq().as_bytes().to_vec();
+            let mut contig_seq = get_simplified_dna_seq(record);
             let mut high_quality_contig_range = high_quality_contig_range.clone();
             if !segment.is_fwd_strand {
                 rev_comp_in_place(&mut contig_seq);

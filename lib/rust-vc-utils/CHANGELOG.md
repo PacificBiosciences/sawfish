@@ -1,6 +1,14 @@
+## v0.30.1 - 2025-08-27
+
+### Changed
+- Add method to restrict GenomeRef sequence characters
+- Make reverse comp methods tolerant to unexpected characters
+  - Still not supporting IUPAC ambiguity codes
+- Backported clippy fixes from rust 1.89
+
 ## v0.30.0 - 2025-06-09
 
-### Changed 
+### Changed
 - Add immutable revcomp and add lower-case to revcomp to fit vcf DNA string spec.
 
 ## v0.29.0 - 2024-10-31
@@ -109,7 +117,7 @@
 ## v0.16.0 - 2023-05-10
 
 ### Added
-- Added new aux parse options 
+- Added new aux parse options
 
 ## v0.15.0 - 2023-05-01
 

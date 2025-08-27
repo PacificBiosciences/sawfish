@@ -1710,7 +1710,7 @@ dependencies = [
 
 [[package]]
 name = "rust-vc-utils"
-version = "0.30.0"
+version = "0.30.1"
 dependencies = [
  "approx",
  "bio",
@@ -1807,7 +1807,7 @@ dependencies = [
 
 [[package]]
 name = "sawfish"
-version = "2.0.4"
+version = "2.0.5"
 dependencies = [
  "approx",
  "bio",

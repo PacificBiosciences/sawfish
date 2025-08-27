@@ -86,6 +86,7 @@ fn read_expected_copy_number_regions(
 }
 
 fn get_sample_joint_call_data(
+    settings: &JointCallSettings,
     sample_index: usize,
     chrom_list: &ChromList,
     target_regions: &GenomeRegions,
@@ -107,6 +108,8 @@ fn get_sample_joint_call_data(
         bam_filename,
     } = early_sample_data;
 
+    let disable_cnv = settings.disable_cnv || discover_settings.disable_cnv;
+
     let discover_run_stats = unwrap!(read_discover_run_stats(&discover_dir));
 
     let genome_max_sv_depth_regions = {
@@ -127,13 +130,13 @@ fn get_sample_joint_call_data(
 
     let genome_depth_bins = deserialize_genome_depth_bins(&discover_dir);
 
-    let sample_gc_bias_data = if !discover_settings.disable_cnv {
+    let sample_gc_bias_data = if !disable_cnv {
         Some(deserialize_sample_gc_bias_data(&discover_dir))
     } else {
         None
     };
 
-    let copy_number_segments = if !discover_settings.disable_cnv {
+    let copy_number_segments = if !disable_cnv {
         deserialize_copy_number_segments(&discover_dir)
     } else {
         SampleCopyNumberSegments::new(genome_depth_bins.bin_size, chrom_list)
@@ -180,6 +183,7 @@ fn get_all_sample_joint_call_data(
             let tx = tx.clone();
             scope.spawn(move |_| {
                 let sample_data = get_sample_joint_call_data(
+                    settings,
                     sample_index,
                     chrom_list,
                     target_regions,
@@ -307,15 +311,23 @@ pub(super) fn read_all_sample_data(
 
     let ref_filename = get_multi_sample_ref_filename(settings, &all_sample_data);
 
-    let genome_ref = get_genome_ref_from_fasta(&ref_filename);
+    let genome_ref = {
+        let mut x = get_genome_ref_from_fasta(&ref_filename);
+        x.simplify_ambiguous_dna_bases();
+        x
+    };
 
-    // Read in genome GC levels from the first sample with CNV enabled, or else return an empty vector
-    let genome_gc_levels = match all_sample_data
-        .iter()
-        .find(|x| !x.discover_settings.disable_cnv)
-    {
-        Some(x) => deserialize_genome_gc_levels(&x.discover_dir),
-        None => Vec::new(),
+    // if CNV is enabled, read in genome GC levels from the first sample with CNV enabled, else return an empty vector
+    let genome_gc_levels = if settings.disable_cnv {
+        Vec::new()
+    } else {
+        match all_sample_data
+            .iter()
+            .find(|x| !x.discover_settings.disable_cnv)
+        {
+            Some(x) => deserialize_genome_gc_levels(&x.discover_dir),
+            None => Vec::new(),
+        }
     };
 
     let shared_data = SharedJointCallData {
