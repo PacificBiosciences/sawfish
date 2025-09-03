@@ -427,11 +427,23 @@ All phred-scaled quality scores in the VCF output have a maximum value of 999.
 The following filters may be applied to each VCF record:
 
 - `MinQUAL` - The variant quality score (`QUAL`) is less than 10
-- `MaxScoringDepth` - Read depth at an SV locus exceeds 1000x, so all scoring and genotyping steps were disabled.
+- `MaxScoringDepth` - Read depth at an SV breakpoint locus exceeds the [max scoring depth](#max-scoring-depth), so all
+  scoring and genotyping steps are disabled for this variant.
 - `InvBreakpoint` - This breakpoint is represented as part of a separate VCF inversion record (the inversion record
   shares the same `EVENT` ID)
 - `ConflictingBreakpointGT` - Genotypes of breakpoints in a multi-breakpoint event conflict in the majority of cases
   (This filter is only relevant to inversions at present)
+
+#### Max scoring depth
+
+For each sample, the maximum scoring depth is set to 12 times the gc-corrected haploid-depth estimate, not to exceed
+1000. If CNV calling is disabled in the sample the maximum scoring depth is 1000. For each SV, if the sample read depth
+for either SV breakend exceeds the sample's maximum depth, for any sample in the joint-call set, then all SV scoring and
+genotyping is disabled and the SV is reported with a non-passing FILTER value of `MaxScoringDepth`. This depth check is
+disabled on sequences with names matching a regular expression intended to match typical human mitochondria labels. This
+regular expression can be customized using the joint-call step `--disable-max-dapth-chrom-regex` argument.
+
+Note that this filter does not impact depth-based CNV calls.
 
 #### SV and CNV types
 
@@ -488,9 +500,15 @@ All SV breakpoints which can't be modeled as one of the simple SV types above wi
 
 ##### Inversions
 
-Sawfish will currently identify one type of multi-breakpoint complex SV signature, corresponding to that of a simple (or
-balanced) inversion. Inversions are identified when two intra-chromosomal inverted breakpoints of opposite orientation
-have overlapping spans with at least a 60% reciprocal overlap. The longer span must not be greater than 100kb.
+Sawfish will currently annotate one type of multi-breakpoint complex SV signature, corresponding to that of a simple (or
+balanced) inversion. These are identified when two intra-chromosomal inverted breakpoints of opposite orientation meet
+the following criteria:
+
+1. The two breakpoint spans have at least a 60% reciprocal overlap
+2. Both edge breakend pairs must be within 10kb
+3. If breakend phasing is available:
+  a. The edge breakends must not be phased to the same haplotype
+  b. Breakends for inversions larger than 100kb can't be in phase with unrelated breakends on the same read
 
 When an inversion is found, a VCF record will be output using the `<INV>` symbolic allele summarizing the inversion in
 as much detail as possible. It is not possible to retain the details of all 4 breakends in this format such as all
@@ -545,6 +563,12 @@ value is listed in column 4. Note that any region segmented into the 'excluded' 
 gap in the region coverage.
 
 This file will not appear in the output for any sample run with the `--disable-cnv` discover step option.
+
+##### Copy-number summary
+
+A summary of the copy-number segmentation results is provided in `copynum.summary.json`. This file primarily provides a
+per-chromosome listing of how many bases are segmented at each copy number, and the total number of bases eligible for
+copy-number segmentation.
 
 ##### GC-bias corrected depth track
 
@@ -690,9 +714,9 @@ proceed if the output directory already exists, unless the `--clobber` argument 
 
 ### VCF ID field
 
-The entries in the output VCF ID field (such as `sawfish:0:2803:1:2` and `sawfish:INV4`) are designed to guarantee a
-unique identifier for each record in the VCF output. This identifier isn't meant to convey useful details about the call
-and may be reformatted in future releases.
+The entries in the output VCF ID field (such as `sawfish:0:2803:1:2` and `sawfish:INV:2:2824:0:0`) are designed to
+guarantee a unique identifier for each record in the VCF output. This identifier isn't meant to convey useful details
+about the call and may be reformatted in future releases.
 
 ### Expected compute requirements
 

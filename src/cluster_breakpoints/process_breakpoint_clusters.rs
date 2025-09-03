@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
@@ -84,7 +84,7 @@ fn write_breakpoint_clusters_to_bed(
         let unpaired_breakend = bp.breakend2.is_none();
         {
             let be1 = &bp.breakend1;
-            let breakend_neighbor_index = bpc.breakend1_neighbor.as_ref().map(|x| x.cluster_index);
+            let breakend_neighbor_index = bp.breakend1_neighbor.as_ref().map(|x| x.cluster_index);
             brecs.push(ClusterBedRecord {
                 segment: be1.segment.clone(),
                 cluster_id: cluster_index,
@@ -101,7 +101,7 @@ fn write_breakpoint_clusters_to_bed(
 
         if let Some(be2) = bp.breakend2.as_ref() {
             // be2
-            let breakend_neighbor_index = bpc.breakend2_neighbor.as_ref().map(|x| x.cluster_index);
+            let breakend_neighbor_index = bp.breakend2_neighbor.as_ref().map(|x| x.cluster_index);
             brecs.push(ClusterBedRecord {
                 segment: be2.segment.clone(),
                 cluster_id: cluster_index,
@@ -497,21 +497,31 @@ fn get_jaccard_index(s1: &BTreeSet<Vec<u8>>, s2: &BTreeSet<Vec<u8>>) -> (usize, 
     (s1.intersection(s2).count(), s1.union(s2).count())
 }
 
-/// Search all 2-region clusters to find cases where breakends in a compatible direction are close, and test if these seem to be on the same haplotype.
+/// Search all 2-region clusters to find cases where breakends in a compatible direction are close neighbors, and test
+/// if these seem to be on the same haplotype.
 ///
-/// This was primarly designed for small inversions, but is general enough to support many close breakend connections. Connections chaining deletions
-/// together with short bridges are not included here, as these just tend to create noise.
+/// These connections will appear in IGV as split alignment segments, with a breakpoint on the left and right side
+/// continuing on the two adjacent split alignment segments, so we're looking for a pattern of right-anchored BNDs
+/// downstream of a left-anchored BND, with some minimum number of read observations supporting this pattern, and
+/// possibly a constraint on the segment size.
 ///
-fn annotate_close_breakends(
+/// Short segments which simply chain large deletions together with short bridges are not included, as these aren't the
+/// intended case, and just tend to create noise in the downstream application of these annotations.
+///
+/// This annotation was primarly designed for small inversions, but is general enough to support other applications of
+/// close/phased breakend annotation.
+///
+fn annotate_neighboring_breakend_clusters(
     max_close_breakend_distance: usize,
     clusters: &mut [BreakpointCluster],
 ) {
     let debug = false;
 
-    // First pass through we make a new list of all breakends from the breakpoints
-    #[derive(Debug)]
+    // First step is to make a list of all breakends from the candidate breakpoint clusters, and sort them in genomic order
+
+    /// This is the minimal information needed to specify a breakend when single-region clusters are being excluded:
+    #[derive(Debug, Eq, PartialEq, PartialOrd, Ord)]
     struct BreakendInfo {
-        be: Breakend,
         cluster_index: usize,
 
         /// Breakend index. This can only be 0 or 1, for the 1st and 2nd breakend in the corresponding breakpoint
@@ -520,159 +530,238 @@ fn annotate_close_breakends(
 
     let mut breakends = Vec::new();
     for (cluster_index, bpc) in clusters.iter().enumerate() {
-        // Filter single-sided (soft-clip) breakends
+        // Filter out single-sided (soft-clip) breakends
         if bpc.breakpoint.breakend2.is_none() {
             continue;
         }
 
+        // Filter out assembly regions
         if bpc.assembly_segments.len() != 2 {
             continue;
         }
 
-        let be1 = &bpc.breakpoint.breakend1;
-        let be2 = bpc.breakpoint.breakend2.as_ref().unwrap();
-
         breakends.push(BreakendInfo {
-            be: be1.clone(),
             cluster_index,
             breakend_index: 0,
         });
 
         breakends.push(BreakendInfo {
-            be: be2.clone(),
             cluster_index,
             breakend_index: 1,
         });
     }
 
-    breakends.sort_by_key(|x| (x.be.clone(), x.cluster_index));
+    fn get_breakend(bpc: &BreakpointCluster, breakend_index: usize) -> &Breakend {
+        if breakend_index == 0 {
+            &bpc.breakpoint.breakend1
+        } else {
+            bpc.breakpoint.breakend2.as_ref().unwrap()
+        }
+    }
+
+    // Sort on breakend location first, then use cluster index and breakend index as a way to guarantee deterministic
+    // total ordering
+    breakends.sort_by_key(|x| {
+        let be = get_breakend(&clusters[x.cluster_index], x.breakend_index).clone();
+        (be, x.cluster_index, x.breakend_index)
+    });
+
+    let mut breakendinfo_neighbor_map = BTreeMap::new();
 
     let min_close_annotations = 2;
 
-    // Look at sorted breakends pairwise to find close neighbors:
+    // Look at sorted breakends pairwise by genomic location to find close neighbors:
     let be_count = breakends.len();
     for be_index in 1..be_count {
         let last_bei = &breakends[be_index - 1];
-
-        let mut best_next_be_index = None;
-        let mut best_next_be_dist = 0.0;
-
-        // check if this breakend is facing the right way and has any close breakend annotations:
-        {
-            let last_bpc = &clusters[last_bei.cluster_index];
-            let last_be = {
-                if last_bei.breakend_index == 0 {
-                    &last_bpc.breakpoint.breakend1
-                } else {
-                    last_bpc.breakpoint.breakend2.as_ref().unwrap()
-                }
-            };
-
-            if last_be.dir != BreakendDirection::RightAnchor {
-                continue;
-            }
-
-            let last_be_neighbors = if last_bei.breakend_index == 0 {
+        let last_bpc = &clusters[last_bei.cluster_index];
+        let last_be = get_breakend(last_bpc, last_bei.breakend_index);
+        let last_be_neighbors = {
+            if last_bei.breakend_index == 0 {
                 &last_bpc.breakend1_neighbor_observations
             } else {
                 &last_bpc.breakend2_neighbor_observations
-            };
-            if last_be_neighbors.len() < min_close_annotations {
-                continue;
             }
+        };
 
-            #[allow(clippy::needless_range_loop)]
-            for next_be_index in be_index..be_count {
-                let next_bei = &breakends[next_be_index];
-
-                // Check if the breakends are close:
-                let next_bpc = &clusters[next_bei.cluster_index];
-                let next_be = {
-                    if next_bei.breakend_index == 0 {
-                        &next_bpc.breakpoint.breakend1
-                    } else {
-                        next_bpc.breakpoint.breakend2.as_ref().unwrap()
-                    }
-                };
-
-                let is_close = match get_segment_distance(&last_be.segment, &next_be.segment) {
-                    Some(x) => x <= max_close_breakend_distance,
-                    None => false,
-                };
-
-                if !is_close {
-                    break;
-                }
-
-                // check if this breakend is facing the right way and has any close breakend annotations:
-                if next_be.dir != BreakendDirection::LeftAnchor {
-                    continue;
-                }
-
-                // Add the exception against chaining deletions together
-                if last_bpc.breakpoint.is_indel() && next_bpc.breakpoint.is_indel() {
-                    continue;
-                }
-
-                let next_be_neighbors = if next_bei.breakend_index == 0 {
-                    &next_bpc.breakend1_neighbor_observations
-                } else {
-                    &next_bpc.breakend2_neighbor_observations
-                };
-                if next_be_neighbors.len() < min_close_annotations {
-                    continue;
-                }
-
-                // check the average distance of observation breakends to this breakend
-                let mut dist = 0.0;
-                for be in last_be_neighbors {
-                    dist += get_segment_distance(&be.segment, &next_be.segment).unwrap() as f64;
-                }
-
-                if best_next_be_index.is_none() || dist < best_next_be_dist {
-                    best_next_be_dist = dist;
-                    best_next_be_index = Some(next_be_index);
-                }
-            }
+        if debug {
+            eprintln!("evaluating last_bei/last_be: {:?}/{:?}", last_bei, last_be);
         }
 
-        if best_next_be_index.is_none() {
+        // check if this breakend is facing the expected way for the left-side of a phased breakend pair
+        if last_be.dir != BreakendDirection::RightAnchor {
+            if debug {
+                eprintln!("filtered out due to last_be dir");
+            }
             continue;
         }
 
-        // Passed the full screen so mark neighbor breakends now
-        //
-        let next_bei = &breakends[best_next_be_index.unwrap()];
+        // check if this breakend has minimum number of read observations supporting a phased neighbor
+        if last_be_neighbors.len() < min_close_annotations {
+            if debug {
+                eprintln!(
+                    "filtered out due to last_be neighbor_count {}",
+                    last_be_neighbors.len()
+                );
+            }
+            continue;
+        }
 
-        fn get_neighbor<'a>(
-            bei: &BreakendInfo,
-            clusters: &'a mut [BreakpointCluster],
-        ) -> &'a mut Option<NeighborBreakend> {
-            let bpc = &mut clusters[bei.cluster_index];
+        let mut best_next_be_fit_index = None;
+        let mut best_next_be_fit_to_last_be_neighbors = 0.0;
 
-            if bei.breakend_index == 0 {
-                &mut bpc.breakend1_neighbor
-            } else {
-                &mut bpc.breakend2_neighbor
+        #[allow(clippy::needless_range_loop)]
+        for next_be_index in be_index..be_count {
+            let next_bei = &breakends[next_be_index];
+            let next_bpc = &clusters[next_bei.cluster_index];
+            let next_be = get_breakend(next_bpc, next_bei.breakend_index);
+            let next_be_neighbors = {
+                if next_bei.breakend_index == 0 {
+                    &next_bpc.breakend1_neighbor_observations
+                } else {
+                    &next_bpc.breakend2_neighbor_observations
+                }
+            };
+
+            if debug {
+                eprintln!(
+                    "evaluating last aginast next_bei/next_be: {:?}/{:?}",
+                    next_bei, next_be
+                );
+            }
+
+            // check if this breakend is facing the expected way for the right-side of a phased breakend pair
+            if next_be.dir != BreakendDirection::LeftAnchor {
+                if debug {
+                    eprintln!("filtered out due to next_be dir");
+                }
+                continue;
+            }
+
+            // check if this breakend has minimum number of read observations supporting a phased neighbor
+            if next_be_neighbors.len() < min_close_annotations {
+                if debug {
+                    eprintln!(
+                        "filtered out due to next_be neighbor_count {}",
+                        next_be_neighbors.len()
+                    );
+                }
+                continue;
+            }
+
+            // Add the exception against chaining deletions together
+            if last_bpc.breakpoint.is_indel() && next_bpc.breakpoint.is_indel() {
+                if debug {
+                    eprintln!("filtered out due to deletion chaining");
+                }
+                continue;
+            }
+
+            // Check if the clustered breakends are close:
+            //
+            // The distance checks so have been for the max split read distance on the read-level observations. The
+            // breakend clusters themselves may be averaged farther away from their component read evidence, or the
+            // read-level evidence may correspond to a different event than this last/next breakend pair.
+            //
+            // Note because of breakend ordering, we can break here, since distances won't get any closer with further
+            // read iteration.
+            //
+            let is_close = match get_segment_distance(&last_be.segment, &next_be.segment) {
+                Some(x) => x <= max_close_breakend_distance,
+                None => false,
+            };
+
+            if !is_close {
+                if debug {
+                    eprintln!("filtered out due to last_be/next_be seg match");
+                }
+                break;
+            }
+
+            // Check the average distance between the read observations of a connecting breakend with last_be vs. the
+            // actual location of next_be
+            //
+            // This distance will be used to select a next_be that minimizes the distance, and therefore is approximated
+            // as the best fit to the original read observations.
+            //
+            // TODO: Should there be a maximum distance where we determine that no breakend cluster matches the read-level
+            // observations, or a max variance on the read-level observations?
+            //
+            let mut next_be_fit_to_last_be_neighbors = 0.0;
+            for be in last_be_neighbors.iter().map(|x| &x.breakend) {
+                next_be_fit_to_last_be_neighbors += match get_segment_distance(
+                    &be.segment,
+                    &next_be.segment,
+                ) {
+                    Some(x) => x as f64,
+                    None => {
+                        panic!(
+                            "failed get_segment_distance between next_be: {:?} last_be_neighbor: {:?}",
+                            &last_be.segment, &be.segment
+                        );
+                    }
+                }
+            }
+            next_be_fit_to_last_be_neighbors /= last_be_neighbors.len() as f64;
+
+            if best_next_be_fit_index.is_none()
+                || next_be_fit_to_last_be_neighbors < best_next_be_fit_to_last_be_neighbors
+            {
+                best_next_be_fit_to_last_be_neighbors = next_be_fit_to_last_be_neighbors;
+                best_next_be_fit_index = Some(next_be_index);
             }
         }
+
+        let best_next_be_fit_index = match best_next_be_fit_index {
+            Some(x) => x,
+            None => continue,
+        };
+
+        // Passed the full screen over next_bei entries for the given last_bei, so record neighbor breakends in the map
+        // now, unless next_bei already has a better fit.
+        //
+        let next_bei = &breakends[best_next_be_fit_index];
+
+        // If next_bei already has an assignment, check if this one is better:
+        if let Some((_, fit)) = breakendinfo_neighbor_map.get(next_bei)
+            && best_next_be_fit_to_last_be_neighbors >= *fit
+        {
+            // In this case the fit hasn't improved, so we skip further updates
+            continue;
+        };
+
+        breakendinfo_neighbor_map
+            .insert(next_bei, (last_bei, best_next_be_fit_to_last_be_neighbors));
+    }
+
+    // Make the final updates in clusters, based off breakendinfo_neighbor_map:
+    //
+    let sample_index = 0;
+    for (next_bei, (last_bei, _)) in breakendinfo_neighbor_map.iter() {
         if debug {
             eprintln!(
-                "Annotating close breakend connection between:\nlast: {last_bei:?}\nnext: {next_bei:?}"
+                "Annotating close breakend connection between last_bei: {last_bei:?} next_bei: {next_bei:?}"
             );
         }
 
         let mut connect_breakends = |bei1: &BreakendInfo, bei2: &BreakendInfo| {
-            *get_neighbor(bei1, clusters) = {
-                let cluster_index = bei2.cluster_index;
-                let breakend_index = bei2.breakend_index;
-                let breakpoint = clusters[cluster_index].breakpoint.clone();
-                Some(NeighborBreakend {
-                    cluster_index,
-                    breakend_index,
-                    breakpoint,
-                })
-            };
+            let cluster_index = bei2.cluster_index;
+            let breakend_index = bei2.breakend_index;
+            let breakend_neighbor = Some(BreakendNeighbor {
+                sample_index,
+                cluster_index,
+                breakend_index,
+            });
+            let breakpoint = Some(clusters[cluster_index].breakpoint.clone());
+
+            let bpc = &mut clusters[bei1.cluster_index];
+            if bei1.breakend_index == 0 {
+                bpc.breakpoint.breakend1_neighbor = breakend_neighbor;
+                bpc.breakend1_neighbor_breakpoint = breakpoint;
+            } else {
+                bpc.breakpoint.breakend2_neighbor = breakend_neighbor;
+                bpc.breakend2_neighbor_breakpoint = breakpoint;
+            }
         };
 
         connect_breakends(last_bei, next_bei);
@@ -725,7 +814,7 @@ fn process_clusters(
         0
     };
 
-    annotate_close_breakends(settings.max_close_breakend_distance, clusters);
+    annotate_neighboring_breakend_clusters(settings.max_close_breakend_distance, clusters);
 
     write_breakpoint_clusters_to_bed(&settings.output_dir, chrom_list, clusters);
 }
@@ -777,7 +866,7 @@ impl ClusterSettings {
     }
 }
 
-/// Cluster single breakpoint observations into canidate SV breakpoints for assembly
+/// Cluster single breakpoint observations into candidate SV breakpoints for assembly
 ///
 /// This includes an initial simple clustering step, and follow-on steps to indentify
 /// small indel clusters and large insertions from soft-clip evidence.

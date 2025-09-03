@@ -18,6 +18,7 @@ use log::info;
 use rust_htslib::bam;
 use rust_vc_utils::{ChromList, GenomeRef, ProgressReporter, downsample_vector};
 use strum::EnumCount;
+use unwrap::unwrap;
 
 use self::assemble::{AssemblyResult, assemble_and_cluster_reads};
 use self::assembly_regions::{
@@ -296,7 +297,9 @@ pub struct RefinedSVExt {
     /// original breakend records (which will be marked as filtered in the output) or the combined
     /// inversion record.
     ///
-    pub inversion_id: Option<usize>,
+    /// The string itself is the ID of the inversion.
+    ///
+    pub inversion_id: Option<String>,
 
     /// If true this SV represents a VCF inversion record, this is a special type of refined SV which
     /// is only valid for the purpose of VCF output.
@@ -378,10 +381,11 @@ impl RefinedSV {
 
 pub fn get_rsv_id_label(rsv: &RefinedSV) -> String {
     if rsv.ext.is_inversion {
-        let pname = env!("CARGO_PKG_NAME");
-        assert!(rsv.ext.inversion_id.is_some());
-        let id = rsv.ext.inversion_id.unwrap();
-        format!("{pname}:INV{id}")
+        unwrap!(
+            rsv.ext.inversion_id.clone(),
+            "inversion_id must be defined on inversion records, bp {:?}",
+            rsv.bp
+        )
     } else {
         get_sv_id_label(&rsv.id)
     }
@@ -784,7 +788,7 @@ pub fn refine_sv_candidates(
 ) -> (Vec<SVGroup>, RefineStats) {
     info!("Refining SV Candidates");
 
-    // When true a worker thread status report is reported at regular time intervals during
+    // When true, a worker thread status report is reported at regular time intervals during
     // refinement.
     //
     // To reduce output noise the refinement progress bar is disabled when this status report is

@@ -224,7 +224,7 @@ impl<'a> BreakBuilder<'a> {
             breakend1,
             breakend2,
             insert_info: InsertInfo::SizeRange(IntRange::from_int(cand_indel.ins_size as i64)),
-            is_precise: false,
+            ..Default::default()
         };
 
         let breakend1_read_pos = match read_pos.checked_sub((cand_indel.ins_size + 1) as usize) {
@@ -249,8 +249,8 @@ impl<'a> BreakBuilder<'a> {
             qname: None,
             breakend1_seq_order_read_pos,
             breakend2_seq_order_read_pos,
-            breakend1_neighbor: None,
-            breakend2_neighbor: None,
+            breakend1_neighbor_observation: None,
+            breakend2_neighbor_observation: None,
         })
     }
 
@@ -317,7 +317,7 @@ impl<'a> BreakBuilder<'a> {
         self.process_cand_indel(record, read_pos, &mut cand_indel, all_bpo);
     }
 
-    /// Process 2 adjacent split read segments, ordered such that s1 comes before s2 in the read
+    /// Process two adjacent split read segments, ordered such that s1 comes before s2 in the read
     /// sequencing order.
     fn process_adjacent_split_segments(
         &self,
@@ -351,7 +351,7 @@ impl<'a> BreakBuilder<'a> {
         }
 
         fn get_breakend_seq_order_read_pos(s: &SeqOrderSplitReadSegment, is_s1: bool) -> usize {
-            let right_anchor = s.is_fwd_strand ^ is_s1;
+            let right_anchor = !is_s1;
             if right_anchor {
                 s.seq_order_read_start
             } else {
@@ -363,17 +363,31 @@ impl<'a> BreakBuilder<'a> {
             breakend1: get_breakend(s1, true),
             breakend2: Some(get_breakend(s2, false)),
             insert_info: InsertInfo::SizeRange(IntRange::from_int(0)),
-            is_precise: false,
+            ..Default::default()
         };
-        breakpoint.standardize();
+
+        let mut breakend1_seq_order_read_pos = get_breakend_seq_order_read_pos(s1, true);
+        let mut breakend2_seq_order_read_pos = get_breakend_seq_order_read_pos(s2, false);
+
+        if !breakpoint.is_standardized() {
+            // Breakends in breakpoint are not correctly orderd, so we need to flip the order in the breakpoint, and
+            // also flip any other information related to breakend1/2 here:
+            //
+            breakpoint.standardize();
+            std::mem::swap(
+                &mut breakend1_seq_order_read_pos,
+                &mut breakend2_seq_order_read_pos,
+            );
+        }
+
         all_bpo.push(BreakpointObservation {
             breakpoint,
             evidence: BreakpointEvidenceType::SplitRead,
             qname: None,
-            breakend1_seq_order_read_pos: get_breakend_seq_order_read_pos(s1, true),
-            breakend2_seq_order_read_pos: get_breakend_seq_order_read_pos(s2, false),
-            breakend1_neighbor: None,
-            breakend2_neighbor: None,
+            breakend1_seq_order_read_pos,
+            breakend2_seq_order_read_pos,
+            breakend1_neighbor_observation: None,
+            breakend2_neighbor_observation: None,
         });
     }
 
@@ -516,9 +530,8 @@ impl<'a> BreakBuilder<'a> {
 
         let breakpoint = Breakpoint {
             breakend1,
-            breakend2: None,
             insert_info: InsertInfo::NoInsert,
-            is_precise: false,
+            ..Default::default()
         };
 
         let debug = false;
@@ -533,18 +546,31 @@ impl<'a> BreakBuilder<'a> {
             qname: None,
             breakend1_seq_order_read_pos,
             breakend2_seq_order_read_pos,
-            breakend1_neighbor: None,
-            breakend2_neighbor: None,
+            breakend1_neighbor_observation: None,
+            breakend2_neighbor_observation: None,
         });
     }
 
-    /// Check for and annotate neighboring breakends
-    fn annotate_neighboring_breakends(
+    /// Check for and annotate neighboring breakends observed on a single input read
+    ///
+    /// # Arguments
+    /// * `all_bpo` - All breakpoint observations from one read
+    ///
+    fn annotate_neighboring_breakend_observations(
         all_bpo: &mut [BreakpointObservation],
         max_close_breakend_distance: usize,
     ) {
-        // Step 1: Come up with a filtered bpo list that removes cases we won't be considering for neighbor analysis:
+        let debug = false;
+
+        // Step 1: Come up with a filtered bpo list that removes cases we won't be considering for neighbor analysis
+        //
+        // We filter out single-sided soft-clip breakpoints, and small indel breakpoints, to focus on annotating
+        // adjacency of large SV breakpoints.
+        //
+
+        // This min deletion size is used to filter out insertions and small deletions
         let min_neighbor_deletion_size = 100;
+
         let mut cand_bpo = all_bpo
             .iter_mut()
             .filter(|x| x.evidence != BreakpointEvidenceType::SoftClip)
@@ -554,71 +580,88 @@ impl<'a> BreakBuilder<'a> {
             })
             .collect::<Vec<_>>();
 
-        // Step 2: Walk through filtered list in read pos order and test adjacent cases
+        // We don't need to annotate phasing between breakpoints if there aren't at least two eligible breakpoints in
+        // the read
+        if cand_bpo.len() <= 1 {
+            return;
+        }
+
+        // Step 2: Iterate through filtered list of breakpoints in read sequencing order so that we can test breakpoint
+        // pairs which are adjacent in read coordinates.
+        //
+
+        // Note that sorting on breakend1 will reliably sort the breakpoint locations, it doesn't mean the breakend1 is
+        // necessarily in lower read order than breakend2 for any given breakpoint. This means breakpoints are ordered by
+        // this sort, but not breakends, so we have more logic below to order breakends while observering each
+        // breakpoint.
+        //
         cand_bpo.sort_by_key(|x| x.breakend1_seq_order_read_pos);
 
-        fn get_breakend_index(bpo: &BreakpointObservation, is_upstream_breakend: bool) -> usize {
-            let is_be0_upstream =
-                bpo.breakend1_seq_order_read_pos > bpo.breakend2_seq_order_read_pos;
-            if is_be0_upstream ^ is_upstream_breakend {
-                1
-            } else {
-                0
-            }
-        }
-
-        fn get_breakend(bpo: &BreakpointObservation, is_upstream_breakend: bool) -> &Breakend {
-            if get_breakend_index(bpo, is_upstream_breakend) > 0 {
-                bpo.breakpoint.breakend2.as_ref().unwrap()
-            } else {
-                &bpo.breakpoint.breakend1
-            }
-        }
-
         let cand_bpo_count = cand_bpo.len();
-        for index1 in 1..cand_bpo_count {
-            let index0 = index1 - 1;
-            {
-                let be0 = get_breakend(cand_bpo[index0], true);
-                let be1 = get_breakend(cand_bpo[index1], false);
+        for cand_bpo_index1 in 1..cand_bpo_count {
+            let cand_bpo_index0 = cand_bpo_index1 - 1;
 
-                // Check if the breakends are close:
-                match get_segment_distance(&be0.segment, &be1.segment) {
-                    Some(x) => {
-                        if x > max_close_breakend_distance {
-                            continue;
-                        };
-                    }
-                    None => continue,
+            let bp0_higher_read_be_index =
+                cand_bpo[cand_bpo_index0].get_breakend_index_by_read_order(false);
+            let bp1_lower_read_be_index =
+                cand_bpo[cand_bpo_index1].get_breakend_index_by_read_order(true);
+
+            let bp0_higher_read_be = cand_bpo[cand_bpo_index0]
+                .breakpoint
+                .get_breakend(bp0_higher_read_be_index);
+            let bp1_lower_read_be = cand_bpo[cand_bpo_index1]
+                .breakpoint
+                .get_breakend(bp1_lower_read_be_index);
+
+            if debug {
+                eprintln!(
+                    "annotate_neighboring_breakend_observations: evaluating breakend pair:\nbp0_higher_read_be: {bp0_higher_read_be:?}\nbp1_lower_read_be: {bp1_lower_read_be:?}"
+                );
+            }
+
+            // Check if the breakends are close:
+            let neighbor_dist =
+                get_segment_distance(&bp0_higher_read_be.segment, &bp1_lower_read_be.segment);
+
+            if neighbor_dist.is_none_or(|x| x > max_close_breakend_distance) {
+                if debug {
+                    eprintln!(
+                        "Filtering out segments as not close. neighbor_dist: {neighbor_dist:?}"
+                    );
+                }
+                continue;
+            }
+
+            let neighbor_dist = neighbor_dist.unwrap();
+
+            // Check for expected breakend arrangement in reference coordinates
+            let (lower_ref_coordinate_be, higher_ref_coordatinate_be) =
+                if bp0_higher_read_be.segment.range.start < bp1_lower_read_be.segment.range.start {
+                    (bp0_higher_read_be, bp1_lower_read_be)
+                } else {
+                    (bp1_lower_read_be, bp0_higher_read_be)
                 };
 
-                // Check for expected breakend arrangement
-                let (downstream_be, upstream_be) =
-                    if be0.segment.range.start < be1.segment.range.start {
-                        (be0, be1)
-                    } else {
-                        (be1, be0)
-                    };
-                if downstream_be.dir != BreakendDirection::RightAnchor
-                    || upstream_be.dir != BreakendDirection::LeftAnchor
-                {
-                    continue;
+            if lower_ref_coordinate_be.dir != BreakendDirection::RightAnchor
+                || higher_ref_coordatinate_be.dir != BreakendDirection::LeftAnchor
+            {
+                if debug {
+                    eprintln!("filtered out segments based on breakend pair anchor direction");
                 }
+                continue;
             }
 
             // Connect the breakends
-            let bpo0_be_index = get_breakend_index(cand_bpo[index0], true);
-            let bpo1_be_index = get_breakend_index(cand_bpo[index1], false);
-
             fn update_target(
                 cand_bpo: &mut [&mut BreakpointObservation],
-                target_index: usize,
-                neighbor_index: usize,
+                target_cand_bpo_index: usize,
+                neighbor_cand_bpo_index: usize,
                 target_be_index: usize,
                 neighbor_be_index: usize,
+                neighbor_dist: usize,
             ) {
                 let target_neighbor = {
-                    let bp = &cand_bpo[neighbor_index].breakpoint;
+                    let bp = &cand_bpo[neighbor_cand_bpo_index].breakpoint;
                     if neighbor_be_index == 0 {
                         Some(bp.breakend1.clone())
                     } else {
@@ -626,18 +669,46 @@ impl<'a> BreakBuilder<'a> {
                     }
                 };
 
+                let breakend_neighbor_observation =
+                    target_neighbor.map(|x| BreakendNeighborObservation {
+                        breakend: x,
+                        neighbor_dist,
+                    });
+
                 if target_be_index == 0 {
-                    cand_bpo[target_index].breakend1_neighbor = target_neighbor;
+                    cand_bpo[target_cand_bpo_index].breakend1_neighbor_observation =
+                        breakend_neighbor_observation;
                 } else {
-                    cand_bpo[target_index].breakend2_neighbor = target_neighbor;
+                    cand_bpo[target_cand_bpo_index].breakend2_neighbor_observation =
+                        breakend_neighbor_observation;
                 }
             }
 
-            update_target(&mut cand_bpo, index0, index1, bpo0_be_index, bpo1_be_index);
-            update_target(&mut cand_bpo, index1, index0, bpo1_be_index, bpo0_be_index);
+            update_target(
+                &mut cand_bpo,
+                cand_bpo_index0,
+                cand_bpo_index1,
+                bp0_higher_read_be_index,
+                bp1_lower_read_be_index,
+                neighbor_dist,
+            );
+            update_target(
+                &mut cand_bpo,
+                cand_bpo_index1,
+                cand_bpo_index0,
+                bp1_lower_read_be_index,
+                bp0_higher_read_be_index,
+                neighbor_dist,
+            );
         }
     }
 
+    /// For bam record alignments which provide multiple breakpoint observations, add annotations to capture some of the
+    /// phasing relationship between adjacent breakends, which can be used in downstream variant calling steps
+    ///
+    /// # Arguments
+    /// * `all_bpo` - All breakpoint observations from one read
+    ///
     fn process_read_bpos(
         record: &bam::Record,
         all_bpo: &mut [BreakpointObservation],
@@ -648,16 +719,25 @@ impl<'a> BreakBuilder<'a> {
             .filter(|x| x.evidence != BreakpointEvidenceType::SoftClip)
             .count();
 
+        // We don't need to annotate phasing between breakpoints if there aren't at least two eligible breakpoints in
+        // the read
         if std_bp_count <= 1 {
             return;
         }
 
-        // qname label all bpos to prevent them from being counted as independent evidence in downstream steps
+        // Add the qname to act as a unique read ID in all breakpoints which occur in multi-breakpoint reads.
+        //
+        // This is used to prevent the same read observation from being counted as multiple independent observations in
+        // downstream steps
+        //
+        // Ideally we would make this simple and add a unquie tag to every breakpoint observation -- we limit to just this
+        // case to save memory, since this is currently the only case for which a unique ID is needed.
+        //
         for bpo in all_bpo.iter_mut() {
             bpo.qname = Some(record.qname().to_vec());
         }
 
-        Self::annotate_neighboring_breakends(all_bpo, max_close_breakend_distance);
+        Self::annotate_neighboring_breakend_observations(all_bpo, max_close_breakend_distance);
     }
 
     pub fn process_bam_record(&mut self, record: &bam::Record) {

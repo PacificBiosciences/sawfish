@@ -1,37 +1,25 @@
-use rust_vc_utils::{ChromList, get_genome_ref_from_fasta, get_sample_name};
+use rust_vc_utils::{ChromList, GenomeRef, get_genome_ref_from_fasta, get_sample_name};
 
+use crate::bam_scanner::SampleAlignmentScanResult;
 use crate::bam_scanner::scan_sample_bam_for_sv_evidence;
 use crate::cli;
 use crate::cluster_breakpoints;
 use crate::copy_number_segmentation::{
-    get_sample_copy_number_segments, serialize_copy_number_segments, write_copy_number_segment_file,
+    HaploidCoverage, get_sample_copy_number_segments, serialize_copy_number_segments,
+    write_copy_number_segment_file,
 };
 use crate::depth_bins;
+use crate::filenames::EXPECTED_COPY_NUMBER_BED_FILENAME;
 use crate::gc_correction::*;
-use crate::genome_regions::{GenomeRegions, write_genome_regions_to_bed};
+use crate::genome_regions::GenomeRegions;
 use crate::globals::PROGRAM_VERSION;
 use crate::large_variant_output::{VcfSettings, write_indexed_sv_vcf_file};
 use crate::maf_utils::{scan_maf_file, serialize_maf_data};
 use crate::refine_sv;
+use crate::run_data::{DiscoverRunData, write_discover_run_data};
 use crate::run_stats::{DiscoverRunStats, RunStep, delete_run_stats, write_discover_run_stats};
+use crate::sv_scoring_exclusion::generate_and_write_sv_scoring_exclusion_regions;
 use crate::worker_thread_data::get_bam_reader_worker_thread_data;
-
-pub const ASSEMBLY_REGIONS_FILENAME: &str = "assembly.regions.bed";
-pub const CANDIDATE_SV_FILENAME: &str = "candidate.sv.bcf";
-pub const CONTIG_ALIGNMENT_FILENAME: &str = "contig.alignment.bam";
-pub const COPYNUM_SEGMENT_BEDGRAPH_FILENAME: &str = "copynum.bedgraph";
-pub const COPYNUM_SEGMENT_MESSAGEPACK_FILENAME: &str = "copynum.mpack";
-pub const DEPTH_BINS_BIGWIG_FILENAME: &str = "depth.bw";
-pub const DEPTH_BINS_MESSAGEPACK_FILENAME: &str = "depth.mpack";
-pub const EXPECTED_COPY_NUMBER_BED_FILENAME: &str = "expected.copy.number.bed";
-pub const GENOME_GC_LEVELS_MESSAGEPACK_FILENAME: &str = "genome.gclevels.mpack";
-pub const GC_BIAS_CORRECTED_DEPTH_BINS_BIGWIG_FILENAME: &str = "gc_bias_corrected_depth.bw";
-pub const MAF_BIGWIG_FILENAME: &str = "maf.bw";
-pub const MAF_MESSAGEPACK_FILENAME: &str = "maf.mpack";
-pub const MAX_SV_DEPTH_FILENAME: &str = "max.depth.bed";
-pub const RUN_STATS_FILENAME: &str = "run.stats.json";
-pub const SAMPLE_GC_BIAS_MESSAGEPACK_FILENAME: &str = "sample.gcbias.mpack";
-pub const SETTINGS_FILENAME: &str = "discover.settings.json";
 
 /// Settings shared between discover processes that are not intended to be runtime settable in the cli
 pub struct StaticDiscoverSettings {
@@ -46,6 +34,53 @@ impl StaticDiscoverSettings {
             assembly_read_flank_size: 300,
         }
     }
+}
+
+/// These steps of discover are only run with CNV is enabled
+///
+fn run_discover_cnv_steps(
+    shared_settings: &cli::SharedSettings,
+    settings: &cli::DiscoverSettings,
+    genome_ref: &GenomeRef,
+    chrom_list: &ChromList,
+    sample_scan_result: &SampleAlignmentScanResult,
+) -> HaploidCoverage {
+    let depth_bin_gc_content = get_depth_bin_gc_content(
+        genome_ref,
+        chrom_list,
+        settings.depth_bin_size,
+        settings.gc_genome_window_size,
+        shared_settings.thread_count,
+    );
+
+    let gc_bias_data = get_gc_correction(
+        chrom_list,
+        &depth_bin_gc_content,
+        sample_scan_result,
+        settings.coverage_est_regex.as_str(),
+        settings.gc_level_count,
+    );
+
+    serialize_gc_bias_correction_data(&settings.output_dir, &gc_bias_data);
+
+    if settings.debug_gc_correction {
+        write_gc_correction_debug_output(
+            &settings.output_dir,
+            chrom_list,
+            &depth_bin_gc_content,
+            sample_scan_result,
+            &gc_bias_data,
+        );
+    }
+
+    let (haploid_coverage, copy_number_segments) =
+        get_sample_copy_number_segments(settings, chrom_list, sample_scan_result, &gc_bias_data);
+
+    write_copy_number_segment_file(&settings.output_dir, chrom_list, &copy_number_segments);
+
+    serialize_copy_number_segments(&settings.output_dir, &copy_number_segments);
+
+    haploid_coverage
 }
 
 pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::DiscoverSettings) {
@@ -142,57 +177,24 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         &sample_scan_result.genome_depth_bins,
     );
 
-    // Write max_sv_depth to a BED file
-    {
-        let max_sv_depth_bed = settings.output_dir.join(MAX_SV_DEPTH_FILENAME);
-        write_genome_regions_to_bed(
-            "max sv depth",
-            &max_sv_depth_bed,
-            &chrom_list,
-            &sample_scan_result.genome_max_sv_depth_regions,
-        );
-    }
-
-    if !settings.disable_cnv {
-        let depth_bin_gc_content = get_depth_bin_gc_content(
+    let haploid_coverage = if !settings.disable_cnv {
+        Some(run_discover_cnv_steps(
+            shared_settings,
+            settings,
             &genome_ref,
             &chrom_list,
-            settings.depth_bin_size,
-            settings.gc_genome_window_size,
-            shared_settings.thread_count,
-        );
-
-        let gc_bias_data = get_gc_correction(
-            &chrom_list,
-            &depth_bin_gc_content,
             &sample_scan_result,
-            settings.coverage_est_regex.as_str(),
-            settings.gc_level_count,
-        );
+        ))
+    } else {
+        None
+    };
 
-        serialize_gc_bias_correction_data(&settings.output_dir, &gc_bias_data);
-
-        if settings.debug_gc_correction {
-            write_gc_correction_debug_output(
-                &settings.output_dir,
-                &chrom_list,
-                &depth_bin_gc_content,
-                &sample_scan_result,
-                &gc_bias_data,
-            );
-        }
-
-        let copy_number_segments = get_sample_copy_number_segments(
-            settings,
-            &chrom_list,
-            &sample_scan_result,
-            &gc_bias_data,
-        );
-
-        write_copy_number_segment_file(&settings.output_dir, &chrom_list, &copy_number_segments);
-
-        serialize_copy_number_segments(&settings.output_dir, &copy_number_segments);
-    }
+    let max_sv_scoring_depth = generate_and_write_sv_scoring_exclusion_regions(
+        settings,
+        &chrom_list,
+        haploid_coverage.as_ref(),
+        sample_scan_result.genome_depth_bins_builder,
+    );
 
     // Cluster breakpoint signatures
     let (breakpoint_clusters, cluster_stats) = cluster_breakpoints::process_breakpoint_clusters(
@@ -244,14 +246,25 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
     refine_stats.candidate_vcf_output_record_count = vcf_stats.output_record_count;
     refine_stats.candidate_vcf_duplicate_record_count = vcf_stats.duplicate_record_count;
 
+    let run_step = RunStep {
+        name: "discover".to_string(),
+        version: PROGRAM_VERSION.to_string(),
+    };
+
+    write_discover_run_data(
+        &settings.output_dir,
+        &DiscoverRunData {
+            run_step: run_step.clone(),
+            sample_name: sample_scan_result.sample_name.clone(),
+            max_sv_scoring_depth,
+        },
+    );
+
     // In addition to useful statistics this file acts as a marker for a successfully completed run, so it must be written last.
     write_discover_run_stats(
         &settings.output_dir,
         &DiscoverRunStats {
-            run_step: RunStep {
-                name: "discover".to_string(),
-                version: PROGRAM_VERSION.to_string(),
-            },
+            run_step,
             sample_name: sample_scan_result.sample_name.clone(),
             cluster_stats,
             refine_stats,

@@ -199,18 +199,29 @@ pub struct Breakpoint {
     /// Once a breakpoint is marked as precise, its location should be estimated to single base
     /// accuracy, and the location range is interpreted as breakend homology
     pub is_precise: bool,
+
+    /// Structure used to signify that this breakpoint has a breakend neighbor
+    ///
+    /// These are not necesarilly close neighbors, but detectable on the same read, so within HiFi read size
+    ///
+    pub breakend1_neighbor: Option<BreakendNeighbor>,
+    pub breakend2_neighbor: Option<BreakendNeighbor>,
 }
 
-impl Breakpoint {
-    pub fn new() -> Self {
+impl Default for Breakpoint {
+    fn default() -> Self {
         Self {
             breakend1: Breakend::new(),
             breakend2: None,
             insert_info: InsertInfo::SizeRange(IntRange::from_int(0)),
             is_precise: false,
+            breakend1_neighbor: None,
+            breakend2_neighbor: None,
         }
     }
+}
 
+impl Breakpoint {
     pub fn get_breakend(&self, breakend_index: usize) -> &Breakend {
         if breakend_index == 0 {
             &self.breakend1
@@ -311,6 +322,9 @@ impl Breakpoint {
         if !self.is_standardized() {
             // flip breakends:
             std::mem::swap(&mut self.breakend1, self.breakend2.as_mut().unwrap());
+
+            // flip breakend neighbors:
+            std::mem::swap(&mut self.breakend1_neighbor, &mut self.breakend2_neighbor);
 
             // revcomp the inserted sequence if required:
             if self.same_orientation()
@@ -462,9 +476,21 @@ pub fn get_breakpoint_manhattan_distance(bp1: &Breakpoint, bp2: &Breakpoint) -> 
     }
 }
 
+/// Information pertaining to a neighboring breakend
+///
+/// We store a copy of the neighbor breakend location itself, rather than an index into any variant structures at this point,
+/// because no candidate clustering or variant calling has been started yet.
+///
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
+pub struct BreakendNeighborObservation {
+    pub breakend: Breakend,
+    pub neighbor_dist: usize,
+}
+
 /// A single breakpoint observation
 ///
-/// A breakend 'observation' is a breakpoint proposal from a single piece of evidence
+/// A breakend 'observation' is a breakpoint proposal from a single piece of evidence, such as a single sequencing read
+///
 #[derive(Eq, PartialEq, PartialOrd, Ord)]
 pub struct BreakpointObservation {
     pub breakpoint: Breakpoint,
@@ -475,22 +501,46 @@ pub struct BreakpointObservation {
     pub breakend1_seq_order_read_pos: usize,
 
     /// Sequencer-order read position of the last mapped base on the anchor side of breakend2
+    ///
+    /// Note the primary difference between this and the breakend1 value should be due to any inserted seqeunce between
+    /// the mapped breakpoint locations
     pub breakend2_seq_order_read_pos: usize,
 
-    /// If a close breakend was found on the same haplotype in this read, record it here for the breakend 1 or 2 side of the breakpoint
-    /// so that we can account for these later.
+    /// If another breakpoint was found on this read, record the neighbor releationship here for the breakend 1 or 2
+    /// side of the breakpoint so that we can account for these later.
     ///
-    pub breakend1_neighbor: Option<Breakend>,
-    pub breakend2_neighbor: Option<Breakend>,
+    pub breakend1_neighbor_observation: Option<BreakendNeighborObservation>,
+    pub breakend2_neighbor_observation: Option<BreakendNeighborObservation>,
 }
 
 impl fmt::Debug for BreakpointObservation {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "bp: {:?} evidence_type: {:?}",
-            self.breakpoint, self.evidence
+            "bp: {:?}\nevidence_type: {:?}\nbe1_so_read_pos {}\nbe2_so_read_pos {}",
+            self.breakpoint,
+            self.evidence,
+            self.breakend1_seq_order_read_pos,
+            self.breakend2_seq_order_read_pos,
         )
+    }
+}
+
+impl BreakpointObservation {
+    /// Get the breakend index based on the read coordinate relationship of the breakpoint's breakends
+    ///
+    /// # Arguments
+    /// * `is_lower_read_coordinate` - If true, return the index of the breakend which occurs at the lower read
+    ///   coordinate, otherwise return the other one
+    ///
+    pub fn get_breakend_index_by_read_order(&self, is_lower_read_coordinate: bool) -> usize {
+        let is_breakend2_at_lower_read_coordinate =
+            self.breakend1_seq_order_read_pos > self.breakend2_seq_order_read_pos;
+        if is_breakend2_at_lower_read_coordinate ^ is_lower_read_coordinate {
+            0
+        } else {
+            1
+        }
     }
 }
 
@@ -521,11 +571,21 @@ pub struct LargeInsertionInfo {
     pub paired_cluster_index: usize,
 }
 
-#[derive(Clone)]
-pub struct NeighborBreakend {
+/// Minimal neighboring breakend information used to identify shared haplotype relationships during joint-call
+///
+/// This object is used at the Breakpoint level to signify that the breakpoint has been found to have the neighbor after
+/// going through all QC checks, so it indicates considerably more than a neighbor in an individual read connection.
+///
+#[derive(Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+pub struct BreakendNeighbor {
+    pub sample_index: usize,
     pub cluster_index: usize,
     pub breakend_index: usize,
-    pub breakpoint: Breakpoint,
+}
+
+pub struct FullBreakendNeighborInfo<'a> {
+    pub breakend_neighbor: &'a BreakendNeighbor,
+    pub breakpoint: &'a Breakpoint,
 }
 
 /// A cluster of breakpoint observations
@@ -566,17 +626,25 @@ pub struct BreakpointCluster {
 
     pub large_insertion_info: Option<LargeInsertionInfo>,
 
-    pub breakend1_neighbor_observations: Vec<Breakend>,
-    pub breakend2_neighbor_observations: Vec<Breakend>,
+    /// Per-read breakend neighbor observations
+    pub breakend1_neighbor_observations: Vec<BreakendNeighborObservation>,
+    pub breakend2_neighbor_observations: Vec<BreakendNeighborObservation>,
 
-    pub breakend1_neighbor: Option<NeighborBreakend>,
-    pub breakend2_neighbor: Option<NeighborBreakend>,
+    /// if breakpoint.breakend1_neighbor is defined, these must be defined as a copy of the corresponding neighbor's
+    /// breakpoint prior to refinement.
+    ///
+    /// We store the full breakpoint and not just the breakend, becuase the inversion SV haplotype building routine
+    /// needs to get information from both breakends of the neighboring breakpoint, both the 'neighboring'/close one,
+    /// and the remote/distant one.
+    ///
+    pub breakend1_neighbor_breakpoint: Option<Breakpoint>,
+    pub breakend2_neighbor_breakpoint: Option<Breakpoint>,
 }
 
-impl BreakpointCluster {
-    pub fn new() -> Self {
+impl Default for BreakpointCluster {
+    fn default() -> Self {
         Self {
-            breakpoint: Breakpoint::new(),
+            breakpoint: Breakpoint::default(),
             evidence: [0; BreakpointEvidenceType::COUNT],
             evidence_qnames: BTreeSet::new(),
             assembly_segments: Vec::new(),
@@ -585,13 +653,15 @@ impl BreakpointCluster {
             large_insertion_info: None,
             breakend1_neighbor_observations: Vec::new(),
             breakend2_neighbor_observations: Vec::new(),
-            breakend1_neighbor: None,
-            breakend2_neighbor: None,
+            breakend1_neighbor_breakpoint: None,
+            breakend2_neighbor_breakpoint: None,
         }
     }
+}
 
+impl BreakpointCluster {
     pub fn from_breakpoint_observation(bpo: &BreakpointObservation) -> Self {
-        let mut bpc = BreakpointCluster::new();
+        let mut bpc = BreakpointCluster::default();
         bpc.merge_breakpoint_observation(bpo);
         bpc
     }
@@ -602,6 +672,27 @@ impl BreakpointCluster {
 
     pub fn evidence_count(&self) -> usize {
         self.evidence.iter().sum()
+    }
+
+    pub fn get_full_breakend_neighbor_info(
+        &self,
+        is_breakend1: bool,
+    ) -> Option<FullBreakendNeighborInfo<'_>> {
+        if is_breakend1 {
+            self.breakend1_neighbor_breakpoint
+                .as_ref()
+                .map(|x| FullBreakendNeighborInfo {
+                    breakend_neighbor: self.breakpoint.breakend1_neighbor.as_ref().unwrap(),
+                    breakpoint: x,
+                })
+        } else {
+            self.breakend2_neighbor_breakpoint
+                .as_ref()
+                .map(|x| FullBreakendNeighborInfo {
+                    breakend_neighbor: self.breakpoint.breakend2_neighbor.as_ref().unwrap(),
+                    breakpoint: x,
+                })
+        }
     }
 
     pub fn merge_breakpoint_observation(&mut self, bpo: &BreakpointObservation) {
@@ -620,10 +711,10 @@ impl BreakpointCluster {
             self.evidence[bpo.evidence as usize] += 1;
         }
 
-        if let Some(x) = &bpo.breakend1_neighbor {
+        if let Some(x) = &bpo.breakend1_neighbor_observation {
             self.breakend1_neighbor_observations.push(x.clone());
         }
-        if let Some(x) = &bpo.breakend2_neighbor {
+        if let Some(x) = &bpo.breakend2_neighbor_observation {
             self.breakend2_neighbor_observations.push(x.clone());
         }
     }
@@ -711,7 +802,7 @@ mod tests {
                 dir: BreakendDirection::RightAnchor,
             }),
             insert_info: InsertInfo::NoInsert,
-            is_precise: false,
+            ..Default::default()
         };
 
         let bp2 = Breakpoint {
@@ -730,7 +821,7 @@ mod tests {
                 dir: BreakendDirection::RightAnchor,
             }),
             insert_info: InsertInfo::NoInsert,
-            is_precise: false,
+            ..Default::default()
         };
         let bp_dist = get_breakpoint_manhattan_distance(&bp1, &bp2);
         assert_eq!(bp_dist, Some(9));
@@ -751,7 +842,7 @@ mod tests {
                 dir: BreakendDirection::RightAnchor,
             }),
             insert_info: InsertInfo::NoInsert,
-            is_precise: false,
+            ..Default::default()
         };
         let bp_dist = get_breakpoint_manhattan_distance(&bp1, &bp2);
         assert_eq!(bp_dist, Some(18));

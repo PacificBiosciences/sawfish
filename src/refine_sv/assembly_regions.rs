@@ -7,7 +7,7 @@ use rust_vc_utils::ChromList;
 use unwrap::unwrap;
 
 use crate::breakpoint::BreakpointCluster;
-use crate::discover::ASSEMBLY_REGIONS_FILENAME;
+use crate::filenames::ASSEMBLY_REGIONS_FILENAME;
 use crate::genome_segment::{GenomeSegment, IntRange};
 
 fn get_max_insert_from_breakpoint_cluster(bpc: &BreakpointCluster) -> usize {

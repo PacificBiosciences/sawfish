@@ -1,5 +1,10 @@
 # Sawfish methods
 
+Sawfish methods are consolidated here to provide a higher-level summary of operations. The level of detail here should
+be close to a methods paper write-up with a bit of software design doc added, to serve both users and developers.
+Following this approach, references to high-level code entry points or data-structures corresponding to each section
+should be oppurtunistically added.
+
 ## Candidate discovery
 The first ‘discover’ step of sawfish is run once on each input sample. In this step each sample is scanned for SV and
 CNV evidence. The SV evidence is clustered and used to assemble a set of candidate SV alleles. Details of this step are
@@ -23,6 +28,13 @@ Depth is enumerated from the alignments by recording the average depth within no
 chromosome. Gaps created by splitting reads into primary and supplementary alignments are accounted for in the depth
 calculation, as well as alignment deletions of 1kb or larger.
 
+#### Neighboring breakend annotation
+
+At the time each read is scanned for breakend evidence, the phasing of the breakend evidence implied by joint events
+on a single read is also record for adjacent breakends in reads which are split into more than 2 segments. This logic
+is found in `annotate_neighboring_breakend_observations`, and used for the downstream candidate variant level process to
+annotate neighboring breakends likely to occur on the same haplotype.
+
 ### Clustering breakpoint evidence
 Breakpoint evidence from individual reads is clustered into candidate breakpoint clusters as follows: Each breakpoint
 evidence observation is treated as a cluster with a supporting read count of 1. Breakpoint clusters with a matching
@@ -32,6 +44,14 @@ merged, such that each merged breakend extends from the minimum of the two break
 the two breakend end positions. The merged supporting read evidence of a cluster is the sum of the two input clusters.
 After merging is completed, clusters with only a single supporting read are discarded as noise. All others comprise the
 candidate breakpoint cluster set.
+
+### Clustered breakpoint analysis and annotation
+Prior to refinement, the clustered breakpoints are analyzed to annotate certain types of neighboring breakends in the
+`annotate_neighboring_breakend_clusters` method. Two breakends are annotated as neighbors under the following conditions:
+1. They are arranged such that being on the same haplotype is possible, ie. two breakends in opposing orientation on the
+same chromosome, with the right-anchored breakend occurring on the lower chromosome coordinate.
+2. They each have at least 2 reads with annotated breakend observations.
+3. The breakends occur within 2kb of each other.
 
 ### Candidate breakpoint cluster refinement
 In the breakpoint cluster refinement process, candidate breakpoints are assembled into SV haplotype contigs, which are

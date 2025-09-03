@@ -4,7 +4,7 @@ use rust_vc_utils::ChromList;
 use super::read_sample_data::SampleJointCallData;
 
 use crate::depth_bins::write_depth_bigwig_file;
-use crate::discover::DEPTH_BINS_BIGWIG_FILENAME;
+use crate::filenames::DEPTH_BINS_BIGWIG_FILENAME;
 use crate::gc_correction::write_gc_scaled_depth_track_files;
 use crate::joint_call::SharedJointCallData;
 use crate::maf_utils::write_maf_track_files;

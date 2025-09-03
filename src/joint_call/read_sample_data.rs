@@ -2,6 +2,7 @@ use std::sync::mpsc::channel;
 
 use camino::{Utf8Path, Utf8PathBuf};
 use log::info;
+use regex::Regex;
 use rust_vc_utils::{ChromList, GenomeRef, get_genome_ref_from_fasta};
 use unwrap::unwrap;
 
@@ -13,8 +14,7 @@ use crate::cli::{
 };
 use crate::copy_number_segmentation::{SampleCopyNumberSegments, deserialize_copy_number_segments};
 use crate::depth_bins::{GenomeDepthBins, deserialize_genome_depth_bins};
-use crate::discover;
-use crate::discover::EXPECTED_COPY_NUMBER_BED_FILENAME;
+use crate::filenames::{EXPECTED_COPY_NUMBER_BED_FILENAME, MAX_SV_DEPTH_FILENAME};
 use crate::gc_correction::{
     GenomeGCLevels, SampleGCBiasCorrectionData, deserialize_genome_gc_levels,
     deserialize_sample_gc_bias_data,
@@ -48,7 +48,7 @@ pub struct SampleJointCallData {
 
     pub sample_name: String,
     pub discover_settings: DiscoverSettings,
-    pub genome_max_sv_depth_regions: Vec<ChromRegions>,
+    pub genome_sv_scoring_exclusion_regions: Vec<ChromRegions>,
     pub sv_groups: Vec<SVGroup>,
 
     /// Vector indexed on cluster index, containing the assembly regions for that cluster
@@ -66,7 +66,7 @@ pub struct SampleJointCallData {
 impl SampleJointCallData {
     pub fn to_sample_score_data(&self) -> SampleScoreData<'_> {
         SampleScoreData {
-            genome_max_sv_depth_regions: &self.genome_max_sv_depth_regions,
+            genome_sv_scoring_exclusion_regions: &self.genome_sv_scoring_exclusion_regions,
         }
     }
 }
@@ -112,9 +112,20 @@ fn get_sample_joint_call_data(
 
     let discover_run_stats = unwrap!(read_discover_run_stats(&discover_dir));
 
-    let genome_max_sv_depth_regions = {
-        let filename = discover_dir.join(discover::MAX_SV_DEPTH_FILENAME);
-        read_genome_regions_from_bed("max sv depth", &filename, chrom_list, true, false)
+    let genome_sv_scoring_exclusion_regions = {
+        let filename = discover_dir.join(MAX_SV_DEPTH_FILENAME);
+        let mut x =
+            read_genome_regions_from_bed("max sv depth", &filename, chrom_list, true, false);
+
+        // Remove all regions for any disabled chromosomes:
+        let disable_max_dapth_chrom_regex =
+            Regex::new(&settings.disable_max_dapth_chrom_regex).unwrap();
+        for (chrom_index, chrom_info) in chrom_list.data.iter().enumerate() {
+            if disable_max_dapth_chrom_regex.is_match(chrom_info.label.as_str()) {
+                x[chrom_index] = ChromRegions::new();
+            }
+        }
+        x
     };
 
     let expected_copy_number_regions = read_expected_copy_number_regions(chrom_list, &discover_dir);
@@ -153,7 +164,7 @@ fn get_sample_joint_call_data(
         bam_filename,
         sample_name: discover_run_stats.sample_name,
         discover_settings,
-        genome_max_sv_depth_regions,
+        genome_sv_scoring_exclusion_regions,
         sv_groups,
         genome_depth_bins,
         sample_gc_bias_data,

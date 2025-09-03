@@ -23,18 +23,28 @@ impl std::fmt::Debug for SVUniqueIdData {
     }
 }
 
-pub fn get_sv_id_label(id: &SVUniqueIdData) -> String {
+/// Get core component of ID label basd on indexes only
+fn get_sv_id_core_label(id: &SVUniqueIdData) -> String {
     format!(
-        "{}:{}:{}:{}:{}",
-        env!("CARGO_PKG_NAME"),
-        id.sample_index,
-        id.cluster_index,
-        id.assembly_index,
-        id.alignment_index
+        "{}:{}:{}:{}",
+        id.sample_index, id.cluster_index, id.assembly_index, id.alignment_index
     )
 }
 
-pub fn get_bnd_sv_id_label(id: &SVUniqueIdData, is_breakend1: bool) -> String {
+/// The default ID label for 'standard' SVs
+pub fn get_sv_id_label(id: &SVUniqueIdData) -> String {
+    let core_id = get_sv_id_core_label(id);
+    format!("{}:{core_id}", env!("CARGO_PKG_NAME"),)
+}
+
+/// A variant of the default SV label used for inversions corresponding to the given id:
+pub fn get_inv_id_label(id: &SVUniqueIdData) -> String {
+    let core_id = get_sv_id_core_label(id);
+    format!("{}:INV:{core_id}", env!("CARGO_PKG_NAME"),)
+}
+
+/// A variant of the default SV label used for breakends
+pub fn get_bnd_id_label(id: &SVUniqueIdData, is_breakend1: bool) -> String {
     let bnd_index = if is_breakend1 { 0 } else { 1 };
     format!("{}:{}", get_sv_id_label(id), bnd_index)
 }

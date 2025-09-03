@@ -7,7 +7,7 @@ use rust_htslib::bam::{
 use rust_vc_utils::{ChromList, bam_reg2bin, get_alignment_end};
 
 use crate::bam_utils::has_aligned_segments;
-use crate::discover;
+use crate::filenames::CONTIG_ALIGNMENT_FILENAME;
 use crate::globals::PROGRAM_VERSION;
 use crate::int_range::IntRange;
 
@@ -240,7 +240,7 @@ pub fn write_contig_alignments(
         aseg.tid.cmp(&bseg.tid).then(aseg.pos.cmp(&bseg.pos))
     });
 
-    let filename = output_dir.join(discover::CONTIG_ALIGNMENT_FILENAME);
+    let filename = output_dir.join(CONTIG_ALIGNMENT_FILENAME);
 
     info!("Writing {contig_alignment_type_label} contig alignments to bam file: '{filename}'");
 

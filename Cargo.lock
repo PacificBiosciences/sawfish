@@ -1043,6 +1043,7 @@ checksum = "fe4cd85333e22411419a0bcae1297d25e58c9443848b11dc6a86fefe8c78a661"
 dependencies = [
  "equivalent",
  "hashbrown",
+ "serde",
 ]
 
 [[package]]
@@ -1807,7 +1808,7 @@ dependencies = [
 
 [[package]]
 name = "sawfish"
-version = "2.0.5"
+version = "2.1.0"
 dependencies = [
  "approx",
  "bio",
@@ -1820,6 +1821,7 @@ dependencies = [
  "fern",
  "flate2",
  "hhmmss",
+ "indexmap",
  "itertools 0.14.0",
  "libc",
  "log",
@@ -1832,6 +1834,7 @@ dependencies = [
  "rust-htslib",
  "rust-vc-utils",
  "rust-wfa2",
+ "scanf",
  "serde",
  "serde_json",
  "simple-error",
@@ -1841,6 +1844,17 @@ dependencies = [
  "thousands",
  "unwrap",
  "vergen-gitcl",
+]
+
+[[package]]
+name = "scanf"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c85223942fb132c9367378fc82b287e26384c7ba898377af05c50a2aa3c412dc"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.104",
 ]
 
 [[package]]

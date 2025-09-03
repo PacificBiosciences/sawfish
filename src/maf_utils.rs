@@ -8,7 +8,7 @@ use rust_vc_utils::{ChromList, bigwig_utils};
 use serde::{Deserialize, Serialize};
 use unwrap::unwrap;
 
-use crate::discover::{MAF_BIGWIG_FILENAME, MAF_MESSAGEPACK_FILENAME};
+use crate::filenames::{MAF_BIGWIG_FILENAME, MAF_MESSAGEPACK_FILENAME};
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct SampleMafData {

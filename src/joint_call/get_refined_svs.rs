@@ -4,18 +4,21 @@ use camino::Utf8Path;
 use rust_htslib::bcf::{self, Read};
 use rust_vc_utils::aux::{get_string_aux_tag, is_aux_tag_found};
 use rust_vc_utils::{ChromList, rev_comp_in_place};
+use scanf::sscanf;
 use unwrap::unwrap;
 
 use crate::bam_sa_parser::get_seq_order_read_split_segments;
 use crate::bam_utils::get_simplified_dna_seq;
-use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint, InsertInfo};
+use crate::breakpoint::{Breakend, BreakendDirection, BreakendNeighbor, Breakpoint, InsertInfo};
 use crate::contig_output::{CONTIG_AUX_TAG, SA_AUX_TAG};
-use crate::discover;
 use crate::expected_ploidy::get_max_haplotype_count_for_regions;
+use crate::filenames::{CANDIDATE_SV_FILENAME, CONTIG_ALIGNMENT_FILENAME};
 use crate::genome_regions::{GenomeRegions, GenomeRegionsByChromIndex};
 use crate::genome_segment::GenomeSegment;
 use crate::int_range::IntRange;
-use crate::large_variant_output::{CONTIG_POS_INFO_KEY, OVERLAP_ASM_INFO_KEY};
+use crate::large_variant_output::{
+    BND0_NEIGHBOR_INFO_KEY, BND1_NEIGHBOR_INFO_KEY, CONTIG_POS_INFO_KEY, OVERLAP_ASM_INFO_KEY,
+};
 use crate::refine_sv::RefinedSV;
 use crate::refine_sv::assembly_regions::read_assembly_regions_from_bed;
 use crate::simple_alignment::SimpleAlignment;
@@ -178,7 +181,7 @@ fn get_candidate_sv_contig_info(
 ) -> SampleAssemblies {
     use rust_htslib::bam::Read;
 
-    let contig_filename = discover_dir.join(discover::CONTIG_ALIGNMENT_FILENAME);
+    let contig_filename = discover_dir.join(CONTIG_ALIGNMENT_FILENAME);
     if !contig_filename.exists() {
         panic!("Can't find contig alignment file expected at {contig_filename}");
     }
@@ -293,6 +296,37 @@ struct AnnotatedRefinedSV {
     /// This provides a way to clarify which contigs are associated with the variant in overlapping contig regions.
     ///
     contig_map: Vec<usize>,
+}
+
+fn parse_breakend_neighbor_info(rec: &bcf::Record, info_key: &str) -> Option<BreakendNeighbor> {
+    // A BcfUndefinedTag error on this INFO key lookup is expected from older versions of discover
+    //
+    let x = match rec.info(info_key.as_bytes()).string() {
+        Ok(x) => x,
+        Err(err) => match &err {
+            rust_htslib::errors::Error::BcfUndefinedTag { .. } => None,
+            _ => panic!(
+                "Unexpected error reading INFO key '{}': {:?}",
+                info_key, err
+            ),
+        },
+    }?;
+
+    let val_bytes = x.first().unwrap();
+    let val_str = std::str::from_utf8(val_bytes).unwrap();
+
+    let mut cluster_index = 0usize;
+    let mut breakend_index = 0usize;
+    unwrap!(
+        sscanf!(val_str, "{cluster_index}:{breakend_index}"),
+        "Unexpected value for candidate VCF INFO key '{info_key}': '{val_str}', from VCF record:\n{}",
+        rec.to_vcf_string().unwrap_or(String::from("ERROR"))
+    );
+    Some(BreakendNeighbor {
+        sample_index: 0,
+        cluster_index,
+        breakend_index,
+    })
 }
 
 /// Process a single SV candidate record from VCF into a refined SV -- this is the first step of converting it
@@ -428,6 +462,7 @@ fn process_bcf_record_to_anno_refine_sv(
             breakend2,
             insert_info,
             is_precise: true,
+            ..Default::default()
         };
 
         let refined_sv = RefinedSV {
@@ -485,11 +520,16 @@ fn process_bcf_record_to_anno_refine_sv(
             InsertInfo::Seq(bnd_alt_info.insert_seq)
         };
 
+        let breakend1_neighbor = parse_breakend_neighbor_info(rec, BND0_NEIGHBOR_INFO_KEY);
+        let breakend2_neighbor = parse_breakend_neighbor_info(rec, BND1_NEIGHBOR_INFO_KEY);
+
         let bp = Breakpoint {
             breakend1,
             breakend2,
             insert_info,
             is_precise: true,
+            breakend1_neighbor,
+            breakend2_neighbor,
         };
 
         let refined_sv = RefinedSV {
@@ -770,7 +810,7 @@ fn process_sv_groups_from_candidate_sv_file(
     contigs: &SampleAssemblies,
     expected_copy_number_regions: Option<&GenomeRegionsByChromIndex>,
 ) -> Vec<SVGroup> {
-    let candidate_sv_filename = discover_dir.join(discover::CANDIDATE_SV_FILENAME);
+    let candidate_sv_filename = discover_dir.join(CANDIDATE_SV_FILENAME);
     if !candidate_sv_filename.exists() {
         panic!("Can't find candidate SV file expected at {candidate_sv_filename}");
     }

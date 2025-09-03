@@ -5,6 +5,8 @@ mod single_region;
 use log::info;
 use std::sync::mpsc::channel;
 
+use self::merge_sv_shared::{ClusterMergeMap, MultiSampleClusterId};
+use crate::breakpoint::BreakendNeighbor;
 use crate::cli::{JointCallSettings, SharedSettings};
 use crate::joint_call::SampleJointCallData;
 use crate::run_stats::{MultiSampleCategoryMergeStats, MultiSampleMergeStats};
@@ -87,13 +89,15 @@ pub fn merge_haplotypes(
         for duplicate_candidate_pool in multi_region_duplicate_candidate_pools {
             let tx = tx.clone();
             scope.spawn(move |_| {
-                let (sv_groups, duplicate_stats) = multi_region::process_duplicate_candidate_pool(
-                    settings.treat_single_copy_as_haploid,
-                    all_sample_data,
-                    &duplicate_candidate_pool,
-                    debug,
-                );
-                tx.send((true, sv_groups, duplicate_stats)).unwrap();
+                let (sv_groups, cluster_merge_map, duplicate_stats) =
+                    multi_region::process_duplicate_candidate_pool(
+                        settings.treat_single_copy_as_haploid,
+                        all_sample_data,
+                        &duplicate_candidate_pool,
+                        debug,
+                    );
+                tx.send((true, sv_groups, cluster_merge_map, duplicate_stats))
+                    .unwrap();
             });
         }
 
@@ -106,22 +110,63 @@ pub fn merge_haplotypes(
                     &duplicate_candidate_pool,
                     debug,
                 );
-                tx.send((false, sv_groups, duplicate_stats)).unwrap();
+                tx.send((
+                    false,
+                    sv_groups,
+                    ClusterMergeMap::default(),
+                    duplicate_stats,
+                ))
+                .unwrap();
             });
         }
     });
 
-    let mut merged_sv_groups = Vec::new();
+    let mut multi_region_merged_sv_groups = Vec::new();
+    let mut multi_region_cluster_merge_map = ClusterMergeMap::default();
     let mut multi_region_duplicate_stats = MultiSampleCategoryMergeStats::default();
+    let mut single_region_merged_sv_groups = Vec::new();
     let mut single_region_duplicate_stats = MultiSampleCategoryMergeStats::default();
-    for (is_multi_region, sv_groups, duplicate_stats) in rx {
+    for (is_multi_region, sv_groups, cluster_merge_map, duplicate_stats) in rx {
         if is_multi_region {
+            multi_region_cluster_merge_map.extend(cluster_merge_map);
             multi_region_duplicate_stats.merge(&duplicate_stats);
+            multi_region_merged_sv_groups.extend(sv_groups);
         } else {
             single_region_duplicate_stats.merge(&duplicate_stats);
+            single_region_merged_sv_groups.extend(sv_groups);
         }
-        merged_sv_groups.extend(sv_groups);
     }
+
+    // Final step for multi-region sv_groups is to update all breakend neighbor ids to their merged values:
+    for x in multi_region_merged_sv_groups.iter_mut() {
+        fn update_breakend_neighbor(
+            breakend_neighbor: Option<&mut BreakendNeighbor>,
+            cluster_merge_map: &ClusterMergeMap,
+        ) {
+            if let Some(x) = breakend_neighbor
+                && let Some(y) = cluster_merge_map.data.get(&MultiSampleClusterId {
+                    sample_index: x.sample_index,
+                    cluster_index: x.cluster_index,
+                })
+            {
+                x.sample_index = y.sample_index;
+                x.cluster_index = y.cluster_index;
+            }
+        }
+
+        let bp = &mut x.refined_svs[0].bp;
+        update_breakend_neighbor(
+            bp.breakend1_neighbor.as_mut(),
+            &multi_region_cluster_merge_map,
+        );
+        update_breakend_neighbor(
+            bp.breakend2_neighbor.as_mut(),
+            &multi_region_cluster_merge_map,
+        );
+    }
+
+    let mut merged_sv_groups = single_region_merged_sv_groups;
+    merged_sv_groups.extend(multi_region_merged_sv_groups);
 
     if debug {
         eprintln!("Merged sv group count {}", merged_sv_groups.len());

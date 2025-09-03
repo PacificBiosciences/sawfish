@@ -1,6 +1,8 @@
 //! Shared haplotype merging code for both single-region and multi-region cases
 //!
 
+use std::collections::BTreeMap;
+
 use crate::expected_ploidy::get_max_haplotype_count_for_regions;
 use crate::joint_call::SampleJointCallData;
 use crate::sv_group::SVGroup;
@@ -68,6 +70,35 @@ pub(super) fn clone_sv_group_as_multisample(
         for group_haplotype in multisample_sv_group.group_haplotypes.iter_mut() {
             group_haplotype.hap_id.sample_index = haplotype_source_sample_index;
         }
+
+        // 4. Move neighbors to new sample_index value:
+        for rsv in multisample_sv_group.refined_svs.iter_mut() {
+            if let Some(x) = rsv.bp.breakend1_neighbor.as_mut() {
+                x.sample_index = haplotype_source_sample_index;
+            }
+            if let Some(x) = rsv.bp.breakend2_neighbor.as_mut() {
+                x.sample_index = haplotype_source_sample_index;
+            }
+        }
     }
     multisample_sv_group
+}
+
+#[derive(Default, Eq, Ord, PartialEq, PartialOrd)]
+pub(super) struct MultiSampleClusterId {
+    pub sample_index: usize,
+    pub cluster_index: usize,
+}
+
+/// Structure to keep track of all multi-region merges:
+#[derive(Default)]
+pub(super) struct ClusterMergeMap {
+    /// Any cluster that gets merged is mapped to its new sample and cluster id here:
+    pub data: BTreeMap<MultiSampleClusterId, MultiSampleClusterId>,
+}
+
+impl ClusterMergeMap {
+    pub fn extend(&mut self, other: Self) {
+        self.data.extend(other.data);
+    }
 }

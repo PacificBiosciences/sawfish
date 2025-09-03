@@ -1,4 +1,4 @@
-mod find_inversions;
+mod annotate_inversions;
 mod get_refined_svs;
 mod joint_call_all_samples;
 mod merge_cnv;
@@ -6,9 +6,10 @@ mod merge_haplotypes;
 mod read_sample_data;
 mod sample_output;
 mod supporting_read_names;
+mod write_copy_number_info;
 mod write_merged_contigs;
 
-use self::find_inversions::find_inversions;
+use self::annotate_inversions::annotate_inversions;
 use self::joint_call_all_samples::joint_genotype_all_samples;
 use self::merge_cnv::merge_sv_with_depth_info;
 use self::merge_haplotypes::merge_haplotypes;
@@ -63,7 +64,7 @@ pub fn run_joint_call(
         merged_sv_groups,
     );
 
-    find_inversions(&mut sv_groups);
+    annotate_inversions(&mut sv_groups);
 
     let refined_cnvs =
         merge_sv_with_depth_info(settings, &shared_data, &all_sample_data, &mut sv_groups);

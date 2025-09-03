@@ -21,7 +21,8 @@ use crate::bam_utils::{
     get_gap_compressed_identity_from_cigar_segment_range, has_aligned_segments,
 };
 use crate::breakpoint::{
-    Breakend, BreakendDirection, Breakpoint, BreakpointCluster, InsertInfo, NeighborBreakend,
+    Breakend, BreakendDirection, Breakpoint, BreakpointCluster, FullBreakendNeighborInfo,
+    InsertInfo,
 };
 use crate::contig_output::{ContigAlignmentInfo, ContigAlignmentSegment};
 use crate::expected_ploidy::SVLocusExpectedCNInfo;
@@ -142,6 +143,7 @@ fn create_indel_refined_sv_candidate(
             breakend2: Some(breakend2),
             insert_info,
             is_precise: true,
+            ..Default::default()
         },
         breakend1_homology_seq: homology_seq,
         single_region_refinement: true,
@@ -826,35 +828,36 @@ fn get_remote_breakend_info(
     chrom_list: &ChromList,
     target_segment: &GenomeSegment,
     target_breakend: &Breakend,
-    breakend_neighbor: Option<&NeighborBreakend>,
+    breakend_neighbor_info: Option<FullBreakendNeighborInfo>,
     debug: bool,
 ) -> Option<RemoteBreakendInfo> {
-    let breakend_neighbor = breakend_neighbor?;
+    let breakend_neighbor_info = breakend_neighbor_info?;
 
     let mut left_ref_flank_size = full_ref_flank_size;
     let mut right_ref_flank_size = full_ref_flank_size;
 
-    let local_neighbor_breakend = {
-        let local_breakend_index = breakend_neighbor.breakend_index;
-        breakend_neighbor
+    let breakend_neighbor_index = breakend_neighbor_info.breakend_neighbor.breakend_index;
+    let local_breakend_neighbor = {
+        let local_breakend_index = breakend_neighbor_index;
+        breakend_neighbor_info
             .breakpoint
             .get_breakend(local_breakend_index)
     };
 
-    let remote_neighbor_breakend = {
-        let remote_breakend_index = (breakend_neighbor.breakend_index + 1) % 2;
-        breakend_neighbor
+    let remote_breakend_neighbor = {
+        let remote_breakend_index = (breakend_neighbor_index + 1) % 2;
+        breakend_neighbor_info
             .breakpoint
             .get_breakend(remote_breakend_index)
     };
 
     // Verify the expected relationship between target and local neighbor breakends
-    assert!(local_neighbor_breakend.dir != target_breakend.dir);
-    assert!(local_neighbor_breakend.segment.chrom_index == target_breakend.segment.chrom_index);
+    assert!(local_breakend_neighbor.dir != target_breakend.dir);
+    assert!(local_breakend_neighbor.segment.chrom_index == target_breakend.segment.chrom_index);
 
     if debug {
         eprintln!(
-            "target breakend {target_breakend:?} local neighbor breakend: {local_neighbor_breakend:?} remote neighbor breakend {remote_neighbor_breakend:?}"
+            "target breakend {target_breakend:?} local neighbor breakend: {local_breakend_neighbor:?} remote neighbor breakend {remote_breakend_neighbor:?}"
         );
     }
 
@@ -868,7 +871,7 @@ fn get_remote_breakend_info(
     match target_breakend.dir {
         BreakendDirection::LeftAnchor => {
             let max_left_flank =
-                target_segment.range.start - local_neighbor_breakend.segment.range.start;
+                target_segment.range.start - local_breakend_neighbor.segment.range.start;
 
             // Give up on using neighbor info for odd cases until we can more carefully understand and handle these
             if max_left_flank <= 0 {
@@ -880,7 +883,7 @@ fn get_remote_breakend_info(
         }
         BreakendDirection::RightAnchor => {
             let max_right_flank =
-                local_neighbor_breakend.segment.range.end - target_segment.range.end;
+                local_breakend_neighbor.segment.range.end - target_segment.range.end;
 
             // Give up on using neighbor info for odd cases until we can more carefully understand and handle these
             if max_right_flank <= 0 {
@@ -914,7 +917,7 @@ fn get_remote_breakend_info(
     //
 
     // Determine if the remote is reversed relative to local
-    let is_remote_reversed = local_neighbor_breakend.dir == remote_neighbor_breakend.dir;
+    let is_remote_reversed = local_breakend_neighbor.dir == remote_breakend_neighbor.dir;
 
     // Up to this point left/right have always been with respect to the target breakend, now these
     // values need to make sense with respect to the remote breakend
@@ -923,7 +926,7 @@ fn get_remote_breakend_info(
     }
 
     // Verify that we're extracting from the correct side of the remote breakend
-    match remote_neighbor_breakend.dir {
+    match remote_breakend_neighbor.dir {
         BreakendDirection::LeftAnchor => {
             assert!(left_remote_flank_size > 0);
         }
@@ -932,7 +935,7 @@ fn get_remote_breakend_info(
         }
     }
 
-    let mut remote_target_segment = remote_neighbor_breakend.segment.clone();
+    let mut remote_target_segment = remote_breakend_neighbor.segment.clone();
 
     // The homology range segment has already been included in the target flank sizes, so the remote segment range needs to be shrunk down to zero,
     // and here we select which side of the segment range to keep.
@@ -976,8 +979,8 @@ fn get_remote_breakend_info(
 /// # Arguments
 /// * `left_ref_flank_size` - the amount of reference flank to add on the left side of the breakend
 /// * `right_ref_flank_size` - the amount of reference flank to add on the right side of the breakend
-/// * `target_breakend` - this is only needed if breakend_neighbor is defined
-/// * `breakend_neighbor` - details of a possible neighboring breakpoint candidate on the same haplotype.
+/// * `target_breakend` - this is only needed if breakend_neighbor_info is defined
+/// * `breakend_neighbor_info` - details of a possible neighboring breakpoint candidate on the same haplotype.
 ///   This can be used to improve representation of the alt haplotype when breakends from different breakpoints
 ///   are close.
 /// * `breakend_index` - index of target breakend, only used for debug messaging
@@ -991,7 +994,7 @@ fn extract_reference_segment_info(
     target_breakend: &Breakend,
     left_ref_flank_size: i64,
     right_ref_flank_size: i64,
-    breakend_neighbor: Option<&NeighborBreakend>,
+    breakend_neighbor_info: Option<FullBreakendNeighborInfo>,
     breakend_index: usize,
     debug: bool,
 ) -> (GenomeSegment, Vec<u8>, Vec<u8>, i64, i64) {
@@ -1000,13 +1003,14 @@ fn extract_reference_segment_info(
         eprintln!(
             "breakend{breakend_index} target_segment {target_segment:?} left_ref_flank_size/right_ref_flank_size {left_ref_flank_size}/{right_ref_flank_size}"
         );
-        if let Some(breakend_neighbor) = breakend_neighbor {
+        if let Some(breakend_neighbor_info) = &breakend_neighbor_info {
             eprintln!(
                 "Breakend neighbor defined. Index: {} bp: {:?}",
-                breakend_neighbor.breakend_index, breakend_neighbor.breakpoint
+                breakend_neighbor_info.breakend_neighbor.breakend_index,
+                breakend_neighbor_info.breakpoint
             );
-            eprintln!("Breakend neighbor target breakend: {target_breakend:?}");
         }
+        eprintln!("Breakend neighbor target breakend: {target_breakend:?}");
     }
 
     let remote_breakend_info = get_remote_breakend_info(
@@ -1015,7 +1019,7 @@ fn extract_reference_segment_info(
         chrom_list,
         target_segment,
         target_breakend,
-        breakend_neighbor,
+        breakend_neighbor_info,
         debug,
     );
 
@@ -1205,6 +1209,7 @@ fn get_two_region_alt_hap_info(
         let right_ref_flank_size = std::cmp::min(right_ref_flank_size, middle_flank_size);
 
         // Extract extended and standard reference segment info and return
+        let breakend_index = 0;
         extract_reference_segment_info(
             refine_settings.hap_alignment_ref_flank_size,
             reference,
@@ -1213,8 +1218,8 @@ fn get_two_region_alt_hap_info(
             breakend1,
             left_ref_flank_size,
             right_ref_flank_size,
-            bpc.breakend1_neighbor.as_ref(),
-            0,
+            bpc.get_full_breakend_neighbor_info(breakend_index == 0),
+            breakend_index,
             debug,
         )
     };
@@ -1235,6 +1240,7 @@ fn get_two_region_alt_hap_info(
         let left_ref_flank_size = std::cmp::min(left_ref_flank_size, middle_flank_size);
 
         // Extract extended and standard reference segment info and return
+        let breakend_index = 1;
         extract_reference_segment_info(
             refine_settings.hap_alignment_ref_flank_size,
             reference,
@@ -1243,8 +1249,8 @@ fn get_two_region_alt_hap_info(
             breakend2,
             left_ref_flank_size,
             right_ref_flank_size,
-            bpc.breakend2_neighbor.as_ref(),
-            1,
+            bpc.get_full_breakend_neighbor_info(breakend_index == 0),
+            breakend_index,
             debug,
         )
     };
@@ -1882,6 +1888,8 @@ fn get_two_region_refined_sv_candidate(
         breakend2,
         insert_info,
         is_precise: true,
+        breakend1_neighbor: bp.breakend1_neighbor.clone(),
+        breakend2_neighbor: bp.breakend2_neighbor.clone(),
     };
     bp.standardize();
 

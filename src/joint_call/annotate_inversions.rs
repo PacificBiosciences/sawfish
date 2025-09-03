@@ -1,9 +1,9 @@
-use crate::breakpoint::{BreakendDirection, InsertInfo};
+use crate::breakpoint::{BreakendDirection, BreakendNeighbor, InsertInfo};
 use crate::genome_segment::GenomeSegment;
 use crate::int_range::get_recip_overlap;
 use crate::refine_sv::Genotype;
 use crate::sv_group::SVGroup;
-use crate::sv_id::{SVUniqueIdData, get_sv_id_label};
+use crate::sv_id::{SVUniqueIdData, get_inv_id_label, get_sv_id_label};
 
 struct CandBpInfo {
     /// Index of SV group in the current sorting of sv_group list
@@ -12,16 +12,22 @@ struct CandBpInfo {
     dir: BreakendDirection,
     segment: GenomeSegment,
     gts: Vec<Option<Genotype>>,
+    breakend1_neighbor: Option<BreakendNeighbor>,
+    breakend2_neighbor: Option<BreakendNeighbor>,
 }
 
-/// Compare 2 inverted breakpoints to see if they form an inversion pair, return true if so
+/// Check two inverted breakpoints to see if they are likely to comprise a balanced inversion, return true if so
 ///
 /// Require:
 /// 1. On same chromosome
 /// 2. Complementary anchor directions
-/// 3. Reciprical overlap >= min_inv_span_recip_overlap
+/// 3. Breakend partner dist is in acceptable range
+/// 4. Reciprical overlap is in acceptable range
+/// 5. If breakend phasing information exists, check that it doesn't conflict with an inversion pattern
 ///
-fn is_inversion(min_inv_span_recip_overlap: f64, c1: &CandBpInfo, c2: &CandBpInfo) -> bool {
+fn is_inversion(inv_settings: &InversionSettings, c1: &CandBpInfo, c2: &CandBpInfo) -> bool {
+    let debug = false;
+
     if c1.dir == c2.dir {
         return false;
     }
@@ -29,8 +35,78 @@ fn is_inversion(min_inv_span_recip_overlap: f64, c1: &CandBpInfo, c2: &CandBpInf
         return false;
     }
 
+    let start_be_dist = (c2.segment.range.start - c1.segment.range.start).abs();
+    let end_be_dist = (c2.segment.range.end - c1.segment.range.end).abs();
+    if std::cmp::max(start_be_dist, end_be_dist) > inv_settings.max_breakend_partner_dist {
+        return false;
+    }
+
     let recip_overlap = get_recip_overlap(&c1.segment.range, &c2.segment.range);
-    recip_overlap >= min_inv_span_recip_overlap
+    if recip_overlap < inv_settings.min_breakpoint_span_recip_overlap {
+        return false;
+    }
+
+    // Check if the downstream breakends are observed as adjacent neighbors on the same haplotype
+    if let Some(x) = &c1.breakend1_neighbor
+        && x.sample_index == c2.id.sample_index
+        && x.cluster_index == c2.id.cluster_index
+        && x.breakend_index == 0
+    {
+        if debug {
+            eprintln!(
+                "B1: c1 cluster {:?} and c2 cluster {:?} on the same haplotype, filtered from inversions",
+                c1.id, c2.id
+            );
+        }
+        return false;
+    }
+
+    // Check if the upstream breakends are observed as adjacent neighbors on the same haplotype
+    if let Some(x) = &c1.breakend2_neighbor
+        && x.sample_index == c2.id.sample_index
+        && x.cluster_index == c2.id.cluster_index
+        && x.breakend_index == 1
+    {
+        if debug {
+            eprintln!(
+                "B2: c1 cluster {:?} and c2 cluster {:?} on the same haplotype, filtered from inversions",
+                c1.id, c2.id
+            );
+        }
+        return false;
+    }
+
+    // We can also ask a less specific QC question, does the inversion breakend have a neighboring breakend on the same
+    // haplotype that comes from a cluster other than the inversion? If so, this is a general indication that it's part
+    // of a more complex SV, and not usually described as an inversion.
+    //
+    // This filtration idea is too non-specific in its current form to be applied to all inversions, but for larger
+    // inversions we're even more conservative with inversion annotation, attempting to restrict to very obvious and
+    // clean examples only.
+    //
+    let min_span_for_neighbor_breakend_filter = 100_000;
+    let min_span = std::cmp::min(c1.segment.range.size(), c2.segment.range.size());
+    if min_span >= min_span_for_neighbor_breakend_filter {
+        fn has_non_inv_breakend_neighbor(ca: &CandBpInfo, cb: &CandBpInfo) -> bool {
+            if let Some(x) = &ca.breakend1_neighbor
+                && x.cluster_index != cb.id.cluster_index
+            {
+                true
+            } else if let Some(x) = &ca.breakend2_neighbor
+                && x.cluster_index != cb.id.cluster_index
+            {
+                true
+            } else {
+                false
+            }
+        }
+
+        if has_non_inv_breakend_neighbor(c1, c2) || has_non_inv_breakend_neighbor(c2, c1) {
+            return false;
+        }
+    }
+
+    true
 }
 
 /// Duplicated breakpoints should be rare but can occur
@@ -63,35 +139,61 @@ fn do_most_inversion_genotypes_match(c1: &CandBpInfo, c2: &CandBpInfo) -> bool {
 
 /// Given the SV group for a BND record marked as INV associated, update it with information needed to change the VCF output record per INV output policy.
 ///
-fn mark_inv_bnd(sv_group: &mut SVGroup, inv_index: usize) {
+fn mark_inv_bnd(sv_group: &mut SVGroup, inversion_id: &str) {
     assert_eq!(sv_group.refined_svs.len(), 1);
-    sv_group.refined_svs[0].ext.inversion_id = Some(inv_index);
+    sv_group.refined_svs[0].ext.inversion_id = Some(inversion_id.to_string());
 }
 
-/// Find likely simple inversions in the input breakend set
+/// All parameters influencing inversion annotation
+pub struct InversionSettings {
+    /// Max span for either of the two breakpoints comprising the inversion
+    ///
+    /// If None, no max span is enforced
+    max_breakpoint_span: Option<i64>,
+
+    /// Max distance between the two partner breakends on either end of the inversion
+    max_breakend_partner_dist: i64,
+
+    /// The 'left-left' span and 'right-right' breakpoint spans need to have at least this recip overlap to be
+    /// classified as an inversion event:
+    min_breakpoint_span_recip_overlap: f64,
+}
+
+impl Default for InversionSettings {
+    fn default() -> Self {
+        Self {
+            max_breakpoint_span: None,
+            max_breakend_partner_dist: 10_000,
+            min_breakpoint_span_recip_overlap: 0.6,
+        }
+    }
+}
+
+/// Annotate likely balanced inversions in the input breakpoint set
 ///
-/// This routine does not include any logic to ensure that breakends are on the same haplotype, it just provides a simple pairing
+/// This routine does not include any logic to ensure that breakends are on the same haplotype, it just provides a
+/// simple pairing inference.
 ///
-/// Assumes sv_groups are not sorted
+/// Does not assume sv_groups are sorted. Will only edit BNDs determined to be part of inversions and add inversion
+/// records to sv_groups.
 ///
-pub fn find_inversions(sv_groups: &mut Vec<SVGroup>) {
+pub fn annotate_inversions(sv_groups: &mut Vec<SVGroup>) {
     // Summary of ops:
-    // Store list of candidate breakpoints
-    // Sort list
-    // Walk sorted list to find simple pairs meeting all criteria.
+    // 1. Store list of candidate breakpoints
+    // 2. Sort list
+    // 3. Walk sorted list to find simple pairs meeting all criteria.
 
     // Hard code parameters here for now:
-
-    //
-    let max_bp_span = 100_000;
-
-    // The 'innie-innie' span and 'outie-outie' spans need to have at least this recip overlap to be classified
-    // as an inversion event:
-    let min_inv_span_recip_overlap = 0.6;
+    let inv_settings = InversionSettings::default();
 
     let mut inv_cand_bps = Vec::new();
 
     // Collect a list of inverted intrachromasomal breakpoints meeting eligibility criteria for inversion
+    // Criteria:
+    // 1. Not max scoring depth in any sample
+    // 2. Inverted intrachromosomal breakpoint
+    // 3. Optionally, breakpoint span is less than max_span
+    // 4. At least one sample must have a variant genotype for the breakpoint
     //
     for (sv_group_index, sv_group) in sv_groups.iter().enumerate() {
         // First filter down to just breakends found on a single chromosome with inverted orieintation:
@@ -100,6 +202,13 @@ pub fn find_inversions(sv_groups: &mut Vec<SVGroup>) {
         }
         assert_eq!(sv_group.refined_svs.len(), 1);
         let rsv = &sv_group.refined_svs[0];
+        let score_info = &rsv.score;
+
+        let is_max_scoring_depth = score_info.samples.iter().any(|x| x.is_max_scoring_depth);
+        if is_max_scoring_depth {
+            continue;
+        }
+
         let bp = &rsv.bp;
         let be1 = &bp.breakend1;
         let be2 = bp.breakend2.as_ref().unwrap();
@@ -108,14 +217,17 @@ pub fn find_inversions(sv_groups: &mut Vec<SVGroup>) {
             continue;
         }
 
-        let span = be2.segment.range.start - be1.segment.range.start;
+        // transform breakend segment into breakpoint span segment, removing the encoding of breakend homology range
+        let mut segment = be1.segment.clone();
+        segment.range.end = be2.segment.range.start + 1;
 
-        if span > max_bp_span {
+        if let Some(max_span) = inv_settings.max_breakpoint_span
+            && segment.range.size() > max_span
+        {
             continue;
         }
 
         // For each sample where this breakpoint is present, record the genotype
-        let score_info = &rsv.score;
         let gts = score_info
             .samples
             .iter()
@@ -128,9 +240,13 @@ pub fn find_inversions(sv_groups: &mut Vec<SVGroup>) {
             })
             .collect::<Vec<_>>();
 
-        // transform breakend segment into breakpoint span segment, removing the encoding of breakend homology range
-        let mut segment = be1.segment.clone();
-        segment.range.end = be2.segment.range.start + 1;
+        // Check that the breakpoint has a variant haplotype in at least one sample:
+        let any_variants = gts
+            .iter()
+            .any(|x| x.as_ref().is_some_and(|y| *y != Genotype::Ref));
+        if !any_variants {
+            continue;
+        }
 
         inv_cand_bps.push(CandBpInfo {
             sv_group_index,
@@ -138,6 +254,8 @@ pub fn find_inversions(sv_groups: &mut Vec<SVGroup>) {
             dir: be1.dir,
             segment,
             gts,
+            breakend1_neighbor: bp.breakend1_neighbor.clone(),
+            breakend2_neighbor: bp.breakend2_neighbor.clone(),
         });
     }
 
@@ -161,16 +279,18 @@ pub fn find_inversions(sv_groups: &mut Vec<SVGroup>) {
         )
     });
 
+    /// All information stored for an inversion after a pair of inverted breakpoints has been found to
+    /// meet all eligibility criteria
+    ///
     struct InvBpInfo {
         sv_group_index1: usize,
         sv_group_index2: usize,
-        inv_index: usize,
+        inversion_id: String,
 
         /// True if the two breakpoints have conflicting genotypes in most samples
         is_conflicting_gt: bool,
     }
     let mut inv_pairs = Vec::new();
-    let mut inv_index = 0;
 
     // Find pairs in sorted candidates
     //
@@ -180,17 +300,17 @@ pub fn find_inversions(sv_groups: &mut Vec<SVGroup>) {
     let mut last_cand: Option<CandBpInfo> = None;
     for cand in inv_cand_bps {
         if let Some(base_cand) = &last_cand {
-            if is_inversion(min_inv_span_recip_overlap, base_cand, &cand) {
+            if is_inversion(&inv_settings, base_cand, &cand) {
                 let is_conflicting_gt = !do_most_inversion_genotypes_match(base_cand, &cand);
+                let inversion_id = get_inv_id_label(&base_cand.id);
 
                 // Join cand and last cand into an inversion:
                 inv_pairs.push(InvBpInfo {
                     sv_group_index1: base_cand.sv_group_index,
                     sv_group_index2: cand.sv_group_index,
-                    inv_index,
+                    inversion_id,
                     is_conflicting_gt,
                 });
-                inv_index += 1;
                 last_cand = None;
                 continue;
             }
@@ -209,8 +329,8 @@ pub fn find_inversions(sv_groups: &mut Vec<SVGroup>) {
     // 3. Add new inversion SV group, with the inversion event tag - How to fit this into the refinedSV scheme --  make up a fake breakpoint?
     //
     for ipair in inv_pairs.iter() {
-        mark_inv_bnd(&mut sv_groups[ipair.sv_group_index1], ipair.inv_index);
-        mark_inv_bnd(&mut sv_groups[ipair.sv_group_index2], ipair.inv_index);
+        mark_inv_bnd(&mut sv_groups[ipair.sv_group_index1], &ipair.inversion_id);
+        mark_inv_bnd(&mut sv_groups[ipair.sv_group_index2], &ipair.inversion_id);
         let mut inv_sv_group = sv_groups[ipair.sv_group_index1].clone();
         let rsv = &mut inv_sv_group.refined_svs[0];
         let be2 = rsv.bp.breakend2.as_mut().unwrap();

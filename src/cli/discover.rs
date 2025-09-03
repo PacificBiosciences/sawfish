@@ -8,7 +8,7 @@ use unwrap::unwrap;
 
 use super::defaults::{MIN_GAP_COMPRESSED_IDENTITY, MIN_SV_MAPQ};
 use super::utils::{check_optional_filename, check_required_filename};
-use crate::discover::SETTINGS_FILENAME;
+use crate::filenames::SETTINGS_FILENAME;
 use crate::genome_regions::read_genome_regions_from_bed;
 use crate::utils::canonicalize_string_path;
 
@@ -178,13 +178,17 @@ pub struct DiscoverSettings {
     /// Maximum distance between breakends for them to be treated as 'close' for the purpose of modifying the alt
     /// haplotype model
     ///
-    #[arg(hide = true, long, default_value_t = 2000)]
+    #[arg(hide = true, long, default_value_t = 20000)]
     pub max_close_breakend_distance: usize,
 
     /// Remove all clusters except for the given index and turn on high level refinement debug output.
     ///
     #[arg(hide = true, long)]
     pub target_cluster_index: Option<usize>,
+
+    /// Unless CNV is disabled for this sample, the max SV scoring depth will be set to haploid depth times this factor
+    #[arg(hide = true, long, default_value_t = 12)]
+    pub max_copy_number_for_sv_scoring: u32,
 }
 
 impl DiscoverSettings {

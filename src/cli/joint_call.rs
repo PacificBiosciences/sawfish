@@ -4,7 +4,8 @@ use camino::Utf8PathBuf;
 use clap::Args;
 use const_format::concatcp;
 use csv::{ReaderBuilder, Trim};
-use simple_error::{SimpleResult, bail};
+use regex::Regex;
+use simple_error::{SimpleResult, bail, map_err_with};
 use unwrap::unwrap;
 
 use super::utils::check_optional_filename;
@@ -92,6 +93,17 @@ pub struct JointCallSettings {
     /// Skip checks on input sample discover directory contents
     #[arg(long)]
     pub skip_sample_input_check: bool,
+
+    /// Regex used to select chromosomes where max depth filtration is disabled
+    ///
+    /// Default value is intended to disable high depth filtration on mitochondria
+    ///
+    #[arg(
+        long,
+        value_name = "REGEX",
+        default_value = r"(?i)^(chr)?(m|mt|mito|mitochondria)$"
+    )]
+    pub disable_max_dapth_chrom_regex: String,
 
     /// Disable SV/CNV merge, for internal debug only
     #[arg(hide = true, long)]
@@ -197,7 +209,7 @@ fn check_valid_sample_discover_dirs(
     settings: &JointCallSettings,
     all_input_sample_data: &[InputSampleData],
 ) -> SimpleResult<()> {
-    use crate::discover::RUN_STATS_FILENAME;
+    use crate::filenames::RUN_STATS_FILENAME;
 
     for input_sample_data in all_input_sample_data.iter() {
         let discover_dir = &input_sample_data.discover_dir;
@@ -327,6 +339,12 @@ pub fn validate_and_fix_joint_call_settings(
     };
 
     check_optional_filename(settings.ref_filename.as_ref(), "reference")?;
+
+    // Check that regex is valid
+    let _ = map_err_with!(
+        Regex::new(&settings.disable_max_dapth_chrom_regex),
+        "Invalid regex for --disable-max-dapth-chrom-regex"
+    )?;
 
     let derived_settings = JointCallDerivedSettings {
         all_input_sample_data,

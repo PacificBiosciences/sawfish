@@ -2616,7 +2616,7 @@ fn score_refined_sv_group(
 }
 
 pub struct SampleScoreData<'a> {
-    pub genome_max_sv_depth_regions: &'a [ChromRegions],
+    pub genome_sv_scoring_exclusion_regions: &'a [ChromRegions],
 }
 
 /// Run breakpoint scoring on all refined_svs from a single group
@@ -2644,7 +2644,7 @@ pub fn score_and_assess_refined_sv_group(
 
     let all_sample_genome_max_sv_depth_regions = all_sample_data
         .iter()
-        .map(|x| x.genome_max_sv_depth_regions)
+        .map(|x| x.genome_sv_scoring_exclusion_regions)
         .collect::<Vec<_>>();
 
     score_refined_sv_group(

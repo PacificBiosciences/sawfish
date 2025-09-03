@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use simple_error::{SimpleResult, try_with};
 use unwrap::unwrap;
 
-use crate::discover::RUN_STATS_FILENAME;
+use crate::filenames::RUN_STATS_FILENAME;
 
 #[derive(Default, Deserialize, Serialize)]
 pub struct ClusterStats {
@@ -60,7 +60,7 @@ impl MultiSampleCategoryMergeStats {
     }
 }
 
-#[derive(Default, Deserialize, Serialize)]
+#[derive(Clone, Default, Deserialize, Serialize)]
 pub struct RunStep {
     pub name: String,
     pub version: String,
@@ -121,13 +121,13 @@ pub fn read_discover_run_stats(discover_dir: &Utf8Path) -> SimpleResult<Discover
     let filename = discover_dir.join(RUN_STATS_FILENAME);
     let file = try_with!(
         File::open(&filename),
-        "Unable to read discover-mode run statistics json file: '{filename}'"
+        "Unable to read discover-step run statistics json file: '{filename}'"
     );
 
     let reader = BufReader::new(file);
     let run_stats = try_with!(
         serde_json::from_reader(reader),
-        "Unable to parse discover-mode run statistics from json file: '{filename}'"
+        "Unable to parse discover-step run statistics from json file: '{filename}'"
     );
 
     Ok(run_stats)

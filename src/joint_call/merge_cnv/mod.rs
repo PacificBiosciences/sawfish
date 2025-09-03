@@ -7,6 +7,7 @@ use camino::Utf8Path;
 use log::info;
 
 use self::transition_types::get_copynum_transition_types_from_breakends;
+use super::write_copy_number_info::write_copy_number_info;
 use crate::breakpoint::BreakendDirection;
 use crate::cli::JointCallSettings;
 use crate::copy_number_segmentation::{
@@ -145,7 +146,7 @@ fn convert_cn_segment_to_refined_cnv(
 ) -> Option<RefinedCNV> {
     let segment = GenomeSegment {
         chrom_index,
-        range: IntRange::from_pair(cn_segment.begin_pos(bin_size), cn_segment.end_pos(bin_size)),
+        range: cn_segment.to_range(bin_size),
     };
 
     let mut score = CNVScoreInfo::default();
@@ -1048,6 +1049,14 @@ pub fn merge_sv_with_depth_info(
 
     // Write new depth segments to file:
     write_resegment_results_to_file(
+        &settings.output_dir,
+        shared_data,
+        all_sample_data,
+        &seg_input,
+        &cn_segments,
+    );
+
+    write_copy_number_info(
         &settings.output_dir,
         shared_data,
         all_sample_data,

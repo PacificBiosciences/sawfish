@@ -81,10 +81,30 @@ pub fn get_bam_reader_worker_thread_data(
     //
     let mut refs: *mut htslib::refs_t = std::ptr::null_mut();
 
-    for _ in 0..shared_settings.thread_count {
+    let orig_hts_log_level = unsafe { htslib::hts_get_log_level() };
+
+    for thread_index in 0..shared_settings.thread_count {
+        // Turn htslib warnings off after first bam opening iteration, so that warnings are reported once but aren't
+        // repeated thread_count times. Most often we see this repetition for the index timestamp warning:
+        //
+        // "[W::hts_idx_load3] The index file is older than the data file: ..."
+        //
+        if thread_index == 1 {
+            unsafe {
+                htslib::hts_set_log_level(htslib::htsLogLevel_HTS_LOG_ERROR);
+            };
+        }
+
         let mut x = BamReaderWorkerThreadData::new(bam_filenames);
         refs = x.enable_cram_shared_reference(ref_filename, refs);
         worker_thread_data.push(Mutex::new(x));
     }
+
+    if shared_settings.thread_count > 1 {
+        unsafe {
+            htslib::hts_set_log_level(orig_hts_log_level);
+        };
+    }
+
     Arc::new(worker_thread_data)
 }

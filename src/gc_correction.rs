@@ -8,7 +8,7 @@ use unwrap::unwrap;
 
 use crate::bam_scanner::SampleAlignmentScanResult;
 use crate::depth_bins::{self, ChromDepthBins, DepthBin, GenomeDepthBins};
-use crate::discover::{
+use crate::filenames::{
     GC_BIAS_CORRECTED_DEPTH_BINS_BIGWIG_FILENAME, GENOME_GC_LEVELS_MESSAGEPACK_FILENAME,
     SAMPLE_GC_BIAS_MESSAGEPACK_FILENAME,
 };

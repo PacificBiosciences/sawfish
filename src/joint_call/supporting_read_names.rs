@@ -9,7 +9,7 @@ use unwrap::unwrap;
 use crate::breakpoint::{VcfSVType, get_breakpoint_vcf_sv_type};
 use crate::refine_sv::get_rsv_id_label;
 use crate::sv_group::SVGroup;
-use crate::sv_id::get_bnd_sv_id_label;
+use crate::sv_id::get_bnd_id_label;
 
 /// Key on sample name
 type VariantSupportingReadNames = BTreeMap<String, Vec<String>>;
@@ -41,8 +41,8 @@ fn get_supporting_read_names_from_sv_groups(
 
             let labels = if is_breakpoint {
                 vec![
-                    get_bnd_sv_id_label(&refined_sv.id, true),
-                    get_bnd_sv_id_label(&refined_sv.id, false),
+                    get_bnd_id_label(&refined_sv.id, true),
+                    get_bnd_id_label(&refined_sv.id, false),
                 ]
             } else {
                 vec![get_rsv_id_label(refined_sv)]

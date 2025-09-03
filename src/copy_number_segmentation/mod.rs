@@ -12,8 +12,8 @@ use self::copy_number_boundary_sync::sync_chrom_copy_number_boundaries;
 use crate::bam_scanner::SampleAlignmentScanResult;
 use crate::cli;
 use crate::depth_bins::{DepthBin, GenomeDepthBins, get_bin_index, get_complete_bin_count};
-use crate::discover::{COPYNUM_SEGMENT_BEDGRAPH_FILENAME, COPYNUM_SEGMENT_MESSAGEPACK_FILENAME};
 use crate::expected_ploidy::get_expected_copy_number_info_for_regions;
+use crate::filenames::{COPYNUM_SEGMENT_BEDGRAPH_FILENAME, COPYNUM_SEGMENT_MESSAGEPACK_FILENAME};
 use crate::gc_correction::{GCBiasCorrectionData, GenomeGCLevels, SampleGCBiasCorrectionData};
 use crate::genome_regions::GenomeRegionsByChromIndex;
 use crate::genome_segment::GenomeSegment;
@@ -963,22 +963,25 @@ pub fn get_sample_copy_number_segments(
     chrom_list: &ChromList,
     sample_scan_result: &SampleAlignmentScanResult,
     gc_bias_data: &GCBiasCorrectionData,
-) -> SampleCopyNumberSegments {
+) -> (HaploidCoverage, SampleCopyNumberSegments) {
     info!("Segmenting copy number");
 
     // Iterate until the haploid coverage estimate converges or we reach max iteration count
     let max_iteration = 8;
+    let mut haploid_coverage = None;
     let mut copy_number_segments = None;
     let mut last_coverage = 0.0;
     for iteration in 0..max_iteration {
-        let haploid_coverage = get_haploid_genome_coverage(
+        haploid_coverage = Some(get_haploid_genome_coverage(
             settings.coverage_est_regex.as_str(),
             chrom_list,
             &sample_scan_result.genome_depth_bins,
             &gc_bias_data.genome_gc_levels,
             &gc_bias_data.sample_gc_bias_data,
             copy_number_segments.as_ref(),
-        );
+        ));
+
+        let haploid_coverage = haploid_coverage.as_ref().unwrap();
 
         info!(
             "Haploid coverage estimate iteration {}. Uncorrected: {:.3} GC-Corrected: {:.3}",
@@ -1023,7 +1026,7 @@ pub fn get_sample_copy_number_segments(
         }
         last_coverage = haploid_coverage.gc_corrected_depth;
     }
-    copy_number_segments.unwrap()
+    (haploid_coverage.unwrap(), copy_number_segments.unwrap())
 }
 
 #[cfg(test)]

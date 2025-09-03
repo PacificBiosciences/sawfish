@@ -131,7 +131,7 @@ fn scan_chromosome_segments(
     chrom_sequence: &[u8],
     chrom_target_regions: Option<&ChromRegions>,
     progress_reporter: &ProgressReporter,
-) -> (BreakObservations, AllChromDepthBinInfo, ChromRegions) {
+) -> (BreakObservations, AllChromDepthBinInfo, DepthBinsBuilder) {
     let (tx, rx) = channel();
 
     let is_targeted_scan = chrom_target_regions.is_some();
@@ -172,15 +172,10 @@ fn scan_chromosome_segments(
         chrom_break_observations.merge(&mut other_break_observations);
         depth_builder.merge(&other_depth_builder);
     }
-    let chrom_depth_bins = depth_builder.get_depth_bins(scan_settings.depth_bin_size, chrom_size);
-    let chrom_max_sv_depth_regions =
-        depth_builder.get_regions_over_max_depth(chrom_size, scan_settings.max_sv_depth);
 
-    (
-        chrom_break_observations,
-        chrom_depth_bins,
-        chrom_max_sv_depth_regions,
-    )
+    let chrom_depth_bins = depth_builder.get_depth_bins(scan_settings.depth_bin_size, chrom_size);
+
+    (chrom_break_observations, chrom_depth_bins, depth_builder)
 }
 
 pub struct SampleAlignmentScanResult {
@@ -191,8 +186,7 @@ pub struct SampleAlignmentScanResult {
     /// A vector with depth bins for each chromosome in the genome
     pub genome_depth_bins: GenomeDepthBins,
 
-    /// Regions of the genome with depth higher than max_sv_depth
-    pub genome_max_sv_depth_regions: Vec<ChromRegions>,
+    pub genome_depth_bins_builder: Vec<DepthBinsBuilder>,
 }
 
 struct ScanSettings {
@@ -204,11 +198,6 @@ struct ScanSettings {
 
     /// This defines how large of a chromosome segment should be processed by a single thread
     segment_size: u64,
-
-    /// Maximum depth for full SV calling, this is used to generate a map of regions with
-    /// reduced SV calling downstream
-    ///
-    max_sv_depth: u32,
 }
 
 /// Read single alignment file and translate into raw SV evidence and depth data structures
@@ -236,7 +225,6 @@ pub fn scan_sample_bam_for_sv_evidence(
         max_close_breakend_distance: settings.max_close_breakend_distance,
         min_sv_mapq: settings.min_sv_mapq,
         segment_size: 20_000_000,
-        max_sv_depth: 1_000,
     };
 
     assert!(shared_settings.thread_count > 0);
@@ -303,14 +291,19 @@ pub fn scan_sample_bam_for_sv_evidence(
     let mut genome_break_observations = BreakObservations::new();
     let mut depth_bins = vec![ChromDepthBins::new(); chrom_count];
     let mut read_length = MeanTracker::default();
-    let mut genome_max_sv_depth_regions = vec![ChromRegions::new(); chrom_count];
-    for (chrom_index, (mut break_observations, chrom_depth_bins, chrom_max_sv_depth_regions)) in rx
-    {
+    let mut genome_depth_bins_builder = Vec::new();
+    for (chrom_index, (mut break_observations, chrom_depth_bins, chrom_depth_bins_builder)) in rx {
         genome_break_observations.merge(&mut break_observations);
         depth_bins[chrom_index] = chrom_depth_bins.depth_bins;
         read_length.merge(&chrom_depth_bins.read_length);
-        genome_max_sv_depth_regions[chrom_index] = chrom_max_sv_depth_regions;
+        genome_depth_bins_builder.push((chrom_index, chrom_depth_bins_builder));
     }
+
+    genome_depth_bins_builder.sort_by_key(|(i, _)| *i);
+    let genome_depth_bins_builder = genome_depth_bins_builder
+        .into_iter()
+        .map(|(_, x)| x)
+        .collect::<Vec<_>>();
 
     let genome_depth_bins = GenomeDepthBins {
         bin_size: scan_settings.depth_bin_size,
@@ -325,6 +318,6 @@ pub fn scan_sample_bam_for_sv_evidence(
         sample_name,
         genome_break_observations,
         genome_depth_bins,
-        genome_max_sv_depth_regions,
+        genome_depth_bins_builder,
     }
 }

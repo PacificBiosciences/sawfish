@@ -151,7 +151,7 @@ impl PairwiseAligner<MatchParams> {
         }
     }
 
-    /// Second (of two) aligners used for an 'overlap' alignment where the pattern prefix preceeds the text.
+    /// Second (of two) aligners used for an 'overlap' alignment where the pattern prefix precedes the text.
     ///
     pub fn new_pattern_prefix_aligner(scoring: Scoring<MatchParams>, k: usize, w: usize) -> Self {
         let scoring = scoring.yclip_suffix(0).xclip_prefix(0);

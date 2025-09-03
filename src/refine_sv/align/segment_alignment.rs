@@ -89,7 +89,7 @@ pub struct AltHapLeftRightComponentAlignmentInfo {
 /// alt haplotype alignment coodinates, just with the spacer removed to yeild the corresponding left and right
 /// sides of the alt haplotype, and with the alignments now expressed with respoect to those left and right
 /// segments. Thus if reference region2 is rev-comped relative to reference in the alt-hap sequence it is still
-/// rev-comped in the left-right result, and if reference region2 preceeds region1 in the alt-hap sequence it
+/// rev-comped in the left-right result, and if reference region2 precedes region1 in the alt-hap sequence it
 /// remains as the 'left' component in the left-right result.
 ///
 /// Example:

@@ -3,7 +3,8 @@ use std::collections::BinaryHeap;
 use rust_vc_utils::ChromList;
 
 use super::merge_sv_shared::{
-    AnnoSVGroup, clone_sv_group_as_multisample, set_sv_group_expected_cn_info,
+    AnnoSVGroup, ClusterMergeMap, MultiSampleClusterId, clone_sv_group_as_multisample,
+    set_sv_group_expected_cn_info,
 };
 use super::{CandidateSVGroupInfo, get_duplicate_stats};
 use crate::bio_align_utils::{PairwiseAligner, print_pairwise_alignment};
@@ -87,6 +88,10 @@ fn test_for_duplicate_haplotypes(sv_group1: &SVGroup, sv_group2: &SVGroup) -> bo
     // Use bp match as a quick shortcut test first:
     //
     // This relies on multi-region sv groups having exactly one refined_sv
+    //
+    // TODO: Note that extended information in the breakpoint, like neighbors can prevent this type
+    // of equality, is that working the way we intend now?
+    //
     if sv_group1.refined_svs[0].bp == sv_group2.refined_svs[0].bp {
         return true;
     }
@@ -100,12 +105,15 @@ fn test_for_duplicate_haplotypes(sv_group1: &SVGroup, sv_group2: &SVGroup) -> bo
 /// 1. Determine how many SVGroups to keep out of the pool members
 /// 2. Reformat the single-sample SVGroup into multi-sample format
 ///
-/// Return the deduplicated sv groups
+/// Returns a 2-tuple of:
+/// 1. the deduplicated sv groups
+/// 2. a map of deduplicated cluster ids to the cluster they were merged into
+///
 fn merge_duplicated_candidates(
     all_sample_data: &[SampleJointCallData],
     duplicate_candidate_pool: &Vec<CandidateSVGroupInfo>,
     debug: bool,
-) -> Vec<SVGroup> {
+) -> (Vec<SVGroup>, ClusterMergeMap) {
     assert!(!duplicate_candidate_pool.is_empty());
 
     if debug {
@@ -120,13 +128,29 @@ fn merge_duplicated_candidates(
         })
         .collect::<Vec<_>>();
 
+    if debug {
+        eprintln!(
+            "Multi-Merge: processing pool of {} candidates.",
+            sv_groups.len()
+        );
+        for (sv_group_index, sv_group) in sv_groups.iter().enumerate() {
+            let rsv = &sv_group.sv_group.refined_svs[0];
+            eprintln!(
+                "Candidate {sv_group_index}: cluster_id: {} bp: {:?}",
+                rsv.id.cluster_index, rsv.bp
+            );
+        }
+    }
+
+    let mut cluster_merge_map = ClusterMergeMap::default();
+
     let sample_count = all_sample_data.len();
 
     // Step 1: Handle the single SV candidate case, which doesn't need any merging:
     if sv_groups.len() == 1 {
         // Reformat the only sv group for multi-sample output.
         let multisample_sv_group = clone_sv_group_as_multisample(sample_count, &sv_groups[0]);
-        return vec![multisample_sv_group];
+        return (vec![multisample_sv_group], cluster_merge_map);
     }
 
     // Step 2: Run simple pairwise search to create similar sv group pools, then sort the best
@@ -154,7 +178,17 @@ fn merge_duplicated_candidates(
                     sv_groups[sv_group_index2].sv_group,
                 ) {
                     if debug {
-                        eprintln!("Multi-Merge: merging sv group 1/2");
+                        eprintln!("Multi-Merge: merging sv groups 1 and 2");
+                        let rsv1 = &sv_groups[sv_group_index1].sv_group.refined_svs[0];
+                        eprintln!(
+                            "sv group 1: cluster_id: {} bp: {:?}",
+                            rsv1.id.cluster_index, rsv1.bp
+                        );
+                        let rsv2 = &sv_groups[sv_group_index2].sv_group.refined_svs[0];
+                        eprintln!(
+                            "sv group 2: cluster_id: {} bp: {:?}",
+                            rsv2.id.cluster_index, rsv2.bp
+                        );
                     }
                     let mut tmp = Vec::new();
                     std::mem::swap(&mut sv_group_merge_pools[sv_group_index2], &mut tmp);
@@ -195,7 +229,13 @@ fn merge_duplicated_candidates(
         let base_sample_index = sv_groups[pool[0]].sample_index;
         let base_sample_hap_map =
             base_multisample_sv_group.sample_haplotype_list[base_sample_index].clone();
-        for sample_index in pool.into_iter().skip(1).map(|x| sv_groups[x].sample_index) {
+        let base_cluster_index = base_multisample_sv_group.refined_svs[0].id.cluster_index;
+
+        for anno_sv_group in pool.into_iter().skip(1).map(|x| &sv_groups[x]) {
+            let sample_index = anno_sv_group.sample_index;
+            let rsv = &anno_sv_group.sv_group.refined_svs[0];
+            let cluster_index = rsv.id.cluster_index;
+
             // Note that it turns out we can have repeated multi-region SVs from the same
             // sample. Although the starting target regions for the SVs are prevented from
             // duplicating, the assemblies from 2 nearby cases can end up forming the same
@@ -205,30 +245,50 @@ fn merge_duplicated_candidates(
             // assert_ne!(base_sample_index, sample_index);
             base_multisample_sv_group.sample_haplotype_list[sample_index] =
                 base_sample_hap_map.clone();
+
+            let from_cluster = MultiSampleClusterId {
+                sample_index,
+                cluster_index,
+            };
+            let to_cluster = MultiSampleClusterId {
+                sample_index: base_sample_index,
+                cluster_index: base_cluster_index,
+            };
+
+            let base_bp = &mut base_multisample_sv_group.refined_svs[0].bp;
+            if base_bp.breakend1_neighbor.is_none() {
+                base_bp.breakend1_neighbor = rsv.bp.breakend1_neighbor.clone();
+            }
+            if base_bp.breakend2_neighbor.is_none() {
+                base_bp.breakend2_neighbor = rsv.bp.breakend2_neighbor.clone();
+            }
+
+            cluster_merge_map.data.insert(from_cluster, to_cluster);
         }
         output_sv_groups.push(base_multisample_sv_group);
     }
 
-    output_sv_groups
+    (output_sv_groups, cluster_merge_map)
 }
 
 /// Return de-duplicated multi-sample SV groups
 ///
-/// Return a 2-tuple of:
+/// Return a 3-tuple of:
 /// 1. A vector of ordered, de-duplicated candidate SV groups to evaluate over all samples
 ///    The groups in this case all have exactly 1 SV, because these are 2 region candidates we
 ///    don't deal with overlap processing.
-/// 2. Multi-region SV merge stats
+/// 2. A map of how input clusters were consolidated to output clusters
+/// 3. Multi-region SV merge stats
 ///
 pub(super) fn process_duplicate_candidate_pool(
     treat_single_copy_as_haploid: bool,
     all_sample_data: &[SampleJointCallData],
     duplicate_candidate_pool: &Vec<CandidateSVGroupInfo>,
     debug: bool,
-) -> (Vec<SVGroup>, MultiSampleCategoryMergeStats) {
+) -> (Vec<SVGroup>, ClusterMergeMap, MultiSampleCategoryMergeStats) {
     assert!(!duplicate_candidate_pool.is_empty());
 
-    let mut sv_groups =
+    let (mut sv_groups, cluster_merge_map) =
         merge_duplicated_candidates(all_sample_data, duplicate_candidate_pool, debug);
 
     set_sv_group_expected_cn_info(
@@ -246,7 +306,7 @@ pub(super) fn process_duplicate_candidate_pool(
 
     let duplicate_stats = get_duplicate_stats(&input_sv_groups, &output_sv_groups);
 
-    (sv_groups, duplicate_stats)
+    (sv_groups, cluster_merge_map, duplicate_stats)
 }
 
 /// The primary payload and sort key in the heap is bp.

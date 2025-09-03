@@ -675,6 +675,9 @@ impl PartialEq for HeapKey {
     }
 }
 
+/// # Parameters
+/// * sample_svgroup_head_indexes - For each sample, track the current 'head' svgroup index
+///
 fn add_next_sample_entry_to_heap(
     all_sample_data: &[SampleJointCallData],
     sample_svgroup_count: &[usize],

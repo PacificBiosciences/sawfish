@@ -1,12 +1,38 @@
 # Change Log
 
+## v2.1.0 - 2025-09-02
+
+Inversion annotation updates
+
+### Added
+- CR-543 Add new inversion requirement for large inversions
+  - Breakends for inversions larger than 100kb can't be in phase with unrelated breakends on the same read
+- CR-536 Add per-sample copy number summary file
+- CR-533 Add new inversion requirement: edge breakends must not phase to the same haplotype
+- CR-537 Add new inversion requirement: both edge breakend pairs must be within 10kb
+
+### Changed
+- CR-544 Remove inversion size limits
+- CR-542 Refine high-depth filter for WGS analysis
+  - Change max sv depth for scoring from 1000x to the lower of 1000x and 12 times the gc-corrected haploid depth
+- CR-529 Improve filtration of eligible inversion breakpoints
+- CR-518 Inversion syntax updates:
+  - Change inversion vcf id format to improve consistency, id is now independent of the total inversion count and sort
+    order
+  - All inversion VCF records now consistently precede their component breakend records
+
+### Fixed
+- CR-535 Fix minor issues with breakend neighbor identification
+  - Fix several minor issues with breakend neighbor identification, which is primarily used to improve inversion calling.
+  - Leads to some minor breakpoint and large-SV boundary shifts
+
 ## v2.0.5 - 2025-08-27
 
 ### Changed
 - CR-531 Improve verification of expected copy number file [PacificBiosciences/sawfish#26]
 
 ### Fixed
-- CR-539 Consistently convert all non-ACGT bases from both reference and read sequences to `N` [PacificBiosciences/sawfish#27]
+- CR-539 Consistently convert all non-ACGT bases from both reference and read sequences to N [PacificBiosciences/sawfish#27]
 
 ## v2.0.4 - 2025-08-14
 

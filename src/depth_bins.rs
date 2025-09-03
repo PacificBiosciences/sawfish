@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use unwrap::unwrap;
 
 use crate::bam_utils::get_alignment_ref_segments;
-use crate::discover::DEPTH_BINS_MESSAGEPACK_FILENAME;
+use crate::filenames::DEPTH_BINS_MESSAGEPACK_FILENAME;
 use crate::genome_regions::{ChromRegions, GenomeRegions};
 
 /// Return the number of complete bins of size `bin_size` in `total_size`

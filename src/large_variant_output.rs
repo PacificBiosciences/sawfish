@@ -5,7 +5,8 @@ use rust_vc_utils::{ChromList, GenomeRef, rev_comp_in_place};
 use strum::EnumCount;
 
 use crate::breakpoint::{
-    Breakend, BreakendDirection, Breakpoint, InsertInfo, VcfSVType, get_breakpoint_vcf_sv_type,
+    Breakend, BreakendDirection, BreakendNeighbor, Breakpoint, InsertInfo, VcfSVType,
+    get_breakpoint_vcf_sv_type,
 };
 use crate::cli;
 use crate::expected_ploidy::SVLocusPloidy;
@@ -17,11 +18,13 @@ use crate::refine_sv::{
 use crate::refined_cnv::{CNVSampleScoreInfo, CNVScoreInfo, RefinedCNV, SharedSampleScoreInfo};
 use crate::score_sv::QualityModelAlleles;
 use crate::sv_group::SVGroup;
-use crate::sv_id::get_bnd_sv_id_label;
+use crate::sv_id::get_bnd_id_label;
 use crate::vcf_utils;
 
 pub const CONTIG_POS_INFO_KEY: &str = "CONTIG_POS";
 pub const OVERLAP_ASM_INFO_KEY: &str = "OVERLAP_ASM";
+pub const BND0_NEIGHBOR_INFO_KEY: &str = "BND0_NEIGHBOR";
+pub const BND1_NEIGHBOR_INFO_KEY: &str = "BND1_NEIGHBOR";
 
 fn get_sv_vcf_header(
     settings: &VcfSettings,
@@ -58,7 +61,7 @@ fn get_sv_vcf_header(
     if !candidate_mode {
         records.push(br#"##FILTER=<ID=InvBreakpoint,Description="Breakpoint represented as part of an inversion record (same EVENT ID)">"#);
         records.push(min_qual_filter.as_bytes());
-        records.push(br#"##FILTER=<ID=MaxScoringDepth,Description="SV candidate exceeds max scoring depth">"#);
+        records.push(br#"##FILTER=<ID=MaxScoringDepth,Description="SV candidate exceeds max scoring depth in at least one sample">"#);
         records.push(br#"##FILTER=<ID=ConflictingBreakpointGT,Description="Genotypes of breakpoints in a multi-breakpoint event conflict in the majority of cases">"#);
     }
 
@@ -84,10 +87,18 @@ fn get_sv_vcf_header(
     let overlap_asm = format!(
         "##INFO=<ID={OVERLAP_ASM_INFO_KEY},Number=.,Type=Integer,Description=\"Assembly indices of overlapping haplotypes\">"
     );
+    let bnd0_neighbor = format!(
+        "##INFO=<ID={BND0_NEIGHBOR_INFO_KEY},Number=1,Type=String,Description=\"Breakend0 neighbor cluster and breakend indexes\">"
+    );
+    let bnd1_neighbor = format!(
+        "##INFO=<ID={BND1_NEIGHBOR_INFO_KEY},Number=1,Type=String,Description=\"Breakend1 neighbor cluster and breakend indexes\">"
+    );
 
     if candidate_mode {
         records.push(contig_pos.as_bytes());
         records.push(overlap_asm.as_bytes());
+        records.push(bnd0_neighbor.as_bytes());
+        records.push(bnd1_neighbor.as_bytes());
     } else {
         let mut score_records: Vec<&[u8]> = vec![
             br#"##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">"#,
@@ -128,11 +139,14 @@ fn get_sv_type_vcf_label(sv_type: VcfSVType) -> &'static str {
 }
 
 /// A layer on top of the bcf Record struct which encodes the VCF record sorting logic
-struct VcfRecord(bcf::Record);
+struct VcfRecord {
+    record: bcf::Record,
+    is_inversion: bool,
+}
 
 impl PartialEq for VcfRecord {
     fn eq(&self, other: &Self) -> bool {
-        self.0.rid() == other.0.rid() && self.0.pos() == other.0.pos()
+        self.record.rid() == other.record.rid() && self.record.pos() == other.record.pos()
     }
 }
 
@@ -146,13 +160,15 @@ impl PartialOrd for VcfRecord {
 
 impl Ord for VcfRecord {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        // Sort first by rid and chrom to make tabix-able VCF output, then sort by other factors
-        // for VCF records at the same position, to make the output deterministic
-        self.0
+        // Sort first by rid and chrom to make tabix-able VCF output, then sort by:
+        // 1. is_inversion : This makes inversion records precede their corresponding BND at the same position
+        // 2. id : This is the final sort term, to keep the output deterministic since all IDs should be unique
+        self.record
             .rid()
-            .cmp(&other.0.rid())
-            .then(self.0.pos().cmp(&other.0.pos()))
-            .then(self.0.id().cmp(&other.0.id()))
+            .cmp(&other.record.rid())
+            .then(self.record.pos().cmp(&other.record.pos()))
+            .then(other.is_inversion.cmp(&self.is_inversion))
+            .then(self.record.id().cmp(&other.record.id()))
     }
 }
 
@@ -240,10 +256,9 @@ fn add_insseq(bp: &Breakpoint, record: &mut bcf::Record) {
 }
 
 fn add_event(rsv: &RefinedSV, record: &mut bcf::Record) {
-    if let Some(inversion_id) = rsv.ext.inversion_id {
-        let event_tag = format!("INV{inversion_id}");
+    if let Some(inversion_id) = &rsv.ext.inversion_id {
         record
-            .push_info_string(b"EVENT", &[event_tag.as_bytes()])
+            .push_info_string(b"EVENT", &[inversion_id.as_bytes()])
             .unwrap();
         record.push_info_string(b"EVENTTYPE", &[b"INV"]).unwrap();
     }
@@ -286,6 +301,25 @@ fn add_overlap_indexes(group_contig_indexes: &[usize], record: &mut bcf::Record)
                 OVERLAP_ASM_INFO_KEY.as_bytes(),
                 group_contig_indexes.as_slice(),
             )
+            .unwrap();
+    }
+}
+
+fn add_bnd_neighbor(
+    breakend0_neighbor: Option<&BreakendNeighbor>,
+    breakend1_neighbor: Option<&BreakendNeighbor>,
+    record: &mut bcf::Record,
+) {
+    if let Some(x) = breakend0_neighbor {
+        let val = format!("{}:{}", x.cluster_index, x.breakend_index);
+        record
+            .push_info_string(BND0_NEIGHBOR_INFO_KEY.as_bytes(), &[val.as_bytes()])
+            .unwrap();
+    }
+    if let Some(x) = breakend1_neighbor {
+        let val = format!("{}:{}", x.cluster_index, x.breakend_index);
+        record
+            .push_info_string(BND1_NEIGHBOR_INFO_KEY.as_bytes(), &[val.as_bytes()])
             .unwrap();
     }
 }
@@ -827,7 +861,7 @@ fn convert_refined_sv_to_bnd_vcf_record(
 
     // Set ID
     {
-        let id_str = get_bnd_sv_id_label(&rsv.id, is_breakend1);
+        let id_str = get_bnd_id_label(&rsv.id, is_breakend1);
         record.set_id(id_str.as_bytes()).unwrap();
     }
 
@@ -859,7 +893,7 @@ fn convert_refined_sv_to_bnd_vcf_record(
 
     // Set MATEID
     {
-        let mate_id_str = get_bnd_sv_id_label(&rsv.id, !is_breakend1);
+        let mate_id_str = get_bnd_id_label(&rsv.id, !is_breakend1);
         record
             .push_info_string(b"MATEID", &[mate_id_str.as_bytes()])
             .unwrap();
@@ -874,7 +908,7 @@ fn convert_refined_sv_to_bnd_vcf_record(
     add_event(rsv, &mut record);
 
     let is_bnd = true;
-    let record = add_vcf_record_sample_scoring(
+    let mut record = add_vcf_record_sample_scoring(
         settings,
         rsv,
         group_contig_indexes,
@@ -882,6 +916,14 @@ fn convert_refined_sv_to_bnd_vcf_record(
         is_bnd,
         record,
     );
+
+    if candidate_mode {
+        add_bnd_neighbor(
+            rsv.bp.breakend1_neighbor.as_ref(),
+            rsv.bp.breakend2_neighbor.as_ref(),
+            &mut record,
+        );
+    }
 
     Some(record)
 }
@@ -941,7 +983,10 @@ fn dedup_records(records: Vec<VcfRecord>) -> (Vec<VcfRecord>, usize) {
     for record in records {
         // Update first_matching_pos_index
         if !(deduplicated_records.is_empty()
-            || is_same_pos_record(&record.0, &deduplicated_records[first_matching_pos_index].0))
+            || is_same_pos_record(
+                &record.record,
+                &deduplicated_records[first_matching_pos_index].record,
+            ))
         {
             first_matching_pos_index = deduplicated_records.len();
         }
@@ -953,7 +998,7 @@ fn dedup_records(records: Vec<VcfRecord>) -> (Vec<VcfRecord>, usize) {
         for accepted_record in
             deduplicated_records[first_matching_pos_index..deduplicated_records.len()].iter()
         {
-            if is_duplicate_record(&record.0, &accepted_record.0) {
+            if is_duplicate_record(&record.record, &accepted_record.record) {
                 filter_duplicate = true;
                 duplicate_record_count += 1;
                 break;
@@ -1023,7 +1068,10 @@ fn convert_sv_group_to_vcf_records(
                     candidate_mode,
                 );
                 if let Some(record) = record {
-                    records.push(VcfRecord(record));
+                    records.push(VcfRecord {
+                        record,
+                        is_inversion: refined_sv.ext.is_inversion,
+                    });
                 }
             }
             VcfSVType::Breakpoint => {
@@ -1048,8 +1096,15 @@ fn convert_sv_group_to_vcf_records(
                     candidate_mode,
                 );
                 if let (Some(record0), Some(record1)) = (record0, record1) {
-                    records.push(VcfRecord(record0));
-                    records.push(VcfRecord(record1));
+                    let is_inversion = false;
+                    records.push(VcfRecord {
+                        record: record0,
+                        is_inversion,
+                    });
+                    records.push(VcfRecord {
+                        record: record1,
+                        is_inversion,
+                    });
                 }
             }
             VcfSVType::SingleBreakend => {
@@ -1249,7 +1304,11 @@ fn convert_cnv_to_vcf_record(
 
     add_vcf_record_cnv_sample_scoring(settings, &cnv.score, &mut record);
 
-    Some(VcfRecord(record))
+    let is_inversion = false;
+    Some(VcfRecord {
+        record,
+        is_inversion,
+    })
 }
 
 /// Convert `SVGroup`s into `VcfRecord`s
@@ -1343,7 +1402,7 @@ fn write_sv_vcf_file(
     );
 
     for record in vcf_records.iter() {
-        vcf.write(&record.0).unwrap();
+        vcf.write(&record.record).unwrap();
     }
 
     VcfStats {
