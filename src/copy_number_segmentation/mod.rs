@@ -509,20 +509,32 @@ fn get_backtrace(last_row: &[f64], back_pointer: &[Vec<u8>]) -> Vec<u8> {
 }
 
 /// Get the init probs over all copy number states for the given sample and chromosome
+///
+/// The first copy number bin is only used to determine if the chromosome starts in the excluded state, so we're not
+/// doubling-up on the actual depth observation here between init and emit values.
+///
 fn get_sample_chrom_init_probs<'a>(
     expected_copy_number_regions: Option<&GenomeRegionsByChromIndex>,
     init_probs: &'a [Vec<f64>],
     depth_bin_size: u32,
     chrom_index: usize,
+    first_depth_bin: &DepthBin,
 ) -> &'a Vec<f64> {
-    let first_segment = GenomeSegment {
-        chrom_index,
-        range: IntRange::from_pair(0, depth_bin_size as i64),
+    let init_copy_number_state = if let DepthBin::Excluded = first_depth_bin {
+        CopyNumberState::Unknown as usize
+    } else {
+        let first_segment = GenomeSegment {
+            chrom_index,
+            range: IntRange::from_pair(0, depth_bin_size as i64),
+        };
+        let expected_cn_info = get_expected_copy_number_info_for_regions(
+            expected_copy_number_regions,
+            &[first_segment],
+        );
+        expected_cn_info.expected_copy_number as usize
     };
-    let expected_cn_info =
-        get_expected_copy_number_info_for_regions(expected_copy_number_regions, &[first_segment]);
 
-    &init_probs[expected_cn_info.expected_copy_number as usize]
+    &init_probs[init_copy_number_state]
 }
 
 /// A Viterbi parse for copy number states of a single chromosome over all input samples
@@ -559,22 +571,24 @@ fn viterbi_copy_number_parse(
     let bin_dependency_correction_factor = sample_seg_input
         .discover_settings
         .bin_dependency_correction_factor;
-    let init = get_sample_chrom_init_probs(
-        sample_seg_input.expected_copy_number_regions,
-        init_probs,
-        depth_bin_size,
-        chrom_index,
-    );
 
     assert!(gc_corrected_haploid_coverage >= 0.0);
-
-    let state_count = CopyNumberState::COUNT;
-    assert_eq!(init.len(), state_count);
 
     let obs_count = observations.len();
     if obs_count == 0 {
         return Vec::new();
     }
+
+    let init = get_sample_chrom_init_probs(
+        sample_seg_input.expected_copy_number_regions,
+        init_probs,
+        depth_bin_size,
+        chrom_index,
+        &observations[0],
+    );
+
+    let state_count = CopyNumberState::COUNT;
+    assert_eq!(init.len(), state_count);
 
     // Instead of having a full SxO DP matrix, just ping-pong on two rows
     let mut max_pr_row1 = vec![0.0; state_count];
@@ -712,7 +726,7 @@ pub struct SampleCopyNumberSegmentationInput<'a> {
 
 /// Run a joint copy-number segmentation over all samples
 ///
-/// For each sample, predict copy number state bins and reduce these bin stats into segments of continuous copy number.
+/// For each sample, predict copy number state bins and reduce these bin states into segments of continuous copy number.
 /// This version of copy number segmentation runs once on a single haploid coverage estimate.
 ///
 /// Following all sample-specific segment prediction, syncronize copy number boundaries across samples

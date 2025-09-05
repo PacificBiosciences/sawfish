@@ -1,5 +1,11 @@
 # Change Log
 
+## v2.1.1 - 2025-09-05
+
+### Fixed
+- CR-548 Fix initial copy number bin when chromosome starts in a copy-number excluded region
+  - Previously writing out one bin at copy number 2 before switching to an excluded segment
+
 ## v2.1.0 - 2025-09-02
 
 Inversion annotation updates
