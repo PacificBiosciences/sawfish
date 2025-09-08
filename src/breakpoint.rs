@@ -605,7 +605,7 @@ pub struct BreakpointCluster {
     ///
     /// These are used:
     /// (1) to prevent double-counting of these observations as independent support of the same haplotype
-    /// (2) for some forms of early hapltoype phasing, such as modifying the alt allele model based on a close
+    /// (2) for some forms of early haplotype phasing, such as modifying the alt allele model based on a close
     /// neighboring breakend
     ///
     pub evidence_qnames: BTreeSet<Vec<u8>>,
