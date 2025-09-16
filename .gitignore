@@ -1,0 +1,10 @@
+# Cargo
+/target
+
+# IDEs
+**/.idea
+*.code-workspace
+
+# pixi environments
+.pixi/*
+!.pixi/config.toml

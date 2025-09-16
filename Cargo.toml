@@ -5,6 +5,7 @@ authors = ["Chris Saunders <csaunders@pacificbiosciences.com>"]
 description = "Structural variant and copy number analysis for mapped PacBio HiFi reads"
 edition = "2024"
 license-file="LICENSE.md"
+rust-version = "1.89"
 
 [profile.release]
 panic = "abort"
