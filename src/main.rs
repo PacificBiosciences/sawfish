@@ -1,6 +1,6 @@
-mod bam_sa_parser;
 mod bam_scanner;
 mod bam_utils;
+mod bcf_utils;
 mod bio_align_utils;
 mod breakpoint;
 mod cli;
@@ -14,9 +14,8 @@ mod filenames;
 mod gc_correction;
 mod genome_ref_utils;
 mod genome_regions;
-mod genome_segment;
+mod genome_segment_utils;
 mod globals;
-mod int_range;
 mod joint_call;
 mod large_variant_output;
 mod log_utils;

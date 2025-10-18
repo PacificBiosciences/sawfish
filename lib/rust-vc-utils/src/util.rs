@@ -66,6 +66,19 @@ pub fn get_region_segments(size: u64, segment_size: u64) -> Vec<(u64, u64)> {
     intervals
 }
 
+/// Extend get_region_segments for use with intervals that start at non-zero positions by shifting
+/// the results according to the given offset value.
+pub fn get_region_segments_with_offset(
+    offset: u64,
+    size: u64,
+    segment_size: u64,
+) -> Vec<(u64, u64)> {
+    get_region_segments(size, segment_size)
+        .into_iter()
+        .map(|(s, e)| (s + offset, e + offset))
+        .collect()
+}
+
 /// Creates an iterator for array, that yields bin ranges of non-excluded regions, given a specified
 /// exclusion function.
 ///
@@ -134,6 +147,13 @@ where
     }
 }
 
+/// Drop all true entries from vector
+pub fn drop_true<T>(vec: &mut Vec<T>, drop_list: &[bool]) {
+    assert_eq!(vec.len(), drop_list.len());
+    let mut drop = drop_list.iter();
+    vec.retain(|_| !*drop.next().unwrap())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,6 +193,18 @@ mod tests {
     }
 
     #[test]
+    fn test_get_region_segments_with_offset() {
+        assert_eq!(
+            get_region_segments_with_offset(10, 100, 200),
+            vec![(10, 110)]
+        );
+        assert_eq!(
+            get_region_segments_with_offset(10, 100, 49),
+            vec![(10, 44), (44, 77), (77, 110)]
+        );
+    }
+
+    #[test]
     fn test_array_segmenter() {
         let test_input = vec![0, 1, 2, -1, 4, 5, 6, 7, 8, 9];
         let ranges = ArraySegmenter::new(&test_input, |x| *x < 0).collect::<Vec<_>>();
@@ -180,5 +212,14 @@ mod tests {
         assert_eq!(ranges.len(), 2);
         assert_eq!(ranges[0], 0..3);
         assert_eq!(ranges[1], 4..10);
+    }
+
+    #[test]
+    fn test_drop_true() {
+        let mut v = vec![1, 2, 3, 4, 5];
+        let p = vec![true, false, false, true, false];
+
+        drop_true(&mut v, &p);
+        assert_eq!(v, vec![2, 3, 5]);
     }
 }

@@ -3,7 +3,7 @@ use std::sync::mpsc::channel;
 use camino::{Utf8Path, Utf8PathBuf};
 use log::info;
 use regex::Regex;
-use rust_vc_utils::{ChromList, GenomeRef, get_genome_ref_from_fasta};
+use rust_vc_utils::{ChromList, GenomeRef, RegionMap, get_genome_ref_from_fasta};
 use unwrap::unwrap;
 
 use super::get_refined_svs::get_sample_sv_groups;
@@ -20,7 +20,7 @@ use crate::gc_correction::{
     deserialize_sample_gc_bias_data,
 };
 use crate::genome_regions::{
-    ChromRegions, GenomeRegions, GenomeRegionsByChromIndex, read_genome_regions_from_bed,
+    GenomeRegions, GenomeRegionsByChromIndex, read_genome_regions_from_bed,
 };
 use crate::maf_utils::{MafData, deserialize_maf_data};
 use crate::run_stats::read_discover_run_stats;
@@ -48,7 +48,7 @@ pub struct SampleJointCallData {
 
     pub sample_name: String,
     pub discover_settings: DiscoverSettings,
-    pub genome_sv_scoring_exclusion_regions: Vec<ChromRegions>,
+    pub genome_sv_scoring_exclusion_regions: Vec<RegionMap>,
     pub sv_groups: Vec<SVGroup>,
 
     /// Vector indexed on cluster index, containing the assembly regions for that cluster
@@ -122,7 +122,7 @@ fn get_sample_joint_call_data(
             Regex::new(&settings.disable_max_dapth_chrom_regex).unwrap();
         for (chrom_index, chrom_info) in chrom_list.data.iter().enumerate() {
             if disable_max_dapth_chrom_regex.is_match(chrom_info.label.as_str()) {
-                x[chrom_index] = ChromRegions::new();
+                x[chrom_index] = RegionMap::default();
             }
         }
         x

@@ -1,9 +1,9 @@
 use log::info;
-use rust_vc_utils::ChromList;
+use rust_vc_utils::util::drop_true;
+use rust_vc_utils::{ChromList, GenomeSegment, IntRange};
 
 use crate::breakpoint::{BreakendDirection, Breakpoint, BreakpointCluster, LargeInsertionInfo};
-use crate::genome_segment::{GenomeSegment, IntRange, is_strict_order};
-use crate::utils::drop_true;
+use crate::genome_segment_utils::is_strict_order;
 
 /// Temp structure used to assemble the large insertions in place
 struct LargeInsertionAssemblyData {

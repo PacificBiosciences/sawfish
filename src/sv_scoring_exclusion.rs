@@ -1,10 +1,10 @@
-use rust_vc_utils::ChromList;
+use rust_vc_utils::{ChromList, RegionMap};
 
 use crate::cli;
 use crate::copy_number_segmentation::HaploidCoverage;
 use crate::depth_bins;
 use crate::filenames::MAX_SV_DEPTH_FILENAME;
-use crate::genome_regions::{ChromRegions, write_genome_regions_to_bed};
+use crate::genome_regions::write_genome_regions_to_bed;
 
 fn get_max_sv_scoring_depth(
     max_copy_number_for_sv_scoring: u32,
@@ -33,7 +33,7 @@ fn get_genome_sv_scoring_exclusion_regions(
     chrom_list: &ChromList,
     haploid_coverage: Option<&HaploidCoverage>,
     genome_depth_bins_builder: Vec<depth_bins::DepthBinsBuilder>,
-) -> (u32, Vec<ChromRegions>) {
+) -> (u32, Vec<RegionMap>) {
     let max_sv_scoring_depth =
         get_max_sv_scoring_depth(settings.max_copy_number_for_sv_scoring, haploid_coverage);
 
@@ -49,7 +49,7 @@ fn get_genome_sv_scoring_exclusion_regions(
     (max_sv_scoring_depth, regions)
 }
 
-/// Generate genome-wid regions where SV scoring will be excluded in downstream analysis,and write these
+/// Generate genome-wide regions where SV scoring will be excluded in downstream analysis,and write these
 /// regions to a BED file for use in the joint-call step
 ///
 /// Returns the max sv scoring depth

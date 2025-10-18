@@ -6,11 +6,11 @@ use std::ops::Range;
 use rust_htslib::bam::{self, Read};
 use rust_vc_utils::bam_utils::filter_out_alignment_record;
 use rust_vc_utils::cigar::get_cigar_ref_offset;
-use rust_vc_utils::{ChromList, GenomeRef};
+use rust_vc_utils::get_seq_order_read_split_segments;
+use rust_vc_utils::{ChromList, GenomeRef, GenomeSegment, IntRange, RegionMap};
 use strum::EnumCount;
 use unwrap::unwrap;
 
-use crate::bam_sa_parser::get_seq_order_read_split_segments;
 use crate::bam_utils::{
     TargetMatchType, bam_fetch_segment, get_alignment_closest_to_target_ref_pos,
     get_bam_alignment_closest_to_target_ref_pos, get_gap_compressed_identity,
@@ -19,9 +19,6 @@ use crate::bam_utils::{
 use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint};
 use crate::expected_ploidy::{SVLocusExpectedCNInfo, SVLocusPloidy};
 use crate::genome_ref_utils::get_ref_segment_seq;
-use crate::genome_regions::ChromRegions;
-use crate::genome_segment::GenomeSegment;
-use crate::int_range::IntRange;
 use crate::prob_utils::{error_prob_to_phred, ln_error_prob_to_qphred, normalize_ln_distro};
 use crate::refine_sv::{
     AlleleCounts, AlleleType, Genotype, RefinedSV, SVPhaseStatus, SVSampleScoreInfo, SVScoreInfo,
@@ -1620,7 +1617,7 @@ fn get_locus_support_scores(
     score_settings: &ScoreSVSettings,
     reference: &GenomeRef,
     chrom_list: &ChromList,
-    genome_max_sv_depth_regions: &[ChromRegions],
+    genome_max_sv_depth_regions: &[RegionMap],
     bam_readers: &mut [&mut bam::IndexedReader],
     sv_group: &mut SVGroup,
     sample_sv_info: &SampleSVInfo,
@@ -1736,7 +1733,7 @@ fn get_locus_support_scores(
 
 fn is_segment_over_max_depth(
     segment: &GenomeSegment,
-    genome_max_sv_depth_regions: &[ChromRegions],
+    genome_max_sv_depth_regions: &[RegionMap],
 ) -> bool {
     let chrom_max_sv_depth_regions = &genome_max_sv_depth_regions[segment.chrom_index];
     chrom_max_sv_depth_regions.intersect(segment.range.start, segment.range.end)
@@ -2152,7 +2149,7 @@ fn get_sv_group_read_alignment_scores(
     score_settings: &ScoreSVSettings,
     reference: &GenomeRef,
     chrom_list: &ChromList,
-    all_sample_genome_max_sv_depth_regions: &[&[ChromRegions]],
+    all_sample_genome_max_sv_depth_regions: &[&[RegionMap]],
     bam_readers: &mut [&mut bam::IndexedReader],
     sv_group: &mut SVGroup,
     sample_sv_order: &[Vec<SampleSVInfo>],
@@ -2520,7 +2517,7 @@ fn score_refined_sv_group(
     score_settings: &ScoreSVSettings,
     reference: &GenomeRef,
     chrom_list: &ChromList,
-    all_sample_genome_max_sv_depth_regions: &[&[ChromRegions]],
+    all_sample_genome_max_sv_depth_regions: &[&[RegionMap]],
     bam_readers: &mut [&mut bam::IndexedReader],
     sv_group: &mut SVGroup,
     debug_settings: &ScoreDebugSettings,
@@ -2616,7 +2613,7 @@ fn score_refined_sv_group(
 }
 
 pub struct SampleScoreData<'a> {
-    pub genome_sv_scoring_exclusion_regions: &'a [ChromRegions],
+    pub genome_sv_scoring_exclusion_regions: &'a [RegionMap],
 }
 
 /// Run breakpoint scoring on all refined_svs from a single group

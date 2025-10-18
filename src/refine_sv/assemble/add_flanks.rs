@@ -1,7 +1,7 @@
-use rust_vc_utils::cigar::{get_cigar_ref_offset, get_complete_read_clip_positions};
+use rust_vc_utils::cigar::{get_cigar_ref_offset, get_read_clip_positions};
+use rust_vc_utils::int_range::IntRange;
 
 use super::{AssemblyResult, AssemblyResultContig, RefineSVSettings};
-use crate::int_range::IntRange;
 use crate::refine_sv::trimmed_reads::TrimmedReadInfo;
 use crate::simple_alignment::SimpleAlignment;
 
@@ -35,7 +35,9 @@ pub fn get_consensus_alignment_info(
     consensus_len: usize,
     alignment: &SimpleAlignment,
 ) -> TrimmedReadConsensusAlignmentInfo {
-    let (read_start, read_end, read_size) = get_complete_read_clip_positions(&alignment.cigar);
+    let ignore_hard_clip = false;
+    let (read_start, read_end, read_size) =
+        get_read_clip_positions(&alignment.cigar, ignore_hard_clip);
     assert!(read_end <= read_size);
 
     let ref_offset = get_cigar_ref_offset(&alignment.cigar);

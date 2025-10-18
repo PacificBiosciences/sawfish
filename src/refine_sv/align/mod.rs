@@ -1,25 +1,23 @@
 mod segment_alignment;
-mod util;
 
 use std::fmt;
 
 use rust_htslib::bam::record::Cigar;
-use rust_vc_utils::bam_utils::cigar::{
-    get_cigar_ref_offset, get_cigarseg_hard_clipped_read_offset, get_cigarseg_ref_offset,
-    get_complete_read_clip_positions, update_hard_clipped_read_pos,
-    update_ref_and_hard_clipped_read_pos, update_ref_pos,
+use rust_vc_utils::cigar::{
+    get_cigar_ref_offset, get_cigarseg_read_offset, get_cigarseg_ref_offset,
+    get_gap_compressed_identity_from_alignment, get_read_clip_positions, has_aligned_segments,
+    update_read_pos, update_ref_and_read_pos, update_ref_pos,
 };
-use rust_vc_utils::{ChromList, GenomeRef, rev_comp_in_place};
+use rust_vc_utils::indel_breakend_homology::get_indel_breakend_homology_info;
+use rust_vc_utils::int_range::{IntRange, get_overlap_range};
+use rust_vc_utils::{ChromList, GenomeRef, GenomeSegment, rev_comp_in_place};
 
 use self::segment_alignment::{
     AltHapLeftRightComponentAlignmentInfo, transform_alt_hap_alignment_into_left_right_components,
 };
 use super::assemble::AssemblyResultContig;
 use super::{AssemblyResult, RefineSVSettings, RefinedSV};
-use crate::bam_utils::{
-    get_gap_compressed_identity_from_alignment,
-    get_gap_compressed_identity_from_cigar_segment_range, has_aligned_segments,
-};
+use crate::bam_utils::get_gap_compressed_identity_from_cigar_segment_range;
 use crate::breakpoint::{
     Breakend, BreakendDirection, Breakpoint, BreakpointCluster, FullBreakendNeighborInfo,
     InsertInfo,
@@ -27,8 +25,6 @@ use crate::breakpoint::{
 use crate::contig_output::{ContigAlignmentInfo, ContigAlignmentSegment};
 use crate::expected_ploidy::SVLocusExpectedCNInfo;
 use crate::genome_ref_utils::get_ref_segment_seq;
-use crate::genome_segment::GenomeSegment;
-use crate::int_range::{IntRange, get_overlap_range};
 use crate::log_utils::debug_msg;
 use crate::refine_sv::AnnotatedOverlappingHaplotype;
 use crate::simple_alignment::{SimpleAlignment, clip_alignment_ref_edges};
@@ -93,7 +89,7 @@ fn create_indel_refined_sv_candidate(
     let chrom_segment_pos = chrom_pos - chrom_segment_start;
     let indel_chrom_segment_range =
         IntRange::from_pair(chrom_segment_pos, chrom_segment_pos + del_len as i64);
-    let (homology_range, homology_seq) = util::get_indel_breakend_homology_info(
+    let (homology_range, homology_seq) = get_indel_breakend_homology_info(
         chrom_segment_seq,
         &indel_chrom_segment_range,
         contig_seq,
@@ -339,7 +335,7 @@ fn get_single_region_refined_sv_candidates(
             }
             _ => {}
         };
-        update_ref_and_hard_clipped_read_pos(cigar_segment, &mut chrom_pos, &mut contig_pos);
+        update_ref_and_read_pos(cigar_segment, &mut chrom_pos, &mut contig_pos, true);
     }
 
     /*
@@ -1466,7 +1462,7 @@ fn collapse_indels_at_breakpoint(
         }
 
         update_ref_pos(c, &mut alt_hap_pos);
-        update_hard_clipped_read_pos(c, &mut contig_pos);
+        update_read_pos(c, &mut contig_pos, true);
     }
 
     if !(segment1_is_anchored && segment2_is_anchored)
@@ -1512,7 +1508,7 @@ fn collapse_indels_at_breakpoint(
         } else {
             update_bp = true;
             total_bp_del += get_cigarseg_ref_offset(c);
-            total_bp_ins += get_cigarseg_hard_clipped_read_offset(c);
+            total_bp_ins += get_cigarseg_read_offset(c, true);
         }
     }
 
@@ -1532,9 +1528,10 @@ fn is_good_contig_segment_alignment_quality(
 ) -> bool {
     let gci = get_gap_compressed_identity_from_alignment(
         segment_alignment.ref_offset,
-        contig,
         &segment_alignment.cigar,
+        contig,
         alt_hap_segment,
+        true,
     );
     gci >= anchor_min_gap_compressed_identity
 }
@@ -1762,10 +1759,11 @@ fn get_ref_segment_breakend_offsets_and_insert_range(
     );
 
     let insert_range = {
+        let ignore_hard_clip = false;
         let (seg1_left_clip_contig_pos, seg1_right_clip_contig_pos, contig_size) =
-            get_complete_read_clip_positions(&ref_segment1_alignment.cigar);
+            get_read_clip_positions(&ref_segment1_alignment.cigar, ignore_hard_clip);
         let (seg2_left_clip_contig_pos, seg2_right_clip_contig_pos, _) =
-            get_complete_read_clip_positions(&ref_segment2_alignment.cigar);
+            get_read_clip_positions(&ref_segment2_alignment.cigar, ignore_hard_clip);
         if alt_hap_info.ref_segment2_after_ref_segment1 {
             let insert_end_pos = if alt_hap_info.ref_segment2_revcomp {
                 contig_size - seg2_right_clip_contig_pos

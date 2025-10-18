@@ -4,12 +4,12 @@ use rust_htslib::bam::{
     self,
     record::{Aux, Cigar, CigarString},
 };
+use rust_vc_utils::cigar::has_aligned_segments;
+use rust_vc_utils::int_range::IntRange;
 use rust_vc_utils::{ChromList, bam_reg2bin, get_alignment_end};
 
-use crate::bam_utils::has_aligned_segments;
 use crate::filenames::CONTIG_ALIGNMENT_FILENAME;
 use crate::globals::PROGRAM_VERSION;
-use crate::int_range::IntRange;
 
 pub const SA_AUX_TAG: &[u8] = b"SA";
 pub const CONTIG_AUX_TAG: &[u8] = b"sf";

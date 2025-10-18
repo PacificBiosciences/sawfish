@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
+use rust_vc_utils::int_range::{IntRange, get_recip_overlap};
+
 use crate::breakpoint::BreakendDirection;
 use crate::copy_number_segmentation::{CopyNumberState, SampleTransitionTypes};
-use crate::int_range::{IntRange, get_recip_overlap};
 use crate::joint_call::{SampleJointCallData, SharedJointCallData};
 use crate::refine_sv::Genotype;
 use crate::sv_group::SVGroup;

@@ -351,14 +351,17 @@ the left or right flank, but longer excluded regions should be segmented into an
 
 #### Minor allele frequency
 
-On the discover step command line for each sample, a small-variant VCF file for that sample can be provided as an
-argument to `--maf`. The given VCF will be parsed to create a minor allele frequency track for the genome. This
-information is written to an IGV visualization track for assessment and interpretation of the CNV output. This
-information may also be used for improved segmentation and CNV calling in the future, although it is not used in the
-current release.
+On the discover step command line, a small-variant VCF (or BCF) file for that sample can be specified with the `--maf`
+argument. The given small-variant file will be parsed to create a minor allele frequency track for the genome. This
+information is written to an IGV visualization track for assessment and interpretation of the CNV output. It may also be
+used for improved segmentation and CNV calling in the future, although it is not used in the current release.
 
-Any small-variant caller VCF with an `AD` entry for the small-variant calls could work for this purpose, but the feature
-is tested and best supported for the output from [DeepVariant](https://github.com/google/deepvariant).
+Any VCF/BCF with an `AD` entry for the small-variant calls should work for this purpose, but the feature is tested and
+best supported for the output from [DeepVariant](https://github.com/google/deepvariant).
+
+By default, sawfish will search the given VCF/BCF for the sample name from the input alignment file. An error will be
+reported if this sample name can't be found. An alternative sample name can be specified with the `--maf-sample-name`
+argument.
 
 ### Joint-call step inputs
 

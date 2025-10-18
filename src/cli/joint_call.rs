@@ -324,12 +324,24 @@ pub fn validate_and_fix_joint_call_settings(
     }
 
     // Check for repeated entries
-    let mut check_dirs = HashSet::new();
+    let mut all_input_sample_discover_dirs = HashSet::new();
     for input_sample_data in all_input_sample_data.iter() {
-        if !check_dirs.insert(input_sample_data.discover_dir.as_str()) {
+        if !all_input_sample_discover_dirs.insert(input_sample_data.discover_dir.as_str()) {
             bail!(
                 "Duplicated input sample discover dir: '{}'",
                 input_sample_data.discover_dir
+            );
+        }
+    }
+
+    // Check that output directory doesn't repeat any of the input directories
+    if settings.output_dir.is_dir() {
+        // We don't normally canonicalize output dir, but it is needed to reliably find a duplication here
+        let canonical_output_dir = settings.output_dir.canonicalize_utf8().unwrap();
+        if all_input_sample_discover_dirs.contains(canonical_output_dir.as_str()) {
+            bail!(
+                "Output directory duplicates input sample discover dir: '{}'",
+                canonical_output_dir
             );
         }
     }

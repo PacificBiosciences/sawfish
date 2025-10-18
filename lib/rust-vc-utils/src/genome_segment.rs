@@ -1,12 +1,11 @@
 use std::fmt;
 
-use rust_vc_utils::ChromList;
+use crate::ChromList;
 
-use crate::int_range::get_int_range_dir_distance;
-pub use crate::int_range::{IntRange, get_int_range_distance};
+use crate::int_range::IntRange;
 
 /// The structure represents a contiguous region of the genome on a single chromosome
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct GenomeSegment {
     /// chrom_index is defined by the indexing scheme used in the input bam file
     pub chrom_index: usize,
@@ -14,16 +13,8 @@ pub struct GenomeSegment {
 }
 
 impl GenomeSegment {
-    pub fn new() -> Self {
-        Self {
-            chrom_index: 0,
-            range: IntRange::new(),
-        }
-    }
-
     /// Convert from a string in 'samtools' region format (e.g. chr20:100-200)
     ///
-    #[allow(dead_code)]
     pub fn from_region_str(chrom_list: &ChromList, str: &str) -> Self {
         let (chrom_index, start, end) = parse_samtools_region_string(chrom_list, str);
         Self {
@@ -39,21 +30,25 @@ impl GenomeSegment {
         format!("{chrom}:{}-{}", self.range.start + 1, self.range.end)
     }
 
-    #[allow(dead_code)]
     pub fn intersect(&self, other: &Self) -> bool {
         self.chrom_index == other.chrom_index && self.range.intersect_range(&other.range)
     }
 
     /// Expand the genomic region, restricted by the bounds of the chromosome length
+    ///
+    /// Note the expansion could technically be negative (i.e. a contraction), but it's up to the client to ensure that
+    /// start and end haven't flipped into an invalid range statement in this case
+    ///
+    /// Returns the actual left and right expansion after chromosome end clipping
+    ///
     pub fn expand_by(&mut self, chrom_list: &ChromList, size: i64) -> (i64, i64) {
         self.asymmetric_expand_by(chrom_list, size, size)
     }
 
-    /// Expand the genomic region separately on left and right sides, restricted by the bounds of
-    /// the chromosome length
+    /// Expand the genomic region separately on left and right sides, restricted by the bounds of the chromosome length
     ///
-    /// Note the expansion could technically be negative, but it's up to the client to ensure that start
-    /// and end haven't flipped into an invalid range statement in this case
+    /// Note the expansion could technically be negative (i.e. a contraction), but it's up to the client to ensure that
+    /// start and end haven't flipped into an invalid range statement in this case
     ///
     /// Returns the actual left and right expansion after chromosome end clipping
     ///
@@ -80,38 +75,10 @@ impl fmt::Debug for GenomeSegment {
     }
 }
 
-/// Strict order here means that `a` comes before `b` without intersection
-///
-pub fn is_strict_order(a: &GenomeSegment, b: &GenomeSegment) -> bool {
-    a.chrom_index < b.chrom_index
-        || (a.chrom_index == b.chrom_index && a.range.end <= b.range.start)
-}
-
-/// Returns None if on different chromosomes, Return 0 if the ranges intersect or are adjacent
-///
-pub fn get_segment_distance(gs1: &GenomeSegment, gs2: &GenomeSegment) -> Option<usize> {
-    if gs1.chrom_index != gs2.chrom_index {
-        None
-    } else {
-        Some(get_int_range_distance(&gs1.range, &gs2.range))
-    }
-}
-
-/// Returns None if on different chromosomes, Return (direction, distance) between the segments
-/// otherwise. The distance is 0 if the ranges intersect or are adjacent.
-///
-pub fn get_segment_dir_distance(gs1: &GenomeSegment, gs2: &GenomeSegment) -> Option<(bool, usize)> {
-    if gs1.chrom_index != gs2.chrom_index {
-        None
-    } else {
-        Some(get_int_range_dir_distance(&gs1.range, &gs2.range))
-    }
-}
-
 /// Parse the chromosome string out of a samtools-style region string
 ///
-/// Return the index of the chromosome from the expected chromosome list, and
-/// an optional position string following the chromosome name
+/// Return the index of the chromosome from the expected chromosome list, and an optional position string following the
+/// chromosome name
 ///
 fn parse_chrom_index_from_samtools_region_string<'a>(
     chrom_list: &ChromList,
@@ -144,11 +111,10 @@ fn parse_chrom_index_from_samtools_region_string<'a>(
     }
 }
 
-/// Parse position range from samtools-style genomic interval string, return
-/// start-end coordinate in bedtools zero-index half-open format.
+/// Parse position range from samtools-style genomic interval string, return start-end coordinate in bedtools zero-index
+/// half-open format.
 ///
-/// In the samtools-style string, "100-300" would return (99,300). Just "100"
-/// should retunr (99, chrom_length)
+/// In the samtools-style string, "100-300" would return (99,300). Just "100" should retunr (99, chrom_length)
 ///
 /// # Arguments
 /// * `region_str` - Only used to improve error messages
@@ -187,15 +153,14 @@ fn parse_samtools_pos_range(
     }
 }
 
-/// Convert from a string in 'samtools' region format (e.g. chr20:100-200) to a tuple of
-/// (chrom_index, chrom_label, start, end)
-/// ...where start and end are converted to the zero-indexed half-open convention used for bed
+/// Convert from a string in 'samtools' region format (e.g. chr20:100-200) to a tuple of (chrom_index, chrom_label,
+/// start, end) ...where start and end are converted to the zero-indexed half-open convention used for bed
 ///
 /// Commas will be stripped out of coordinates if present
 ///
-/// This parser makes a 'best-effort' to parse contig names with colons in them, such as HLA alleles
-/// like "HLA-DRB1*10:01:01". Given that samtools region format already has an optinoal colon, it may
-/// be impossible to resolve some cases.
+/// This parser makes a 'best-effort' to parse contig names with colons in them, such as HLA alleles like
+/// "HLA-DRB1*10:01:01". Given that samtools region format already has an optinoal colon, it may be impossible to
+/// resolve some cases.
 ///
 pub fn parse_samtools_region_string(chrom_list: &ChromList, region_str: &str) -> (usize, i64, i64) {
     let (chrom_index, pos_str) =
@@ -203,15 +168,6 @@ pub fn parse_samtools_region_string(chrom_list: &ChromList, region_str: &str) ->
     let chrom_size = chrom_list.data[chrom_index].length as i64;
     let (start, end) = parse_samtools_pos_range(region_str, pos_str, chrom_size);
     (chrom_index, start, end)
-}
-
-#[allow(dead_code)]
-pub fn get_target_segments(chrom_list: &ChromList, regions: &[String]) -> Vec<GenomeSegment> {
-    let mut rval = Vec::new();
-    for region in regions.iter() {
-        rval.push(GenomeSegment::from_region_str(chrom_list, region));
-    }
-    rval
 }
 
 #[cfg(test)]

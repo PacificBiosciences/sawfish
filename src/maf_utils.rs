@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, HashMap};
 
 use camino::Utf8Path;
-use itertools::Itertools;
 use log::info;
+use rust_htslib::bcf::header::HeaderView;
 use rust_htslib::bcf::{self, Read};
 use rust_vc_utils::{ChromList, bigwig_utils};
 use serde::{Deserialize, Serialize};
@@ -29,20 +29,70 @@ pub struct MafData {
     pub samples: Vec<SampleMafData>,
 }
 
+/// Get map from vcf sample index to output sample index
+///
+fn get_vcf_to_output_sample_index_map(
+    filename: &str,
+    sample_names: &[&str],
+    header: &HeaderView,
+) -> Vec<Option<usize>> {
+    if sample_names.is_empty() {
+        header
+            .samples()
+            .iter()
+            .enumerate()
+            .map(|(i, _)| Some(i))
+            .collect()
+    } else {
+        let mut x = Vec::new();
+        let sample_name_count = sample_names.len();
+        let sample_name_to_index_map: HashMap<String, usize> = sample_names
+            .iter()
+            .enumerate()
+            .map(|(i, &x)| (x.to_string(), i))
+            .collect();
+
+        let mut sample_names_found = vec![false; sample_name_count];
+        for vcf_sample_name in header.samples() {
+            let vcf_sample_name = std::str::from_utf8(vcf_sample_name).unwrap().to_string();
+            let sample_index = sample_name_to_index_map.get(&vcf_sample_name).copied();
+            if let Some(sample_index) = sample_index {
+                if sample_names_found[sample_index] {
+                    panic!(
+                        "Sample name '{}' found multiple times in the minor allele frequency input file: '{filename}'",
+                        sample_names[sample_index]
+                    );
+                }
+                sample_names_found[sample_index] = true;
+            }
+            x.push(sample_index);
+        }
+
+        // Check that all output samples have been found:
+        for (sample_index, is_found) in sample_names_found.iter().enumerate() {
+            if !is_found {
+                panic!(
+                    "Sample name '{}' not found in the minor allele frequency input file: '{filename}'",
+                    sample_names[sample_index]
+                );
+            }
+        }
+        x
+    }
+}
+
 /// Scan VCF/BCF file to create minor allele frequency track for the genome
 ///
 /// # Arguments
+/// * `filename` - VCF/BCF file to extract maf values from
 /// * `chrom_list` - All VCF chromosome orders will be arranged to fit the chromosome order in chrom_list
-/// * `sample_names` - If empty, then read all samples in the VCF, otherwise only read the
-///   specified samples, and panic if these are not found. Order of samples in the result
-///   will match those in sample_names.
+/// * `sample_names` - If empty, then read all samples in the VCF, otherwise only read the specified samples, and panic
+///   if these are not found. Order of samples in the result will match those in sample_names.
 ///
 pub fn scan_maf_file(filename: &str, chrom_list: &ChromList, sample_names: &[&str]) -> MafData {
     assert!(!filename.is_empty());
 
     info!("Scanning minor allele frequency data from file '{filename}'");
-
-    let mut maf_data = MafData::default();
 
     let mut reader = bcf::Reader::from_path(filename).unwrap();
     let header = reader.header();
@@ -59,7 +109,7 @@ pub fn scan_maf_file(filename: &str, chrom_list: &ChromList, sample_names: &[&st
                 }
                 None => {
                     panic!(
-                        "Input alignment file does not includes chromosome '{vcf_chrom_name}' from minor allele frequency file '{filename}'"
+                        "Input alignment file does not include chromosome '{vcf_chrom_name}' from minor allele frequency file '{filename}'"
                     );
                 }
             }
@@ -68,47 +118,31 @@ pub fn scan_maf_file(filename: &str, chrom_list: &ChromList, sample_names: &[&st
     };
 
     // Get sample names from header, and build a map of VCF sample index values to output sample index values
-    let vcf_to_output_sample_index_map = {
-        let mut x = Vec::new();
-        let output_chrom_count = chrom_list.data.len();
-        if sample_names.is_empty() {
-            for (vcf_sample_index, &sample_bytes) in header.samples().iter().enumerate() {
-                let sample_name = std::str::from_utf8(sample_bytes).unwrap().to_string();
-                maf_data.samples.push(SampleMafData {
-                    sample_name,
-                    data: vec![BTreeMap::new(); output_chrom_count],
-                });
-                x.push(Some(vcf_sample_index));
-            }
-        } else {
-            let sample_map: HashMap<String, usize> = sample_names
-                .iter()
-                .enumerate()
-                .map(|(i, &x)| (x.to_string(), i))
-                .collect();
-            maf_data.samples = sample_names
-                .iter()
-                .map(|&x| SampleMafData {
-                    sample_name: x.to_string(),
-                    data: vec![BTreeMap::new(); output_chrom_count],
-                })
-                .collect();
-            for sample_bytes in header.samples() {
-                let sample_name = std::str::from_utf8(sample_bytes).unwrap().to_string();
-                x.push(sample_map.get(&sample_name).copied());
-            }
+    let vcf_to_output_sample_index_map =
+        get_vcf_to_output_sample_index_map(filename, sample_names, header);
 
-            // Check that all output samples have been found:
-            let mut testx = x.iter().filter_map(|&x| x).sorted().collect::<Vec<_>>();
-            testx.sort();
-            for (sample_index, sample_name) in sample_names.iter().enumerate() {
-                assert_eq!(
-                    testx[sample_index], sample_index,
-                    "Can't find sample '{sample_name}' in minor allele frequency input file: '{filename}'"
-                );
-            }
-        }
-        x
+    // Initialize maf_data from sample_names
+    let mut maf_data = {
+        let sample_name_strings: Vec<_> = if sample_names.is_empty() {
+            header
+                .samples()
+                .iter()
+                .map(|x| std::str::from_utf8(x).unwrap().to_string())
+                .collect()
+        } else {
+            sample_names.iter().map(|&x| x.to_string()).collect()
+        };
+
+        let output_chrom_count = chrom_list.data.len();
+        let samples = sample_name_strings
+            .into_iter()
+            .map(|x| SampleMafData {
+                sample_name: x,
+                data: vec![BTreeMap::new(); output_chrom_count],
+            })
+            .collect();
+
+        MafData { samples }
     };
 
     let pass_filter_id = header.name_to_id("PASS".as_bytes());

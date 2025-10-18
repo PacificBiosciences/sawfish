@@ -148,7 +148,15 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         //
         // Consider dumping this whole thing onto its own thread if the time is annoying
         //
-        let maf_data = scan_maf_file(maf_filename, &chrom_list, &[&sample_name]);
+
+        // By default the sample name searched for in the VCF is that extracted from the BAM header. An alternative
+        // sample name can be specified on the command-line:
+        let maf_sample_name = if let Some(maf_sample_name) = &settings.maf_sample_name {
+            maf_sample_name
+        } else {
+            &sample_name
+        };
+        let maf_data = scan_maf_file(maf_filename, &chrom_list, &[maf_sample_name]);
         serialize_maf_data(&settings.output_dir, &maf_data);
     }
 

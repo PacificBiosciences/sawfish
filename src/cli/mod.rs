@@ -128,5 +128,5 @@ pub fn parse_settings() -> Settings {
 // Shared default parameter values
 pub mod defaults {
     pub const MIN_GAP_COMPRESSED_IDENTITY: f64 = 0.97;
-    pub const MIN_SV_MAPQ: u32 = 10;
+    pub const MIN_SV_MAPQ: u32 = 5;
 }

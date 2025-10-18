@@ -1,8 +1,8 @@
+use rust_vc_utils::GenomeSegment;
 use strum::EnumCount;
 
 use crate::copy_number_segmentation::CopyNumberState;
 use crate::genome_regions::GenomeRegionsByChromIndex;
-use crate::genome_segment::GenomeSegment;
 
 /// Provide a copy number for the given target region
 ///

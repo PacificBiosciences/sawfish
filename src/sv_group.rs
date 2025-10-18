@@ -2,10 +2,9 @@ use std::collections::HashSet;
 use std::hash::Hash;
 
 use log::error;
+use rust_vc_utils::{GenomeSegment, IntRange};
 
 use crate::expected_ploidy::{SVLocusExpectedCNInfo, SVLocusPloidy};
-use crate::genome_segment::GenomeSegment;
-use crate::int_range::IntRange;
 use crate::refine_sv::RefinedSV;
 use crate::simple_alignment::SimpleAlignment;
 

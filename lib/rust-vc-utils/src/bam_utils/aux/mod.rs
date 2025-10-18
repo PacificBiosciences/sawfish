@@ -1,3 +1,5 @@
+pub mod sa_tag_parser;
+
 use rust_htslib::bam;
 
 fn unexpected_aux_val_err(
@@ -7,10 +9,7 @@ fn unexpected_aux_val_err(
 ) -> ! {
     let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
     let str_aux_tag = std::str::from_utf8(aux_tag).unwrap();
-    panic!(
-        "Unexpected {str_aux_tag} tag format in read {qname}: {:?}",
-        aux_val,
-    );
+    panic!("Unexpected {str_aux_tag} tag format in read {qname}: {aux_val:?}",);
 }
 
 fn missing_aux_tag_err(record: &bam::Record, aux_tag: &[u8]) -> ! {
@@ -97,10 +96,16 @@ pub fn is_aux_tag_found(record: &bam::Record, aux_tag: &[u8]) -> bool {
     record.aux(aux_tag).is_ok()
 }
 
+pub fn remove_aux_if_found(record: &mut bam::Record, aux_tag: &[u8]) {
+    if is_aux_tag_found(record, aux_tag) {
+        record.remove_aux(aux_tag).unwrap();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_htslib::bam::{header, Header, HeaderView};
+    use rust_htslib::bam::{Header, HeaderView, header};
 
     fn get_test_header() -> HeaderView {
         let mut _header = Header::new();

@@ -3,19 +3,18 @@ use rust_htslib::bam;
 use camino::Utf8Path;
 use rust_htslib::bcf::{self, Read};
 use rust_vc_utils::aux::{get_string_aux_tag, is_aux_tag_found};
-use rust_vc_utils::{ChromList, rev_comp_in_place};
+use rust_vc_utils::get_seq_order_read_split_segments;
+use rust_vc_utils::{ChromList, GenomeSegment, IntRange, rev_comp_in_place};
 use scanf::sscanf;
 use unwrap::unwrap;
 
-use crate::bam_sa_parser::get_seq_order_read_split_segments;
 use crate::bam_utils::get_simplified_dna_seq;
+use crate::bcf_utils::bcf_chrom_index_map;
 use crate::breakpoint::{Breakend, BreakendDirection, BreakendNeighbor, Breakpoint, InsertInfo};
 use crate::contig_output::{CONTIG_AUX_TAG, SA_AUX_TAG};
 use crate::expected_ploidy::get_max_haplotype_count_for_regions;
 use crate::filenames::{CANDIDATE_SV_FILENAME, CONTIG_ALIGNMENT_FILENAME};
 use crate::genome_regions::{GenomeRegions, GenomeRegionsByChromIndex};
-use crate::genome_segment::GenomeSegment;
-use crate::int_range::IntRange;
 use crate::large_variant_output::{
     BND0_NEIGHBOR_INFO_KEY, BND1_NEIGHBOR_INFO_KEY, CONTIG_POS_INFO_KEY, OVERLAP_ASM_INFO_KEY,
 };
@@ -291,7 +290,7 @@ fn parse_bnd_alt_allele(chrom_list: &ChromList, alt_allele: &[u8], homlen: i64) 
 struct AnnotatedRefinedSV {
     refined_sv: RefinedSV,
 
-    /// Assembly index or indexes used to associate the contig back to the SV call
+    /// Assembly indexes used to associate the contig back to the SV call
     ///
     /// This provides a way to clarify which contigs are associated with the variant in overlapping contig regions.
     ///
@@ -336,11 +335,11 @@ fn process_bcf_record_to_anno_refine_sv(
     chrom_list: &ChromList,
     all_cluster_assembly_regions: &[Vec<GenomeSegment>],
     contigs: &SampleAssemblies,
-    rid_to_chrom_index: &[usize],
+    bcf_chrom_index_map: &[usize],
     rec: &bcf::Record,
 ) -> Option<AnnotatedRefinedSV> {
     let rid = rec.rid().unwrap() as usize;
-    let chrom_index = rid_to_chrom_index[rid];
+    let chrom_index = bcf_chrom_index_map[rid];
     let pos = rec.pos();
     let (id, is_breakend1) =
         get_sv_id_from_label(std::str::from_utf8(rec.id().as_slice()).unwrap());
@@ -552,6 +551,52 @@ fn process_bcf_record_to_anno_refine_sv(
     } else {
         panic!("Unexpected SV type: {svtype}");
     }
+}
+
+/// Open bcf file of SV candidates and convert these into refined SVs
+fn get_anno_refined_svs(
+    disable_small_indels: bool,
+    discover_dir: &Utf8Path,
+    chrom_list: &ChromList,
+    assembly_regions: &[Vec<GenomeSegment>],
+    contigs: &SampleAssemblies,
+) -> Vec<AnnotatedRefinedSV> {
+    // This outputs the complement of disable_small_indels output. Used for some debug scenarios.
+    let disable_large_svs = false;
+
+    let candidate_sv_filename = discover_dir.join(CANDIDATE_SV_FILENAME);
+    if !candidate_sv_filename.exists() {
+        panic!("Can't find candidate SV file expected at {candidate_sv_filename}");
+    }
+
+    let mut reader = bcf::Reader::from_path(candidate_sv_filename).unwrap();
+    let header = reader.header();
+    let bcf_chrom_index_map = bcf_chrom_index_map(chrom_list, header);
+
+    let mut x = Vec::new();
+
+    let mut rec = reader.empty_record();
+    while let Some(r) = reader.read(&mut rec) {
+        unwrap!(r, "Failed to parse variant record");
+
+        let arsv = process_bcf_record_to_anno_refine_sv(
+            chrom_list,
+            assembly_regions,
+            contigs,
+            &bcf_chrom_index_map,
+            &rec,
+        );
+        if let Some(anno_refined_sv) = arsv {
+            if disable_small_indels && anno_refined_sv.refined_sv.single_region_refinement {
+                continue;
+            }
+            if disable_large_svs && !anno_refined_sv.refined_sv.single_region_refinement {
+                continue;
+            }
+            x.push(anno_refined_sv);
+        }
+    }
+    x
 }
 
 /// Attempt to convert the full set of AnnotatedRefinedSVs from the same cluster_index into a single-sample SVGroup
@@ -810,50 +855,16 @@ fn process_sv_groups_from_candidate_sv_file(
     contigs: &SampleAssemblies,
     expected_copy_number_regions: Option<&GenomeRegionsByChromIndex>,
 ) -> Vec<SVGroup> {
-    let candidate_sv_filename = discover_dir.join(CANDIDATE_SV_FILENAME);
-    if !candidate_sv_filename.exists() {
-        panic!("Can't find candidate SV file expected at {candidate_sv_filename}");
-    }
+    // The first step to getting SV groups is getting the underlying RefinedSV records from the discover-step candidate VCF file:
+    let anno_refined_svs = get_anno_refined_svs(
+        disable_small_indels,
+        discover_dir,
+        chrom_list,
+        assembly_regions,
+        contigs,
+    );
 
-    let mut reader = bcf::Reader::from_path(candidate_sv_filename).unwrap();
-    let header = reader.header();
-
-    // Get chrom names from header -- bcf chrom order might be different than our own chromosome
-    // order:
-    //
-    let rid_to_chrom_index = {
-        let mut rid_to_chrom_index = Vec::new();
-        let chrom_count = header.contig_count();
-        for rid in 0..chrom_count {
-            let chrom_bytes = header.rid2name(rid).unwrap();
-            let chrom_name = std::str::from_utf8(chrom_bytes).unwrap().to_string();
-            let chrom_index = *chrom_list.label_to_index.get(&chrom_name).unwrap();
-            rid_to_chrom_index.push(chrom_index);
-        }
-        rid_to_chrom_index
-    };
-
-    let mut anno_refined_svs = Vec::new();
-
-    let mut rec = reader.empty_record();
-    while let Some(r) = reader.read(&mut rec) {
-        unwrap!(r, "Failed to parse variant record");
-
-        let arsv = process_bcf_record_to_anno_refine_sv(
-            chrom_list,
-            assembly_regions,
-            contigs,
-            &rid_to_chrom_index,
-            &rec,
-        );
-        if let Some(anno_refined_sv) = arsv {
-            if disable_small_indels && anno_refined_sv.refined_sv.single_region_refinement {
-                continue;
-            }
-            anno_refined_svs.push(anno_refined_sv);
-        }
-    }
-
+    // The second step is to group refined SVs into sv_groups
     group_single_sample_refined_svs(
         treat_single_copy_as_haploid,
         contigs,

@@ -1,10 +1,56 @@
-## v0.30.1 - 2025-08-27
+## v0.33.0 - 2025-XX-XX
+
+### Added
+- Add RegionMap
+- Add drop_true from sawfish
+- New methods to remove clipped regions from cigars
 
 ### Changed
+
+- In all cigar shift routines, reverse cigar indel cluster ordering such that insertion state is always ordered first
 - Add method to restrict GenomeRef sequence characters
 - Make reverse comp methods tolerant to unexpected characters
   - Still not supporting IUPAC ambiguity codes
-- Backported clippy fixes from rust 1.89
+
+## v0.32.0 - 2025-08-07
+
+### Added
+- Add alignment edit distance and reorg gap-compressed identity
+- Add alignment clipping routines from sawfish
+- Add indel left and right-shift methods from portello
+- Add sawfish `get_indel_breakend_homology_info` method
+
+## v0.31.0 - 2025-07-09
+
+This update includes numerous additions to support the initial release of portello.
+
+### Added
+- Add `assert_bam_eof` method to assert that bam/cram files are not truncated
+- Add `remove_aux_if_found` method for removing aux records from bam that may not exist
+- Add `clean_up_cigar_edge_indels` method to standardize all edge indels in a cigar string
+- Add `cigar_edge_insertion_to_softclip` method to standardize edge insertions in a cigar string
+- Add subset of sawfish GenomeSegment methods
+- Add `get_read_segment_to_ref_pos_map` method to generate read-to-ref position maps from split reads.
+- Add sawfish int range methods
+- Add sawfish split read parse and ordering methods
+  - Update to support degenerate case
+
+### Changed
+- Breaking interface change -- all cigar functions processing read lengths have changed names and arguments.
+  - Cigar read-length functions have previously been supported as two functions, one to include hard-clips and one to
+    ignore hard-clips.
+  - All methods are consolidated to one function taking an `ignore_hard_clip` bool argument instead.
+  - Update guide:
+    - Replace any "complete" methods with `ignore_hard_clip` set to `false`
+```
+let offset = get_cigar_complete_read_offset(cigar); // Before
+let offset = get_cigar_read_offset(cigar, false); // After
+```
+    - Replace any "hard_clipped" methods with `ignore_hard_clip` set to `true`
+```
+let offset = get_cigar_hard_clipped_read_offset(cigar); // Before
+let offset = get_cigar_read_offset(cigar, true); // After
+```
 
 ## v0.30.0 - 2025-06-09
 

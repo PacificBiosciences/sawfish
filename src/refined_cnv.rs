@@ -1,9 +1,9 @@
 use std::cmp::Ordering;
 
+use rust_vc_utils::GenomeSegment;
 use strum::EnumCount;
 
 use crate::breakpoint::VcfSVType;
-use crate::genome_segment::GenomeSegment;
 use crate::prob_utils::error_prob_to_phred;
 use crate::refine_sv::Genotype;
 

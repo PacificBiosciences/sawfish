@@ -5,6 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use camino::Utf8Path;
 use log::info;
+use rust_vc_utils::GenomeSegment;
+use rust_vc_utils::int_range::{IntRange, get_recip_overlap};
 
 use self::transition_types::get_copynum_transition_types_from_breakends;
 use super::write_copy_number_info::write_copy_number_info;
@@ -19,8 +21,6 @@ use crate::copy_number_segmentation::{
 use crate::depth_bins::DepthBin;
 use crate::expected_ploidy::get_majority_expected_copy_number_for_region;
 use crate::gc_correction::SampleGCBiasCorrectionData;
-use crate::genome_segment::GenomeSegment;
-use crate::int_range::{IntRange, get_recip_overlap};
 use crate::joint_call::{SampleJointCallData, SharedJointCallData};
 use crate::prob_utils::{ln_error_prob_to_qphred, normalize_ln_distro};
 use crate::refine_sv::{Genotype, RefinedSV};

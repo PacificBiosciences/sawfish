@@ -3,7 +3,7 @@ use std::sync::mpsc::channel;
 use log::{error, info};
 use rust_htslib::bam::{self, Read};
 use rust_vc_utils::{
-    ChromList, GenomeRef, MeanTracker, ProgressReporter, filter_out_alignment_record,
+    ChromList, GenomeRef, MeanTracker, ProgressReporter, RegionMap, filter_out_alignment_record,
     get_region_segments,
 };
 use unwrap::unwrap;
@@ -12,7 +12,7 @@ use crate::bam_utils;
 use crate::cli;
 use crate::cluster_breakpoints::{BreakBuilder, BreakObservations};
 use crate::depth_bins::{AllChromDepthBinInfo, ChromDepthBins, DepthBinsBuilder, GenomeDepthBins};
-use crate::genome_regions::{ChromRegions, GenomeRegions};
+use crate::genome_regions::GenomeRegions;
 use crate::worker_thread_data::BamReaderWorkerThreadDataSet;
 
 #[allow(clippy::too_many_arguments)]
@@ -27,7 +27,7 @@ fn scan_chromosome_segment(
     is_targeted_scan: bool,
     progress_reporter: &ProgressReporter,
 ) -> (BreakObservations, DepthBinsBuilder) {
-    let mut depth_builder = DepthBinsBuilder::new(scan_settings.depth_bin_size);
+    let mut depth_builder = DepthBinsBuilder::default();
     let mut break_builder = BreakBuilder::new(
         scan_settings.min_evidence_indel_size,
         scan_settings.min_sv_mapq,
@@ -60,7 +60,7 @@ fn scan_chromosome_segment(
 
         // This filter keeps read evidence from being double-counted at region boundaries
         if record.pos() >= begin {
-            depth_builder.process_bam_record(&record);
+            depth_builder.process_bam_record(scan_settings.depth_bin_size, &record);
         }
     }
 
@@ -92,7 +92,7 @@ pub fn get_region_segments_with_offset(
 ///
 fn get_chrom_worker_segments(
     chrom_size: u64,
-    chrom_target_regions: Option<&ChromRegions>,
+    chrom_target_regions: Option<&RegionMap>,
     segment_size: u64,
 ) -> Vec<(u64, u64)> {
     match chrom_target_regions {
@@ -129,7 +129,7 @@ fn scan_chromosome_segments(
     chrom_index: usize,
     chrom_size: u64,
     chrom_sequence: &[u8],
-    chrom_target_regions: Option<&ChromRegions>,
+    chrom_target_regions: Option<&RegionMap>,
     progress_reporter: &ProgressReporter,
 ) -> (BreakObservations, AllChromDepthBinInfo, DepthBinsBuilder) {
     let (tx, rx) = channel();
@@ -291,19 +291,13 @@ pub fn scan_sample_bam_for_sv_evidence(
     let mut genome_break_observations = BreakObservations::new();
     let mut depth_bins = vec![ChromDepthBins::new(); chrom_count];
     let mut read_length = MeanTracker::default();
-    let mut genome_depth_bins_builder = Vec::new();
+    let mut genome_depth_bins_builder = vec![DepthBinsBuilder::default(); chrom_count];
     for (chrom_index, (mut break_observations, chrom_depth_bins, chrom_depth_bins_builder)) in rx {
         genome_break_observations.merge(&mut break_observations);
         depth_bins[chrom_index] = chrom_depth_bins.depth_bins;
         read_length.merge(&chrom_depth_bins.read_length);
-        genome_depth_bins_builder.push((chrom_index, chrom_depth_bins_builder));
+        genome_depth_bins_builder[chrom_index] = chrom_depth_bins_builder;
     }
-
-    genome_depth_bins_builder.sort_by_key(|(i, _)| *i);
-    let genome_depth_bins_builder = genome_depth_bins_builder
-        .into_iter()
-        .map(|(_, x)| x)
-        .collect::<Vec<_>>();
 
     let genome_depth_bins = GenomeDepthBins {
         bin_size: scan_settings.depth_bin_size,

@@ -107,7 +107,7 @@ pub fn decode_cpg_meth_info(record: &bam::Record) -> Result<CpgMethInfo, i32> {
     let mm_tag = mm_tag.unwrap();
     let mm_tag = match mm_tag {
         Aux::String(tag) => tag,
-        _ => panic!("Unexpected MM tag format in read {}: {:?}", qname, mm_tag),
+        _ => panic!("Unexpected MM tag format in read {qname}: {mm_tag:?}"),
     };
 
     // A blank entry after the MM tag is part of normal ccs output:
@@ -132,7 +132,7 @@ pub fn decode_cpg_meth_info(record: &bam::Record) -> Result<CpgMethInfo, i32> {
                     skip_mode = match word.chars().nth(3).unwrap() {
                         '?' => CpGMethSkippedBaseMode::Unknown,
                         '.' => CpGMethSkippedBaseMode::LowProb,
-                        _ => panic!("Unexpected MM tag format in read {}: {:?}", qname, mm_tag),
+                        _ => panic!("Unexpected MM tag format in read {qname}: {mm_tag:?}"),
                     };
                 }
                 break;
@@ -140,7 +140,7 @@ pub fn decode_cpg_meth_info(record: &bam::Record) -> Result<CpgMethInfo, i32> {
                 ml_offset += mm_iter.count()
             }
         } else {
-            panic!("Unexpected MM tag format in read {}: {:?}", qname, mm_tag);
+            panic!("Unexpected MM tag format in read {qname}: {mm_tag:?}");
         }
     }
 
@@ -165,7 +165,7 @@ pub fn decode_cpg_meth_info(record: &bam::Record) -> Result<CpgMethInfo, i32> {
             .skip(ml_offset)
             .take(offsets.len())
             .collect::<Vec<_>>(),
-        _ => panic!("Unexpected MM tag format in read {}: {:?}", qname, mm_tag),
+        _ => panic!("Unexpected MM tag format in read {qname}: {mm_tag:?}"),
     };
 
     // Used for error messages:
@@ -173,8 +173,7 @@ pub fn decode_cpg_meth_info(record: &bam::Record) -> Result<CpgMethInfo, i32> {
     let ml_tag_value_count = ml_vals.len();
     assert_eq!(
         mm_tag_offset_count, ml_tag_value_count,
-        "Error: bam record C+m MM and ML counts disagree ({} vs {}) in bam record: {}",
-        mm_tag_offset_count, ml_tag_value_count, qname
+        "Error: bam record C+m MM and ML counts disagree ({mm_tag_offset_count} vs {ml_tag_value_count}) in bam record: {qname}",
     );
 
     // Convert offsets into read positions
@@ -242,7 +241,7 @@ pub fn decode_cpg_meth_info(record: &bam::Record) -> Result<CpgMethInfo, i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_htslib::bam::{header, Header, HeaderView};
+    use rust_htslib::bam::{Header, HeaderView, header};
 
     #[test]
     fn test_mm_ml_parse() {

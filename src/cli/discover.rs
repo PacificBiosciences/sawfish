@@ -56,6 +56,12 @@ pub struct DiscoverSettings {
     #[arg(long = "maf", value_name = "FILE")]
     pub maf_filename: Option<String>,
 
+    /// Specify the sample name to extract from the minor allele frequency variant file. By default the file
+    /// is searched for the sample name found in the input alignment file. This option allows an alternative
+    /// name to be specificied.
+    #[arg(long)]
+    pub maf_sample_name: Option<String>,
+
     /// This mode is designed to more quickly run a CNV-focused analysis by analyzing only the larger-scale SV
     /// breakpoint evidence that could be useful to improve CNV/large-variant accuracy, together with depth-based CNV
     /// analysis which is run regardless of this mode setting.

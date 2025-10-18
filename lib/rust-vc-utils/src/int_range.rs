@@ -13,6 +13,12 @@ pub struct IntRange {
     pub end: i64,
 }
 
+impl Default for IntRange {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl IntRange {
     /// initialize to a detectably invalid state:
     pub fn new() -> Self {
@@ -78,6 +84,13 @@ impl IntRange {
         let istart = self.start;
         self.start = size - self.end;
         self.end = size - istart;
+    }
+
+    pub fn get_reverse_range(&self, size: i64) -> Self {
+        Self {
+            start: size - self.end,
+            end: size - self.start,
+        }
     }
 }
 
@@ -204,5 +217,21 @@ mod tests {
         let r2 = IntRange::from_pair(1500, 2000);
         let ro = get_recip_overlap(&r1, &r2);
         approx::assert_ulps_eq!(ro as f32, 0.5_f32, max_ulps = 4);
+    }
+
+    #[test]
+    fn test_reverse() {
+        let size = 10_000;
+
+        let r1 = IntRange::from_pair(1000, 2000);
+
+        let mut r2 = r1.clone();
+
+        r2.reverse(size);
+        assert_ne!(r1, r2);
+        assert_eq!(r2, r1.get_reverse_range(size));
+
+        r2.reverse(size);
+        assert_eq!(r1, r2);
     }
 }

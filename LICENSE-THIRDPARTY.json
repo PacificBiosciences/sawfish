@@ -27,15 +27,6 @@
     "description": "Mirror of Rust's allocator API"
   },
   {
-    "name": "android-tzdata",
-    "version": "0.1.1",
-    "authors": "RumovZ",
-    "repository": "https://github.com/RumovZ/android-tzdata",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Parser for the Android-specific tzdata file"
-  },
-  {
     "name": "android_system_properties",
     "version": "0.1.5",
     "authors": "Nicolas Silva <nical@fastmail.com>",
@@ -136,7 +127,7 @@
   },
   {
     "name": "bindgen",
-    "version": "0.72.0",
+    "version": "0.72.1",
     "authors": "Jyun-Yan You <jyyou.tw@gmail.com>|Emilio Cobos Álvarez <emilio@crisal.io>|Nick Fitzgerald <fitzgen@gmail.com>|The Servo project developers",
     "repository": "https://github.com/rust-lang/rust-bindgen",
     "license": "BSD-3-Clause",
@@ -181,7 +172,7 @@
   },
   {
     "name": "bitflags",
-    "version": "2.9.1",
+    "version": "2.9.4",
     "authors": "The Rust Project Developers",
     "repository": "https://github.com/bitflags/bitflags",
     "license": "Apache-2.0 OR MIT",
@@ -244,7 +235,7 @@
   },
   {
     "name": "camino",
-    "version": "1.1.11",
+    "version": "1.2.0",
     "authors": "Without Boats <saoirse@without.boats>|Ashley Williams <ashley666ashley@gmail.com>|Steve Klabnik <steve@steveklabnik.com>|Rain <rain@sunshowers.io>",
     "repository": "https://github.com/camino-rs/camino",
     "license": "Apache-2.0 OR MIT",
@@ -253,7 +244,7 @@
   },
   {
     "name": "cc",
-    "version": "1.2.32",
+    "version": "1.2.37",
     "authors": "Alex Crichton <alex@alexcrichton.com>",
     "repository": "https://github.com/rust-lang/cc-rs",
     "license": "Apache-2.0 OR MIT",
@@ -271,7 +262,7 @@
   },
   {
     "name": "cfg-if",
-    "version": "1.0.1",
+    "version": "1.0.3",
     "authors": "Alex Crichton <alex@alexcrichton.com>",
     "repository": "https://github.com/rust-lang/cfg-if",
     "license": "Apache-2.0 OR MIT",
@@ -280,7 +271,7 @@
   },
   {
     "name": "chrono",
-    "version": "0.4.41",
+    "version": "0.4.42",
     "authors": null,
     "repository": "https://github.com/chronotope/chrono",
     "license": "Apache-2.0 OR MIT",
@@ -298,7 +289,7 @@
   },
   {
     "name": "clap",
-    "version": "4.5.44",
+    "version": "4.5.47",
     "authors": null,
     "repository": "https://github.com/clap-rs/clap",
     "license": "Apache-2.0 OR MIT",
@@ -307,7 +298,7 @@
   },
   {
     "name": "clap_builder",
-    "version": "4.5.44",
+    "version": "4.5.47",
     "authors": null,
     "repository": "https://github.com/clap-rs/clap",
     "license": "Apache-2.0 OR MIT",
@@ -316,7 +307,7 @@
   },
   {
     "name": "clap_derive",
-    "version": "4.5.41",
+    "version": "4.5.47",
     "authors": null,
     "repository": "https://github.com/clap-rs/clap",
     "license": "Apache-2.0 OR MIT",
@@ -361,8 +352,8 @@
   },
   {
     "name": "console",
-    "version": "0.15.11",
-    "authors": "Armin Ronacher <armin.ronacher@active-4.com>",
+    "version": "0.16.1",
+    "authors": null,
     "repository": "https://github.com/console-rs/console",
     "license": "MIT",
     "license_file": null,
@@ -469,7 +460,7 @@
   },
   {
     "name": "cxx",
-    "version": "1.0.168",
+    "version": "1.0.184",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/cxx",
     "license": "Apache-2.0 OR MIT",
@@ -478,7 +469,7 @@
   },
   {
     "name": "cxx-build",
-    "version": "1.0.168",
+    "version": "1.0.184",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/cxx",
     "license": "Apache-2.0 OR MIT",
@@ -487,7 +478,7 @@
   },
   {
     "name": "cxxbridge-flags",
-    "version": "1.0.168",
+    "version": "1.0.184",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/cxx",
     "license": "Apache-2.0 OR MIT",
@@ -496,7 +487,7 @@
   },
   {
     "name": "cxxbridge-macro",
-    "version": "1.0.168",
+    "version": "1.0.184",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/cxx",
     "license": "Apache-2.0 OR MIT",
@@ -532,7 +523,7 @@
   },
   {
     "name": "deranged",
-    "version": "0.4.0",
+    "version": "0.5.3",
     "authors": "Jacob Pratt <jacob@jhpratt.dev>",
     "repository": "https://github.com/jhpratt/deranged",
     "license": "Apache-2.0 OR MIT",
@@ -658,7 +649,7 @@
   },
   {
     "name": "errno",
-    "version": "0.3.13",
+    "version": "0.3.14",
     "authors": "Chris Wong <lambda.fairy@gmail.com>|Dan Gohman <dev@sunfishcode.online>",
     "repository": "https://github.com/lambda-fairy/rust-errno",
     "license": "Apache-2.0 OR MIT",
@@ -702,6 +693,15 @@
     "description": "Simple, efficient logging"
   },
   {
+    "name": "find-msvc-tools",
+    "version": "0.1.1",
+    "authors": null,
+    "repository": "https://github.com/rust-lang/cc-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Find windows-specific tools, read MSVC versions from the registry and from COM interfaces"
+  },
+  {
     "name": "fixedbitset",
     "version": "0.5.7",
     "authors": "bluss",
@@ -738,8 +738,17 @@
     "description": "A fast, non-cryptographic, minimally DoS-resistant hashing algorithm."
   },
   {
+    "name": "foldhash",
+    "version": "0.2.0",
+    "authors": "Orson Peters <orsonpeters@gmail.com>",
+    "repository": "https://github.com/orlp/foldhash",
+    "license": "Zlib",
+    "license_file": null,
+    "description": "A fast, non-cryptographic, minimally DoS-resistant hashing algorithm."
+  },
+  {
     "name": "form_urlencoded",
-    "version": "1.2.1",
+    "version": "1.2.2",
     "authors": "The rust-url developers",
     "repository": "https://github.com/servo/rust-url",
     "license": "Apache-2.0 OR MIT",
@@ -838,7 +847,7 @@
   },
   {
     "name": "iana-time-zone",
-    "version": "0.1.63",
+    "version": "0.1.64",
     "authors": "Andrew Straw <strawman@astraw.com>|René Kijewski <rene.kijewski@fu-berlin.de>|Ryan Lopopolo <rjl@hyperbo.la>",
     "repository": "https://github.com/strawlab/iana-time-zone",
     "license": "Apache-2.0 OR MIT",
@@ -928,7 +937,7 @@
   },
   {
     "name": "idna",
-    "version": "1.0.3",
+    "version": "1.1.0",
     "authors": "The rust-url developers",
     "repository": "https://github.com/servo/rust-url/",
     "license": "Apache-2.0 OR MIT",
@@ -955,7 +964,7 @@
   },
   {
     "name": "indexmap",
-    "version": "2.10.0",
+    "version": "2.11.3",
     "authors": null,
     "repository": "https://github.com/indexmap-rs/indexmap",
     "license": "Apache-2.0 OR MIT",
@@ -964,7 +973,7 @@
   },
   {
     "name": "indicatif",
-    "version": "0.17.11",
+    "version": "0.18.0",
     "authors": null,
     "repository": "https://github.com/console-rs/indicatif",
     "license": "MIT",
@@ -1027,7 +1036,7 @@
   },
   {
     "name": "jobserver",
-    "version": "0.1.33",
+    "version": "0.1.34",
     "authors": "Alex Crichton <alex@alexcrichton.com>",
     "repository": "https://github.com/rust-lang/jobserver-rs",
     "license": "Apache-2.0 OR MIT",
@@ -1036,9 +1045,9 @@
   },
   {
     "name": "js-sys",
-    "version": "0.3.77",
+    "version": "0.3.78",
     "authors": "The wasm-bindgen Developers",
-    "repository": "https://github.com/rustwasm/wasm-bindgen/tree/master/crates/js-sys",
+    "repository": "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/js-sys",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "Bindings for all JS global objects and functions in all JS environments like Node.js and browsers, built on `#[wasm_bindgen]` using the `wasm-bindgen` crate."
@@ -1108,7 +1117,7 @@
   },
   {
     "name": "link-cplusplus",
-    "version": "1.0.10",
+    "version": "1.0.12",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/link-cplusplus",
     "license": "Apache-2.0 OR MIT",
@@ -1117,7 +1126,7 @@
   },
   {
     "name": "linux-raw-sys",
-    "version": "0.9.4",
+    "version": "0.11.0",
     "authors": "Dan Gohman <dev@sunfishcode.online>",
     "repository": "https://github.com/sunfishcode/linux-raw-sys",
     "license": "Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT",
@@ -1135,7 +1144,7 @@
   },
   {
     "name": "log",
-    "version": "0.4.27",
+    "version": "0.4.28",
     "authors": "The Rust Project Developers",
     "repository": "https://github.com/rust-lang/log",
     "license": "Apache-2.0 OR MIT",
@@ -1323,15 +1332,6 @@
     "description": "A minimal library that determines the number of running threads for the current process."
   },
   {
-    "name": "number_prefix",
-    "version": "0.4.0",
-    "authors": "Benjamin Sago <ogham@bsago.me>",
-    "repository": "https://github.com/ogham/rust-number-prefix",
-    "license": "MIT",
-    "license_file": null,
-    "description": "Library for numeric prefixes (kilo, giga, kibi)."
-  },
-  {
     "name": "once_cell",
     "version": "1.21.3",
     "authors": "Aleksey Kladov <aleksey.kladov@gmail.com>",
@@ -1369,7 +1369,7 @@
   },
   {
     "name": "percent-encoding",
-    "version": "2.3.1",
+    "version": "2.3.2",
     "authors": "The rust-url developers",
     "repository": "https://github.com/servo/rust-url/",
     "license": "Apache-2.0 OR MIT",
@@ -1414,7 +1414,7 @@
   },
   {
     "name": "potential_utf",
-    "version": "0.1.2",
+    "version": "0.1.3",
     "authors": "The ICU4X Project Developers",
     "repository": "https://github.com/unicode-org/icu4x",
     "license": "Unicode-3.0",
@@ -1441,7 +1441,7 @@
   },
   {
     "name": "prettyplease",
-    "version": "0.2.36",
+    "version": "0.2.37",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/prettyplease",
     "license": "Apache-2.0 OR MIT",
@@ -1459,7 +1459,7 @@
   },
   {
     "name": "proc-macro2",
-    "version": "1.0.97",
+    "version": "1.0.101",
     "authors": "David Tolnay <dtolnay@gmail.com>|Alex Crichton <alex@alexcrichton.com>",
     "repository": "https://github.com/dtolnay/proc-macro2",
     "license": "Apache-2.0 OR MIT",
@@ -1540,8 +1540,8 @@
   },
   {
     "name": "rayon",
-    "version": "1.10.0",
-    "authors": "Niko Matsakis <niko@alum.mit.edu>|Josh Stone <cuviper@gmail.com>",
+    "version": "1.11.0",
+    "authors": null,
     "repository": "https://github.com/rayon-rs/rayon",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
@@ -1549,8 +1549,8 @@
   },
   {
     "name": "rayon-core",
-    "version": "1.12.1",
-    "authors": "Niko Matsakis <niko@alum.mit.edu>|Josh Stone <cuviper@gmail.com>",
+    "version": "1.13.0",
+    "authors": null,
     "repository": "https://github.com/rayon-rs/rayon",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
@@ -1558,7 +1558,7 @@
   },
   {
     "name": "regex",
-    "version": "1.11.1",
+    "version": "1.11.2",
     "authors": "The Rust Project Developers|Andrew Gallant <jamslam@gmail.com>",
     "repository": "https://github.com/rust-lang/regex",
     "license": "Apache-2.0 OR MIT",
@@ -1567,18 +1567,18 @@
   },
   {
     "name": "regex-automata",
-    "version": "0.4.9",
+    "version": "0.4.10",
     "authors": "The Rust Project Developers|Andrew Gallant <jamslam@gmail.com>",
-    "repository": "https://github.com/rust-lang/regex/tree/master/regex-automata",
+    "repository": "https://github.com/rust-lang/regex",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "Automata construction and matching using regular expressions."
   },
   {
     "name": "regex-syntax",
-    "version": "0.8.5",
+    "version": "0.8.6",
     "authors": "The Rust Project Developers|Andrew Gallant <jamslam@gmail.com>",
-    "repository": "https://github.com/rust-lang/regex/tree/master/regex-syntax",
+    "repository": "https://github.com/rust-lang/regex",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "A regular expression parser."
@@ -1630,12 +1630,12 @@
   },
   {
     "name": "rust-vc-utils",
-    "version": "0.30.1",
+    "version": "0.32.0",
     "authors": "Chris Saunders <csaunders@pacificbiosciences.com>",
     "repository": null,
     "license": null,
-    "license_file": null,
-    "description": "A library of miscellaneous variant calling utilities"
+    "license_file": "LICENSE.md",
+    "description": "Long-read alignment and variant calling utilities"
   },
   {
     "name": "rust-wfa2",
@@ -1684,7 +1684,7 @@
   },
   {
     "name": "rustix",
-    "version": "1.0.8",
+    "version": "1.1.2",
     "authors": "Dan Gohman <dev@sunfishcode.online>|Jakub Konka <kubkon@jakubkonka.com>",
     "repository": "https://github.com/bytecodealliance/rustix",
     "license": "Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT",
@@ -1729,7 +1729,7 @@
   },
   {
     "name": "sawfish",
-    "version": "2.1.1",
+    "version": "2.2.0",
     "authors": "Chris Saunders <csaunders@pacificbiosciences.com>",
     "repository": null,
     "license": null,
@@ -1783,7 +1783,7 @@
   },
   {
     "name": "serde",
-    "version": "1.0.219",
+    "version": "1.0.225",
     "authors": "Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/serde-rs/serde",
     "license": "Apache-2.0 OR MIT",
@@ -1791,8 +1791,17 @@
     "description": "A generic serialization/deserialization framework"
   },
   {
+    "name": "serde_core",
+    "version": "1.0.225",
+    "authors": "Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>",
+    "repository": "https://github.com/serde-rs/serde",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Serde traits only, with no support for derive -- use the `serde` crate instead"
+  },
+  {
     "name": "serde_derive",
-    "version": "1.0.219",
+    "version": "1.0.225",
     "authors": "Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/serde-rs/serde",
     "license": "Apache-2.0 OR MIT",
@@ -1801,7 +1810,7 @@
   },
   {
     "name": "serde_json",
-    "version": "1.0.142",
+    "version": "1.0.145",
     "authors": "Erick Tryzelaar <erick.tryzelaar@gmail.com>|David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/serde-rs/json",
     "license": "Apache-2.0 OR MIT",
@@ -1837,7 +1846,7 @@
   },
   {
     "name": "simba",
-    "version": "0.9.0",
+    "version": "0.9.1",
     "authors": "sebcrozet <developer@crozet.re>",
     "repository": "https://github.com/dimforge/simba",
     "license": "Apache-2.0",
@@ -1999,7 +2008,7 @@
   },
   {
     "name": "syn",
-    "version": "2.0.104",
+    "version": "2.0.106",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/syn",
     "license": "Apache-2.0 OR MIT",
@@ -2017,7 +2026,7 @@
   },
   {
     "name": "tempfile",
-    "version": "3.20.0",
+    "version": "3.22.0",
     "authors": "Steven Allen <steven@stebalien.com>|The Rust Project Developers|Ashley Mannix <ashleymannix@live.com.au>|Jason White <me@jasonwhite.io>",
     "repository": "https://github.com/Stebalien/tempfile",
     "license": "Apache-2.0 OR MIT",
@@ -2044,7 +2053,7 @@
   },
   {
     "name": "thiserror",
-    "version": "2.0.14",
+    "version": "2.0.16",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/thiserror",
     "license": "Apache-2.0 OR MIT",
@@ -2062,7 +2071,7 @@
   },
   {
     "name": "thiserror-impl",
-    "version": "2.0.14",
+    "version": "2.0.16",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/thiserror",
     "license": "Apache-2.0 OR MIT",
@@ -2089,7 +2098,7 @@
   },
   {
     "name": "time",
-    "version": "0.3.41",
+    "version": "0.3.43",
     "authors": "Jacob Pratt <open-source@jhpratt.dev>|Time contributors",
     "repository": "https://github.com/time-rs/time",
     "license": "Apache-2.0 OR MIT",
@@ -2098,7 +2107,7 @@
   },
   {
     "name": "time-core",
-    "version": "0.1.4",
+    "version": "0.1.6",
     "authors": "Jacob Pratt <open-source@jhpratt.dev>|Time contributors",
     "repository": "https://github.com/time-rs/time",
     "license": "Apache-2.0 OR MIT",
@@ -2116,7 +2125,7 @@
   },
   {
     "name": "time-macros",
-    "version": "0.2.22",
+    "version": "0.2.24",
     "authors": "Jacob Pratt <open-source@jhpratt.dev>|Time contributors",
     "repository": "https://github.com/time-rs/time",
     "license": "Apache-2.0 OR MIT",
@@ -2161,7 +2170,7 @@
   },
   {
     "name": "unicode-ident",
-    "version": "1.0.18",
+    "version": "1.0.19",
     "authors": "David Tolnay <dtolnay@gmail.com>",
     "repository": "https://github.com/dtolnay/unicode-ident",
     "license": "(MIT OR Apache-2.0) AND Unicode-3.0",
@@ -2187,6 +2196,15 @@
     "description": "Determine whether characters have the XID_Start or XID_Continue properties according to Unicode Standard Annex #31."
   },
   {
+    "name": "unit-prefix",
+    "version": "0.5.1",
+    "authors": "Fabio Valentini <decathorpe@gmail.com>|Benjamin Sago <ogham@bsago.me>",
+    "repository": "https://github.com/commons-rs/unit-prefix",
+    "license": "MIT",
+    "license_file": null,
+    "description": "Format numbers with metric and binary unit prefixes"
+  },
+  {
     "name": "unwrap",
     "version": "1.2.1",
     "authors": "Andrew Cann <shum@canndrew.org>",
@@ -2197,7 +2215,7 @@
   },
   {
     "name": "url",
-    "version": "2.5.4",
+    "version": "2.5.7",
     "authors": "The rust-url developers",
     "repository": "https://github.com/servo/rust-url",
     "license": "Apache-2.0 OR MIT",
@@ -2296,54 +2314,63 @@
   },
   {
     "name": "wasi",
-    "version": "0.14.2+wasi-0.2.4",
-    "authors": "The Cranelift Project Developers",
+    "version": "0.14.7+wasi-0.2.4",
+    "authors": null,
     "repository": "https://github.com/bytecodealliance/wasi-rs",
     "license": "Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT",
     "license_file": null,
     "description": "WASI API bindings for Rust"
   },
   {
+    "name": "wasip2",
+    "version": "1.0.1+wasi-0.2.4",
+    "authors": null,
+    "repository": "https://github.com/bytecodealliance/wasi-rs",
+    "license": "Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT",
+    "license_file": null,
+    "description": "WASIp2 API bindings for Rust"
+  },
+  {
     "name": "wasm-bindgen",
-    "version": "0.2.100",
+    "version": "0.2.101",
     "authors": "The wasm-bindgen Developers",
-    "repository": "https://github.com/rustwasm/wasm-bindgen",
+    "repository": "https://github.com/wasm-bindgen/wasm-bindgen",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "Easy support for interacting between JS and Rust."
   },
   {
     "name": "wasm-bindgen-backend",
-    "version": "0.2.100",
+    "version": "0.2.101",
     "authors": "The wasm-bindgen Developers",
-    "repository": "https://github.com/rustwasm/wasm-bindgen/tree/master/crates/backend",
+    "repository": "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/backend",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "Backend code generation of the wasm-bindgen tool"
   },
   {
     "name": "wasm-bindgen-macro",
-    "version": "0.2.100",
+    "version": "0.2.101",
     "authors": "The wasm-bindgen Developers",
-    "repository": "https://github.com/rustwasm/wasm-bindgen/tree/master/crates/macro",
+    "repository": "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "Definition of the `#[wasm_bindgen]` attribute, an internal dependency"
   },
   {
     "name": "wasm-bindgen-macro-support",
-    "version": "0.2.100",
+    "version": "0.2.101",
     "authors": "The wasm-bindgen Developers",
-    "repository": "https://github.com/rustwasm/wasm-bindgen/tree/master/crates/macro-support",
+    "repository": "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/macro-support",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "The part of the implementation of the `#[wasm_bindgen]` attribute that is not in the shared backend crate"
   },
   {
     "name": "wasm-bindgen-shared",
-    "version": "0.2.100",
+    "version": "0.2.101",
     "authors": "The wasm-bindgen Developers",
-    "repository": "https://github.com/rustwasm/wasm-bindgen/tree/master/crates/shared",
+    "repository": "https://github.com/wasm-bindgen/wasm-bindgen/tree/master/crates/shared",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "Shared support between wasm-bindgen and wasm-bindgen cli, an internal dependency."
@@ -2395,7 +2422,7 @@
   },
   {
     "name": "winapi-util",
-    "version": "0.1.9",
+    "version": "0.1.11",
     "authors": "Andrew Gallant <jamslam@gmail.com>",
     "repository": "https://github.com/BurntSushi/winapi-util",
     "license": "MIT OR Unlicense",
@@ -2413,8 +2440,8 @@
   },
   {
     "name": "windows-core",
-    "version": "0.61.2",
-    "authors": "Microsoft",
+    "version": "0.62.0",
+    "authors": null,
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
@@ -2448,9 +2475,18 @@
     "description": "Linking for Windows"
   },
   {
+    "name": "windows-link",
+    "version": "0.2.0",
+    "authors": null,
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Linking for Windows"
+  },
+  {
     "name": "windows-result",
-    "version": "0.3.4",
-    "authors": "Microsoft",
+    "version": "0.4.0",
+    "authors": null,
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
@@ -2458,21 +2494,12 @@
   },
   {
     "name": "windows-strings",
-    "version": "0.4.2",
-    "authors": "Microsoft",
+    "version": "0.5.0",
+    "authors": null,
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "Windows string types"
-  },
-  {
-    "name": "windows-sys",
-    "version": "0.59.0",
-    "authors": "Microsoft",
-    "repository": "https://github.com/microsoft/windows-rs",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Rust for Windows"
   },
   {
     "name": "windows-sys",
@@ -2484,13 +2511,13 @@
     "description": "Rust for Windows"
   },
   {
-    "name": "windows-targets",
-    "version": "0.52.6",
-    "authors": "Microsoft",
+    "name": "windows-sys",
+    "version": "0.61.0",
+    "authors": null,
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
-    "description": "Import libs for Windows"
+    "description": "Rust for Windows"
   },
   {
     "name": "windows-targets",
@@ -2503,25 +2530,7 @@
   },
   {
     "name": "windows_aarch64_gnullvm",
-    "version": "0.52.6",
-    "authors": "Microsoft",
-    "repository": "https://github.com/microsoft/windows-rs",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Import lib for Windows"
-  },
-  {
-    "name": "windows_aarch64_gnullvm",
     "version": "0.53.0",
-    "authors": "Microsoft",
-    "repository": "https://github.com/microsoft/windows-rs",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Import lib for Windows"
-  },
-  {
-    "name": "windows_aarch64_msvc",
-    "version": "0.52.6",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2539,25 +2548,7 @@
   },
   {
     "name": "windows_i686_gnu",
-    "version": "0.52.6",
-    "authors": "Microsoft",
-    "repository": "https://github.com/microsoft/windows-rs",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Import lib for Windows"
-  },
-  {
-    "name": "windows_i686_gnu",
     "version": "0.53.0",
-    "authors": "Microsoft",
-    "repository": "https://github.com/microsoft/windows-rs",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Import lib for Windows"
-  },
-  {
-    "name": "windows_i686_gnullvm",
-    "version": "0.52.6",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2575,25 +2566,7 @@
   },
   {
     "name": "windows_i686_msvc",
-    "version": "0.52.6",
-    "authors": "Microsoft",
-    "repository": "https://github.com/microsoft/windows-rs",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Import lib for Windows"
-  },
-  {
-    "name": "windows_i686_msvc",
     "version": "0.53.0",
-    "authors": "Microsoft",
-    "repository": "https://github.com/microsoft/windows-rs",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Import lib for Windows"
-  },
-  {
-    "name": "windows_x86_64_gnu",
-    "version": "0.52.6",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2611,25 +2584,7 @@
   },
   {
     "name": "windows_x86_64_gnullvm",
-    "version": "0.52.6",
-    "authors": "Microsoft",
-    "repository": "https://github.com/microsoft/windows-rs",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Import lib for Windows"
-  },
-  {
-    "name": "windows_x86_64_gnullvm",
     "version": "0.53.0",
-    "authors": "Microsoft",
-    "repository": "https://github.com/microsoft/windows-rs",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Import lib for Windows"
-  },
-  {
-    "name": "windows_x86_64_msvc",
-    "version": "0.52.6",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2646,13 +2601,13 @@
     "description": "Import lib for Windows"
   },
   {
-    "name": "wit-bindgen-rt",
-    "version": "0.39.0",
-    "authors": null,
+    "name": "wit-bindgen",
+    "version": "0.46.0",
+    "authors": "Alex Crichton <alex@alexcrichton.com>",
     "repository": "https://github.com/bytecodealliance/wit-bindgen",
     "license": "Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT",
     "license_file": null,
-    "description": "Runtime support for the `wit-bindgen` crate"
+    "description": "Rust bindings generator and runtime support for WIT and the component model. Used when compiling Rust programs to the component model."
   },
   {
     "name": "writeable",
@@ -2683,7 +2638,7 @@
   },
   {
     "name": "zerocopy",
-    "version": "0.8.26",
+    "version": "0.8.27",
     "authors": "Joshua Liebow-Feeser <joshlf@google.com>|Jack Wrenn <jswrenn@amazon.com>",
     "repository": "https://github.com/google/zerocopy",
     "license": "Apache-2.0 OR BSD-2-Clause OR MIT",
@@ -2692,7 +2647,7 @@
   },
   {
     "name": "zerocopy-derive",
-    "version": "0.8.26",
+    "version": "0.8.27",
     "authors": "Joshua Liebow-Feeser <joshlf@google.com>|Jack Wrenn <jswrenn@amazon.com>",
     "repository": "https://github.com/google/zerocopy",
     "license": "Apache-2.0 OR BSD-2-Clause OR MIT",

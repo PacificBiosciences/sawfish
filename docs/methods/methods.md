@@ -14,7 +14,7 @@ provided below.
 The method scans over all mapped reads in the genome to identify clusters of breakpoint-associated read signatures and
 to create regional depth bins. Reads are filtered from this scan if they are flagged as unmapped, secondary, QC-failed
 or duplicate. Reads with gap-compressed identity less than 0.97 are filtered out as well. Reads with mapping quality
-less than 10 are disqualified from breakpoint evidence scanning but still used to find regional sequencing depth.
+less than 5 are disqualified from breakpoint evidence scanning but still used to find regional sequencing depth.
 
 Breakpoint evidence is gathered from indel and split-read annotations in the read alignments. In each case a simple
 breakpoint candidate is created with breakends matching the location and orientation implied by the corresponding read

@@ -1,19 +1,17 @@
 use std::collections::BTreeMap;
 
 use rust_htslib::bam;
-use rust_vc_utils::ChromList;
 use rust_vc_utils::aux::is_aux_tag_found;
 use rust_vc_utils::bam_utils::get_seq_order_read_position;
 use rust_vc_utils::cigar::{
-    get_cigar_ref_offset, get_hard_clipped_read_clip_positions,
-    update_ref_and_hard_clipped_read_pos,
+    get_cigar_ref_offset, get_read_clip_positions, update_ref_and_read_pos,
 };
+use rust_vc_utils::{ChromList, GenomeSegment, IntRange};
+use rust_vc_utils::{SeqOrderSplitReadSegment, get_seq_order_read_split_segments};
 
-use crate::bam_sa_parser::{SeqOrderSplitReadSegment, get_seq_order_read_split_segments};
 use crate::bam_utils::{LargeInsertionSoftClipState, test_read_for_large_insertion_soft_clip};
 use crate::breakpoint::*;
-use crate::genome_segment::{GenomeSegment, get_segment_distance};
-use crate::int_range::IntRange;
+use crate::genome_segment_utils::get_segment_distance;
 
 /// Temporary representation used inside of break_builder to handle CIGAR candidates
 #[derive(Debug)]
@@ -307,7 +305,7 @@ impl<'a> BreakBuilder<'a> {
                     self.process_cand_indel(record, read_pos, &mut cand_indel, all_bpo);
                 }
             }
-            update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_pos);
+            update_ref_and_read_pos(c, &mut ref_pos, &mut read_pos, true);
 
             // Bail out if we're past the end of the target region:
             if cand_indel.is_empty() && ref_pos >= self.worker_region.end {
@@ -504,7 +502,7 @@ impl<'a> BreakBuilder<'a> {
         // Get the sequenced strand read position of the soft-clip breakpoint:
         let breakend1_seq_order_read_pos = {
             let (left_sclip_len, right_sclip_start, _read_size) =
-                get_hard_clipped_read_clip_positions(&record.cigar());
+                get_read_clip_positions(&record.cigar(), true);
             let read_pos = if large_insertion_soft_clip_state == Left {
                 left_sclip_len
             } else {

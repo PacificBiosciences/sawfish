@@ -9,71 +9,12 @@ use rust_htslib::bam::{
     self,
     record::{Cigar, CigarString},
 };
+use rust_vc_utils::bam_utils::aux::is_aux_tag_found;
 use rust_vc_utils::bam_utils::cigar::{
-    get_hard_clipped_read_clip_positions, update_ref_and_hard_clipped_read_pos, update_ref_pos,
+    get_gap_compressed_identity_from_alignment, get_read_clip_positions, update_ref_and_read_pos,
+    update_ref_pos,
 };
-use rust_vc_utils::{bam_utils::aux::is_aux_tag_found, cigar::compress_cigar};
-
-use crate::genome_segment::GenomeSegment;
-use crate::int_range::IntRange;
-
-/// Get gap-compressed sequence identity from sequence alignment information
-///
-/// Metric is discussed here:
-/// <https://lh3.github.io/2018/11/25/on-the-definition-of-sequence-identity>
-///
-/// This method is modified to allow for match (=), mismatch (X), and alignment match (M).
-/// M cigars are compared to the reference to determine match/mismatch.
-///
-pub fn get_gap_compressed_identity_from_alignment(
-    mut ref_pos: i64,
-    read_seq: &[u8],
-    cigar: &[Cigar],
-    chrom_seq: &[u8],
-) -> f64 {
-    use Cigar::*;
-
-    let mut mismatch_events = 0u32;
-    let mut match_bases = 0u32;
-
-    // set to usize since we need to index our sequences
-    let mut read_pos = 0;
-
-    for c in cigar.iter() {
-        match c {
-            Ins(_) | Del(_) => {
-                mismatch_events += 1;
-            }
-            Diff(len) => {
-                mismatch_events += len;
-            }
-            Equal(len) => {
-                match_bases += len;
-            }
-            Match(len) => {
-                let ref_pos = ref_pos as usize;
-                for (offset, &ref_base) in chrom_seq[ref_pos..ref_pos + (*len as usize)]
-                    .iter()
-                    .enumerate()
-                {
-                    if ref_base == read_seq[read_pos + offset] {
-                        match_bases += 1;
-                    } else {
-                        mismatch_events += 1;
-                    }
-                }
-            }
-            RefSkip(_) | SoftClip(_) | HardClip(_) | Pad(_) => {}
-        }
-        update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_pos);
-    }
-
-    if (match_bases + mismatch_events) == 0 {
-        1.0f64
-    } else {
-        match_bases as f64 / (match_bases + mismatch_events) as f64
-    }
-}
+use rust_vc_utils::{GenomeSegment, IntRange};
 
 // Specify a subset of an alignment for gap_compressed identity metric
 //
@@ -87,6 +28,8 @@ pub fn get_gap_compressed_identity_from_cigar_segment_range(
 ) -> f64 {
     let debug = false;
 
+    let ignore_hard_clip = true;
+
     assert!(cigar_start_index < cigar_end_index);
     assert!(cigar_end_index <= cigar.len());
 
@@ -99,25 +42,29 @@ pub fn get_gap_compressed_identity_from_cigar_segment_range(
 
     let mut read_offset = 0;
     for c in cigar[..cigar_start_index].iter() {
-        update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_offset);
+        update_ref_and_read_pos(c, &mut ref_pos, &mut read_offset, ignore_hard_clip);
     }
 
     get_gap_compressed_identity_from_alignment(
         ref_pos,
-        &read_seq[read_offset..],
         sub_cigar,
+        &read_seq[read_offset..],
         chrom_seq,
+        ignore_hard_clip,
     )
 }
 
 /// Get gap-compressed sequence identity from the bam record
 ///
 pub fn get_gap_compressed_identity(record: &bam::Record, chrom_seq: &[u8]) -> f64 {
+    let ignore_hard_clip = true;
+
     get_gap_compressed_identity_from_alignment(
         record.pos(),
-        &get_simplified_dna_seq(record),
         record.cigar().as_slice(),
+        &get_simplified_dna_seq(record),
         chrom_seq,
+        ignore_hard_clip,
     )
 }
 
@@ -198,7 +145,7 @@ pub fn get_alignment_closest_to_target_ref_pos(
             }
             _ => {}
         }
-        update_ref_and_hard_clipped_read_pos(cigar_element, &mut ref_pos, &mut read_pos);
+        update_ref_and_read_pos(cigar_element, &mut ref_pos, &mut read_pos, true);
     }
 
     closest
@@ -282,7 +229,7 @@ pub fn translate_ref_range_to_hardclipped_read_range(
             }
             _ => {}
         }
-        update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_pos);
+        update_ref_and_read_pos(c, &mut ref_pos, &mut read_pos, true);
     }
 
     if read_start.is_some() && read_end.is_none() && ref_range.end >= ref_pos {
@@ -311,42 +258,12 @@ pub fn bam_fetch_segment(bam_reader: &mut bam::IndexedReader, target_segment: &G
 ///
 #[allow(dead_code)]
 pub fn get_cigar_hard_clipped_read_offset(cigar: &[Cigar]) -> usize {
-    use rust_vc_utils::bam_utils::cigar::update_hard_clipped_read_pos;
+    use rust_vc_utils::bam_utils::cigar::update_read_pos;
     let mut read_pos = 0;
     for c in cigar.iter() {
-        update_hard_clipped_read_pos(c, &mut read_pos);
+        update_read_pos(c, &mut read_pos, true);
     }
     read_pos
-}
-
-/// Get all edge soft and hard clipped sizes, ignoring any hard clipping present
-///
-/// Returns a 2-tuple of the left and right side combined soft-clip+insertion clipping
-///
-#[allow(dead_code)]
-pub fn get_cigar_total_edge_clipping(cigar: &[Cigar]) -> (usize, usize) {
-    use Cigar::*;
-
-    let mut left_clip_size = 0;
-    let mut right_clip_size = 0;
-    let mut left_clip = true;
-    for c in cigar.iter() {
-        match c {
-            SoftClip(len) | Ins(len) => {
-                if left_clip {
-                    left_clip_size += *len as usize;
-                } else {
-                    right_clip_size += *len as usize;
-                }
-            }
-            HardClip(_) => {}
-            _ => {
-                right_clip_size = 0;
-                left_clip = false;
-            }
-        };
-    }
-    (left_clip_size, right_clip_size)
 }
 
 /// Note that enum order is non-arbitrary and used as part of read sort for assembly
@@ -369,7 +286,7 @@ pub fn test_read_for_large_insertion_soft_clip(
     min_soft_clip_len: usize,
 ) -> LargeInsertionSoftClipState {
     let (left_sclip_len, right_sclip_start, read_size) =
-        get_hard_clipped_read_clip_positions(&record.cigar());
+        get_read_clip_positions(&record.cigar(), true);
     let right_sclip_len = read_size.checked_sub(right_sclip_start).unwrap();
 
     let is_left_sclip = left_sclip_len >= min_soft_clip_len;
@@ -404,7 +321,7 @@ pub fn get_allowed_u8_lut(allowed: &[u8]) -> [bool; 256] {
     x
 }
 
-/// Get sequence form bam record, but convert any non-ACGT bases to N
+/// Get sequence from bam record, but convert any non-ACGT bases to N
 ///
 pub fn get_simplified_dna_seq(record: &bam::Record) -> Vec<u8> {
     let allowed_lut = get_allowed_u8_lut(b"ACGTN");
@@ -415,190 +332,6 @@ pub fn get_simplified_dna_seq(record: &bam::Record) -> Vec<u8> {
             if allowed_lut[b as usize] { b } else { b'N' }
         })
         .collect()
-}
-
-/// Modify a cigar string so that the read is soft-clipped on the left side to achieve at least the specified reference start position shift
-///
-/// If the required clip length would end within an insertion, the entire insertion will be clipped out.
-/// If the required clip length would create an unanchored deletion on the end of the read, the deletion will be removed.
-///
-/// Return a 2-tuple of (1) the modified cigar string (2) the actual downstream shift of the reference start position
-///
-pub fn clip_alignment_ref_start(cigar_in: &[Cigar], min_left_ref_clip: i64) -> (Vec<Cigar>, i64) {
-    use Cigar::*;
-
-    let mut ref_pos = 0;
-    let mut read_pos = 0;
-
-    let mut cigar_out = Vec::new();
-    let mut left_ref_clip_shift = 0;
-    for c in cigar_in.iter() {
-        match c {
-            Del(len) | RefSkip(len) => {
-                if ref_pos <= min_left_ref_clip {
-                    left_ref_clip_shift += *len as i64;
-                } else {
-                    cigar_out.push(*c);
-                }
-            }
-            Ins(len) => {
-                if ref_pos < min_left_ref_clip {
-                    cigar_out.push(SoftClip(*len));
-                } else {
-                    cigar_out.push(*c);
-                }
-            }
-            Match(len) | Diff(len) | Equal(len) => {
-                if ref_pos < min_left_ref_clip {
-                    let remaining_clip = min_left_ref_clip - left_ref_clip_shift;
-                    let match_size = std::cmp::max(*len as i64 - remaining_clip, 0);
-                    let clip_size = *len as i64 - match_size;
-                    cigar_out.push(SoftClip(clip_size as u32));
-
-                    if match_size > 0 {
-                        let mut m = *c;
-                        if let Match(ref mut len) | Diff(ref mut len) | Equal(ref mut len) = m {
-                            *len = match_size as u32;
-                        }
-                        cigar_out.push(m);
-                    }
-
-                    left_ref_clip_shift += clip_size;
-                } else {
-                    cigar_out.push(*c);
-                }
-            }
-            _ => {
-                cigar_out.push(*c);
-            }
-        };
-        update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_pos);
-    }
-    (cigar_out, left_ref_clip_shift)
-}
-
-/// Modify a cigar string so that the read is soft-clipped on the left and right sides to create at least the specified reference start and end position shifts
-///
-/// If the required clip length would end within an insertion, the entire insertion will be clipped out.
-/// If the required clip length would create an unanchored deletion on the end of the read, the deletion will be removed.
-///
-/// Return a 2-tuple of (1) the modified cigar string (2) the actual downstream shift of the reference start position
-///
-pub fn clip_alignment_ref_edges(
-    cigar_in: &[Cigar],
-    min_left_ref_clip: i64,
-    min_right_ref_clip: i64,
-) -> (Vec<Cigar>, i64) {
-    let rev_cigar = cigar_in.iter().rev().copied().collect::<Vec<_>>();
-    let (mut right_clip_cigar, _) = clip_alignment_ref_start(&rev_cigar, min_right_ref_clip);
-
-    right_clip_cigar.reverse();
-
-    let (clip_cigar, ref_shift) = clip_alignment_ref_start(&right_clip_cigar, min_left_ref_clip);
-
-    let cigar_out = compress_cigar(&clip_cigar);
-
-    (cigar_out, ref_shift)
-}
-
-/// Modify a cigar string so that the read is soft-clipped on the left side to at least the specified length
-///
-/// If the required clip length would end within an insertion, the entire insertion will be clipped out.
-/// If the required clip length would create an unanchored deletion on the end of the read, the deletion will be removed.
-///
-/// Return a 2-tuple of (1) the modified cigar string (2) the downstream shift of the reference start position implied by the any new left-side clipping.
-///
-fn clip_alignment_read_start(cigar_in: &[Cigar], min_left_clip: usize) -> (Vec<Cigar>, i64) {
-    use Cigar::*;
-
-    let mut ref_pos = 0;
-    let mut read_pos = 0;
-
-    let mut cigar_out = Vec::new();
-    let mut left_ref_clip_shift = 0;
-    for c in cigar_in.iter() {
-        match c {
-            Del(len) | RefSkip(len) => {
-                if read_pos <= min_left_clip {
-                    left_ref_clip_shift += *len as i64;
-                } else {
-                    cigar_out.push(*c);
-                }
-            }
-            Ins(len) => {
-                if read_pos < min_left_clip {
-                    cigar_out.push(SoftClip(*len));
-                } else {
-                    cigar_out.push(*c);
-                }
-            }
-            Match(len) | Diff(len) | Equal(len) => {
-                if read_pos < min_left_clip {
-                    let remaining_clip = min_left_clip - read_pos;
-                    let match_size = std::cmp::max(*len as i64 - remaining_clip as i64, 0);
-                    let clip_size = *len as i64 - match_size;
-                    cigar_out.push(SoftClip(clip_size as u32));
-
-                    if match_size > 0 {
-                        let mut m = *c;
-                        if let Match(ref mut len) | Diff(ref mut len) | Equal(ref mut len) = m {
-                            *len = match_size as u32;
-                        }
-                        cigar_out.push(m);
-                    }
-
-                    left_ref_clip_shift += clip_size;
-                } else {
-                    cigar_out.push(*c);
-                }
-            }
-            _ => {
-                cigar_out.push(*c);
-            }
-        };
-        update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_pos);
-    }
-    (cigar_out, left_ref_clip_shift)
-}
-
-/// Modify a cigar string so that the read is soft-clipped on the left and right sides to at least the specified length
-///
-/// If the required clip length would end within an insertion, the entire insertion will be clipped out.
-/// If the required clip length would create an unanchored deletion on the end of the read, the deletion will be removed.
-///
-/// Return a 2-tuple of (1) the modified cigar string (2) the downstream shift of the reference start position implied by the any new left-side clipping.
-///
-pub fn clip_alignment_read_edges(
-    cigar_in: &[Cigar],
-    min_left_clip: usize,
-    min_right_clip: usize,
-) -> (Vec<Cigar>, i64) {
-    let rev_cigar = cigar_in.iter().rev().copied().collect::<Vec<_>>();
-    let (mut right_clip_cigar, _) = clip_alignment_read_start(&rev_cigar, min_right_clip);
-
-    right_clip_cigar.reverse();
-
-    let (clip_cigar, ref_shift) = clip_alignment_read_start(&right_clip_cigar, min_left_clip);
-
-    let cigar_out = compress_cigar(&clip_cigar);
-
-    (cigar_out, ref_shift)
-}
-
-/// Return true if the CIGAR string contains any aligned (M/X/=) segments
-///
-// TODO move to library
-pub fn has_aligned_segments(cigar: &[Cigar]) -> bool {
-    use Cigar::*;
-    for c in cigar.iter() {
-        match c {
-            Match(_) | Equal(_) | Diff(_) => {
-                return true;
-            }
-            _ => (),
-        }
-    }
-    false
 }
 
 /// Parse all ref-ranges from cigar alignment with gaps no larger than min_gap_size
@@ -727,16 +460,6 @@ mod tests {
         }
 
         // assert_eq!(variant.convert_index(2), u8::MAX);
-    }
-
-    #[test]
-    fn test_get_gap_compressed_identity_from_alignment() {
-        let ref_pos = 2;
-        let chrom_seq = b"ACGTACGTACGT";
-        let read_seq = b"GTAATCTTAC";
-        let cigar = vec![Cigar::Match(4), Cigar::Ins(2), Cigar::Match(4)];
-        let gci = get_gap_compressed_identity_from_alignment(ref_pos, read_seq, &cigar, chrom_seq);
-        approx::assert_ulps_eq!(gci, 6.0 / 9.0, max_ulps = 4);
     }
 
     #[test]
@@ -894,72 +617,6 @@ mod tests {
         let rec = bam::Record::from_sam(&header, sam_line).unwrap();
         let read_range = translate_ref_range_to_hardclipped_read_range(&rec, &ref_range);
         assert_eq!(read_range, Some(IntRange::from_pair(3, 4)));
-    }
-
-    #[test]
-    fn test_clip_alignment_ref_edges() {
-        {
-            let cigar = vec![Cigar::SoftClip(3), Cigar::Match(15)];
-            let (cigar_out, ref_shift) = clip_alignment_ref_edges(&cigar, 5, 2);
-            assert_eq!(
-                cigar_out,
-                vec![Cigar::SoftClip(8), Cigar::Match(8), Cigar::SoftClip(2)]
-            );
-            assert_eq!(ref_shift, 5);
-        }
-
-        {
-            let cigar = vec![
-                Cigar::SoftClip(3),
-                Cigar::Match(2),
-                Cigar::Del(3),
-                Cigar::Match(13),
-            ];
-            let (cigar_out, ref_shift) = clip_alignment_ref_edges(&cigar, 5, 2);
-            assert_eq!(
-                cigar_out,
-                vec![Cigar::SoftClip(5), Cigar::Match(11), Cigar::SoftClip(2)]
-            );
-            assert_eq!(ref_shift, 5);
-        }
-    }
-
-    #[test]
-    fn test_clip_alignment_read_edges() {
-        {
-            let cigar = vec![Cigar::SoftClip(3), Cigar::Match(15)];
-            let (cigar_out, ref_shift) = clip_alignment_read_edges(&cigar, 5, 2);
-            assert_eq!(
-                cigar_out,
-                vec![Cigar::SoftClip(5), Cigar::Match(11), Cigar::SoftClip(2)]
-            );
-            assert_eq!(ref_shift, 2);
-        }
-
-        {
-            let cigar = vec![
-                Cigar::SoftClip(3),
-                Cigar::Match(2),
-                Cigar::Del(3),
-                Cigar::Match(13),
-            ];
-            let (cigar_out, ref_shift) = clip_alignment_read_edges(&cigar, 5, 2);
-            assert_eq!(
-                cigar_out,
-                vec![Cigar::SoftClip(5), Cigar::Match(11), Cigar::SoftClip(2)]
-            );
-            assert_eq!(ref_shift, 5);
-        }
-
-        {
-            let cigar = vec![Cigar::SoftClip(3), Cigar::Ins(3), Cigar::Match(12)];
-            let (cigar_out, ref_shift) = clip_alignment_read_edges(&cigar, 5, 2);
-            assert_eq!(
-                cigar_out,
-                vec![Cigar::SoftClip(6), Cigar::Match(10), Cigar::SoftClip(2)]
-            );
-            assert_eq!(ref_shift, 0);
-        }
     }
 
     #[test]

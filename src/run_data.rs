@@ -22,12 +22,6 @@ pub struct DiscoverRunData {
     pub max_sv_scoring_depth: u32,
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct JointCalSampleRunData {
-    pub run_step: RunStep,
-    pub sample_name: String,
-}
-
 /// Write run data structure out in json format
 pub fn write_discover_run_data(discover_dir: &Utf8Path, run_data: &DiscoverRunData) {
     let filename = discover_dir.join(RUN_DATA_FILENAME);

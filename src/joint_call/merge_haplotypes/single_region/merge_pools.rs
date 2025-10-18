@@ -1,4 +1,6 @@
-use std::collections::{BTreeSet, BinaryHeap};
+use std::collections::BTreeSet;
+
+use rust_vc_utils::util::drop_true;
 
 use super::merge_sv_shared::{
     AnnoSVGroup, clone_sv_group_as_multisample, set_sv_group_expected_cn_info,
@@ -6,11 +8,10 @@ use super::merge_sv_shared::{
 use super::{CandidateSVGroupInfo, get_duplicate_stats};
 use crate::bio_align_utils::{PairwiseAligner, print_pairwise_alignment};
 use crate::breakpoint::{Breakend, Breakpoint};
-use crate::genome_segment::GenomeSegment;
 use crate::joint_call::SampleJointCallData;
 use crate::run_stats::MultiSampleCategoryMergeStats;
 use crate::sv_group::SVGroup;
-use crate::utils::{drop_true, print_fasta};
+use crate::utils::print_fasta;
 
 /// Merge input_group into base_group
 ///
@@ -592,8 +593,8 @@ fn merge_duplicated_candidates(
 /// Merge SV group candidates across samples from the same locus
 ///
 /// Once a set of SVGroups from multiple samples has been identified as a potentially overlapping group, this method
-/// processes the candidates to identify duplicate haplotypes shared across samples and consolidates these down to
-/// one or more multi-sample SVGroups ready to be processed for joint-genotyping downstream
+/// processes the candidates to identify duplicate haplotypes shared across samples and consolidates these down to one
+/// or more multi-sample SVGroups ready to be processed for joint-genotyping downstream
 ///
 /// # Arguments
 ///
@@ -604,7 +605,7 @@ fn merge_duplicated_candidates(
 ///
 /// Return (1) the merged list of SV groups (2) duplicate merging stats
 ///
-pub(super) fn process_duplicate_candidate_pool(
+pub fn process_duplicate_candidate_pool(
     treat_single_copy_as_haploid: bool,
     all_sample_data: &[SampleJointCallData],
     duplicate_candidate_pool: &Vec<CandidateSVGroupInfo>,
@@ -631,166 +632,4 @@ pub(super) fn process_duplicate_candidate_pool(
     let duplicate_stats = get_duplicate_stats(&input_sv_groups, &output_sv_groups);
 
     (sv_groups, duplicate_stats)
-}
-
-/// The primary payload and sort key in the heap is segment.
-///
-/// Store insertion_index in the HeapKey to add deterministic tie-breaking
-///
-/// Store sample_index in the HeapKey but don't sort on it
-#[derive(Eq)]
-struct HeapKey {
-    segment: GenomeSegment,
-
-    /// Stores the order of heap insertions, so that otherwise equal segment candidates are
-    /// pop'd first-in first-out.
-    insertion_index: usize,
-    sample_index: usize,
-}
-
-/// Sort the heap on the genome regions, since each single-region SV group will have only one
-/// region it simplifies the meaning of the sort
-///
-/// Reverse the order of this sort so that we naturally pop segments off of the heap in
-/// 'left-to-right' genomic order, and tie-break on low-to-high insertion order.
-///
-impl Ord for HeapKey {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        other
-            .segment
-            .cmp(&self.segment)
-            .then(other.insertion_index.cmp(&self.insertion_index))
-    }
-}
-
-impl PartialOrd for HeapKey {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl PartialEq for HeapKey {
-    fn eq(&self, other: &Self) -> bool {
-        (self.segment == other.segment) && (self.insertion_index == other.insertion_index)
-    }
-}
-
-/// # Parameters
-/// * sample_svgroup_head_indexes - For each sample, track the current 'head' svgroup index
-///
-fn add_next_sample_entry_to_heap(
-    all_sample_data: &[SampleJointCallData],
-    sample_svgroup_count: &[usize],
-    sample_index: usize,
-    insertion_index: &mut usize,
-    sample_svgroup_head_indexes: &mut [usize],
-    heap: &mut BinaryHeap<HeapKey>,
-) {
-    let sample_data = &all_sample_data[sample_index];
-    while sample_svgroup_head_indexes[sample_index] < sample_svgroup_count[sample_index] {
-        let sv_group = &sample_data.sv_groups[sample_svgroup_head_indexes[sample_index]];
-
-        // Only consider single-region variants:
-        if sv_group.is_single_region() {
-            let segment = sv_group.group_regions[0].clone();
-            heap.push(HeapKey {
-                segment,
-                insertion_index: *insertion_index,
-                sample_index,
-            });
-            *insertion_index += 1;
-            break;
-        }
-        sample_svgroup_head_indexes[sample_index] += 1;
-    }
-}
-
-/// Cluster single-sample single-region SVs into overlapping groups to be processed into deduplicated multi-sample SV groups
-///
-/// Return a vector of overlapping sv_groups
-///
-pub(super) fn get_duplicate_candidate_pools(
-    all_sample_data: &[SampleJointCallData],
-    debug: bool,
-) -> Vec<Vec<CandidateSVGroupInfo>> {
-    let mut duplicate_candidate_pools = Vec::new();
-
-    let sample_count = all_sample_data.len();
-    let sample_svgroup_count = all_sample_data
-        .iter()
-        .map(|x| x.sv_groups.len())
-        .collect::<Vec<_>>();
-
-    // Setup heap merge data structures
-    let mut sample_svgroup_head_indexes = vec![0; sample_count];
-    let mut heap = BinaryHeap::new();
-    let mut insertion_index = 0;
-
-    // Populate heap with lowest position SVGroup from each sample to initialize it:
-    for sample_index in 0..sample_count {
-        add_next_sample_entry_to_heap(
-            all_sample_data,
-            &sample_svgroup_count,
-            sample_index,
-            &mut insertion_index,
-            &mut sample_svgroup_head_indexes,
-            &mut heap,
-        );
-    }
-
-    // Collection of svgroups that should be evaluated to determine if any are duplicates
-    //
-    let mut duplicate_candidate_pool = Vec::new();
-
-    // Scan through genome in breakpoint sort order, using the heap to merge breakpoints across all
-    // samples in order, so that duplicates can be found:
-    //
-    let mut last_segment: Option<GenomeSegment> = None;
-    while let Some(HeapKey {
-        segment,
-        sample_index,
-        ..
-    }) = heap.pop()
-    {
-        if debug {
-            eprintln!("Single-Merge: Popped sample {sample_index} segment {segment:?}");
-        }
-
-        // Use simple duplicate pool criteria, any segment which intersects the first segment
-        // in the pool is included.
-        //
-        let process_duplicate_pool = if let Some(last_segment) = &last_segment {
-            !last_segment.intersect(&segment)
-        } else {
-            true
-        };
-
-        if process_duplicate_pool {
-            if !duplicate_candidate_pool.is_empty() {
-                duplicate_candidate_pools.push(duplicate_candidate_pool.clone());
-            }
-            duplicate_candidate_pool.clear();
-            last_segment = Some(segment);
-        }
-        let sv_group_index = sample_svgroup_head_indexes[sample_index];
-        duplicate_candidate_pool.push(CandidateSVGroupInfo {
-            sample_index,
-            sv_group_index,
-        });
-
-        sample_svgroup_head_indexes[sample_index] += 1;
-        add_next_sample_entry_to_heap(
-            all_sample_data,
-            &sample_svgroup_count,
-            sample_index,
-            &mut insertion_index,
-            &mut sample_svgroup_head_indexes,
-            &mut heap,
-        );
-    }
-    if !duplicate_candidate_pool.is_empty() {
-        duplicate_candidate_pools.push(duplicate_candidate_pool.clone());
-    }
-
-    duplicate_candidate_pools
 }

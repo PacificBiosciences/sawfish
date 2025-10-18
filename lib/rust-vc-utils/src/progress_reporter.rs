@@ -1,5 +1,5 @@
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 
 use indicatif::{ProgressBar, ProgressStyle};
@@ -92,7 +92,8 @@ impl ProgressReporter {
         };
 
         let template_string = format!(
-            "[{{elapsed_precise}}] [{{bar:40}}] {event_verb} {{human_pos:>{display_chars}}} of {{human_len:{display_chars}}} {event_label} ({{percent}}%)");
+            "[{{elapsed_precise}}] [{{bar:40}}] {event_verb} {{human_pos:>{display_chars}}} of {{human_len:{display_chars}}} {event_label} ({{percent}}%)"
+        );
         let progress_bar = ProgressBar::new(event_count).with_style(
             ProgressStyle::with_template(&template_string)
                 .unwrap()

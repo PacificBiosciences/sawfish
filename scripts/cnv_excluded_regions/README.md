@@ -5,7 +5,7 @@ For users simply interested in using regions that have already been pre=computed
 regions section](../../docs/user_guide.md#cnv-excluded-regions).
 
 The information in this directory provides both documentation for how sawfish's pre-computed excluded region tracks were
-generated, as well as a template for users interested in extending these methods to new references sequences or to
+generated, as well as a template for users interested in extending these methods to new reference sequences or to
 different exclusion stringency levels, etc.
 
 ## Excluded region overview
@@ -17,8 +17,8 @@ where CNVs are found to be common across a diverse sample cohort, indicating an 
 Ideally the excluded regions used in an analysis should include data from both sources, but results from a cohort
 aligned to the same reference genome are not always available.
 
-In procedure outlined below, we describe how the primary exclusion track for GRCh38 was generated and combined from both
-annotation tracks and common CNV calls in a cohort.
+In the procedure outlined below, we describe how the primary exclusion track for GRCh38 was generated and combined from
+both annotation tracks and common CNV calls in a cohort.
 
 ## Conda environment setup
 
@@ -32,7 +32,7 @@ conda env create --file excluded_region_tools.yaml
 ## Annotation
 
 The scripts used to produce sawfish's pre-computed 'annotation_only' exclusion regions are provided in the [annotation
-directory](annotation). The following can be used to produce the excluded region tracks hg38:
+directory](annotation). The following can be used to produce the excluded region tracks for hg38:
 
 ```
 conda activate excluded_region_tools
@@ -48,11 +48,10 @@ The script `convert_hg19_regions_to_hs37d5.bash` can be used to further convert 
 
 ## Common CNV
 
-Generating the common CNV excluded regions track requires sawfish results from a diverse sample cohort. It has been
-found to be more effective to run sawfish is run on these samples without any `--cnv-excluded-regions` option, so that
-all difficult CNV regions are attempted for the purpose of finding the common CNV regions. Note that only larger scale
-events are being used for this operation so the `--disable-small-indels` flag can be used to accelerate the sawfish runs
-used for this purpose.
+Generating the common CNV excluded regions track requires sawfish results from a diverse sample cohort. When generating
+a common CNV track, sawfish should be run on the sample cohort without any `--cnv-excluded-regions` option, so that
+all difficult CNV regions are attempted for the purpose of finding the common CNV regions. Note that only larger-scale
+events are being used for this operation so the `--fast-cnv-mode` flag should be used as well.
 
 All sawfish cohort VCFs can be input into the following script found in the `common_cnv/` subdirectory as follows:
 
@@ -65,11 +64,11 @@ conda activate excluded_region_tools
 The cohort samples can be distributed in any number of VCFs: one sample per VCFs, all samples in one VCF or any other
 combination so long as each sample is input only once.
 
-The resulting `common_cnv.bed` file written to stdout by this script identifies regions where 50% or more of cohort
+The resulting `common_cnv.bed` file written to stdout by this script identifies regions where 50% or more of the cohort
 samples contained the same type of CNV (deletion or duplication). These regions can be combined with annotation-based
 excluded regions as described in the final step below.
 
-For the pre-computed GRCh38 excluded regions track provided with sawfish, the common CNV mask was generated from the [47
+For the pre-computed GRCh38 excluded regions track provided with sawfish, the common CNV mask was generated from [47
 HPRC year1 cohort samples](https://raw.githubusercontent.com/human-pangenomics/HPP_Year1_Data_Freeze_v1.0/main/sample_metadata/hprc_year1_sample_metadata.txt).
 
 ## Combining results to create a full excluded region set

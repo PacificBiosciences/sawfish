@@ -16,7 +16,9 @@ use std::time::Instant;
 use itertools::Itertools;
 use log::info;
 use rust_htslib::bam;
-use rust_vc_utils::{ChromList, GenomeRef, ProgressReporter, downsample_vector};
+use rust_vc_utils::{
+    ChromList, GenomeRef, GenomeSegment, IntRange, ProgressReporter, downsample_vector,
+};
 use strum::EnumCount;
 use unwrap::unwrap;
 
@@ -35,7 +37,6 @@ use crate::cli;
 use crate::contig_output::{ContigAlignmentInfo, write_contig_alignments};
 use crate::discover::StaticDiscoverSettings;
 use crate::expected_ploidy::{SVLocusExpectedCNInfo, get_max_haplotype_count_for_regions};
-use crate::genome_segment::{GenomeSegment, IntRange};
 use crate::log_utils::debug_msg;
 use crate::refine_sv::SVFilterType::{GTExcluded, NoFilter, Replicated};
 use crate::refined_cnv::{SharedSampleScoreInfo, SharedVariantScoreInfo};
@@ -816,7 +817,7 @@ pub fn refine_sv_candidates(
     // Optionally apply debug filter
     let cluster_job_order = cluster_job_order
         .into_iter()
-        .filter(|(_, bpc)| (!disable_small_indels || (bpc.assembly_segments.len() > 1)))
+        .filter(|(_, bpc)| !disable_small_indels || (bpc.assembly_segments.len() > 1))
         .collect::<Vec<_>>();
 
     write_assembly_regions_to_bed(&settings.output_dir, chrom_list, clusters);

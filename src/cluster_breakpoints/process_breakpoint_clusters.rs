@@ -4,14 +4,14 @@ use std::io::{BufWriter, Write};
 
 use camino::Utf8Path;
 use log::info;
-use rust_vc_utils::ChromList;
+use rust_vc_utils::{ChromList, GenomeSegment};
 use unwrap::unwrap;
 
 use super::large_insertions::find_large_insertion_candidates;
 use super::{BreakObservations, BreakpointObservationMap};
 use crate::breakpoint::*;
 use crate::cli;
-use crate::genome_segment::{GenomeSegment, get_segment_distance};
+use crate::genome_segment_utils::get_segment_distance;
 use crate::run_stats::ClusterStats;
 
 fn debug_bpos(output_dir: &Utf8Path, bpos: &BreakpointObservationMap, num: usize) {

@@ -3,12 +3,11 @@ use std::io::{BufWriter, Write};
 
 use camino::Utf8Path;
 use log::info;
-use rust_vc_utils::ChromList;
+use rust_vc_utils::{ChromList, GenomeSegment, IntRange};
 use unwrap::unwrap;
 
 use crate::breakpoint::BreakpointCluster;
 use crate::filenames::ASSEMBLY_REGIONS_FILENAME;
-use crate::genome_segment::{GenomeSegment, IntRange};
 
 fn get_max_insert_from_breakpoint_cluster(bpc: &BreakpointCluster) -> usize {
     if let Some(consolidated_region) = &bpc.consolidated_assembly_segment {
@@ -115,13 +114,6 @@ pub fn read_assembly_regions_from_bed(
     use std::io::Read;
 
     let filename = discover_dir.join(ASSEMBLY_REGIONS_FILENAME);
-
-    /*
-    info!(
-        "Reading assembly regions from bed file: '{}'",
-        filename.display()
-    );
-     */
 
     let mut reader = unwrap!(
         bgzf::Reader::from_path(&filename),

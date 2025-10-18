@@ -2,7 +2,7 @@ mod copy_number_boundary_sync;
 
 use camino::Utf8Path;
 use log::{info, warn};
-use rust_vc_utils::ChromList;
+use rust_vc_utils::{ChromList, GenomeSegment, IntRange};
 use serde::{Deserialize, Serialize};
 use statrs::distribution::Discrete;
 use strum::EnumCount;
@@ -16,8 +16,6 @@ use crate::expected_ploidy::get_expected_copy_number_info_for_regions;
 use crate::filenames::{COPYNUM_SEGMENT_BEDGRAPH_FILENAME, COPYNUM_SEGMENT_MESSAGEPACK_FILENAME};
 use crate::gc_correction::{GCBiasCorrectionData, GenomeGCLevels, SampleGCBiasCorrectionData};
 use crate::genome_regions::GenomeRegionsByChromIndex;
-use crate::genome_segment::GenomeSegment;
-use crate::int_range::IntRange;
 
 #[derive(Debug)]
 pub struct HaploidCoverage {

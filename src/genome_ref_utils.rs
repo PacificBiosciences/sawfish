@@ -1,6 +1,4 @@
-use rust_vc_utils::{ChromList, GenomeRef};
-
-use crate::genome_segment::GenomeSegment;
+use rust_vc_utils::{ChromList, GenomeRef, GenomeSegment};
 
 /// Get a slice of the reference sequence corresponding to genome_segment
 ///

@@ -2,8 +2,9 @@ use std::collections::BTreeMap;
 
 use rust_htslib::bam::record::Cigar;
 use rust_vc_utils::cigar::{
-    get_cigar_ref_offset, get_complete_read_clip_positions, update_ref_and_hard_clipped_read_pos,
+    get_cigar_ref_offset, get_read_clip_positions, update_ref_and_read_pos,
 };
+use rust_vc_utils::util::drop_true;
 use unwrap::unwrap;
 
 use super::add_flanks::{
@@ -13,12 +14,13 @@ use super::{AssemblyResult, RefineSVSettings};
 use crate::bio_align_utils::{AlignmentWeights, OverlapPairwiseAligner, PairwiseAligner};
 use crate::refine_sv::trimmed_reads::TrimmedReadInfo;
 use crate::simple_alignment::SimpleAlignment;
-use crate::utils::{drop_true, print_fasta};
+use crate::utils::print_fasta;
 
-/// Return left soft clip size, right soft clip size, and read size
+/// Return left clip size, right clip size, and read size
 ///
 fn get_alignment_soft_clips(cigar: &[Cigar]) -> (u32, u32, u32) {
-    let (left, right, size) = get_complete_read_clip_positions(cigar);
+    let ignore_hard_clip = false;
+    let (left, right, size) = get_read_clip_positions(cigar, ignore_hard_clip);
     assert!(size >= right);
     (left as u32, (size - right) as u32, size as u32)
 }
@@ -436,7 +438,7 @@ fn update_consensus_edit_from_read_alignment(
             }
             _ => (),
         }
-        update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_pos);
+        update_ref_and_read_pos(c, &mut ref_pos, &mut read_pos, true);
     }
 }
 

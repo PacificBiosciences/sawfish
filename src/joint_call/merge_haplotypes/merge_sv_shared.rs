@@ -3,6 +3,7 @@
 
 use std::collections::BTreeMap;
 
+use super::CandidateSVGroupInfo;
 use crate::expected_ploidy::get_max_haplotype_count_for_regions;
 use crate::joint_call::SampleJointCallData;
 use crate::sv_group::SVGroup;
@@ -100,5 +101,21 @@ pub(super) struct ClusterMergeMap {
 impl ClusterMergeMap {
     pub fn extend(&mut self, other: Self) {
         self.data.extend(other.data);
+    }
+}
+
+pub(super) fn store_duplicate_pool(
+    duplicate_candidate_pool: &mut Vec<CandidateSVGroupInfo>,
+    duplicate_candidate_pools: &mut Vec<Vec<CandidateSVGroupInfo>>,
+    debug: bool,
+) {
+    if !duplicate_candidate_pool.is_empty() {
+        if debug {
+            eprintln!(
+                "Storing duplicate pool of size: {}",
+                duplicate_candidate_pool.len()
+            );
+        }
+        duplicate_candidate_pools.push(std::mem::take(duplicate_candidate_pool));
     }
 }

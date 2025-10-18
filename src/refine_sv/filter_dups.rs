@@ -1,9 +1,9 @@
-use rust_vc_utils::ChromList;
+use rust_vc_utils::util::drop_true;
+use rust_vc_utils::{ChromList, GenomeSegment, IntRange};
 
 use crate::breakpoint::{VcfSVType, get_breakpoint_span, get_breakpoint_vcf_sv_type};
-use crate::genome_segment::{GenomeSegment, IntRange, is_strict_order};
+use crate::genome_segment_utils::is_strict_order;
 use crate::sv_group::SVGroup;
-use crate::utils::drop_true;
 
 struct DupInfo {
     sv_group_index: usize,

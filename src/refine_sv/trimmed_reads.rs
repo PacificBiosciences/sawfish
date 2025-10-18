@@ -4,20 +4,19 @@ use std::collections::{HashMap, HashSet};
 use rust_htslib::bam::{self, Read, record::CigarString};
 use rust_vc_utils::bam_utils::aux::{get_optional_float_aux_tag, is_aux_tag_found};
 use rust_vc_utils::bam_utils::cigar::{
-    get_cigar_ref_offset, is_hard_clipped, update_ref_and_hard_clipped_read_pos,
+    get_cigar_ref_offset, is_hard_clipped, update_ref_and_read_pos,
 };
 use rust_vc_utils::bam_utils::filter_out_alignment_record;
-use rust_vc_utils::{ChromList, GenomeRef};
+use rust_vc_utils::{ChromList, GenomeRef, GenomeSegment, IntRange, get_int_range_distance};
+use rust_vc_utils::{SeqOrderSplitReadSegment, get_seq_order_read_split_segments};
 use unwrap::unwrap;
 
-use crate::bam_sa_parser::{SeqOrderSplitReadSegment, get_seq_order_read_split_segments};
 use crate::bam_utils::{
     LargeInsertionSoftClipState, bam_fetch_segment, get_gap_compressed_identity,
     get_simplified_dna_seq, test_read_for_large_insertion_soft_clip,
     translate_ref_range_to_hardclipped_read_range,
 };
 use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint, BreakpointCluster, InsertInfo};
-use crate::genome_segment::{GenomeSegment, IntRange, get_int_range_distance};
 use crate::refine_sv::RefineSVSettings;
 use crate::utils::remove_sorted_indices;
 
@@ -134,7 +133,7 @@ fn get_large_del_candidate_read_range(record: &bam::Record, bp: &Breakpoint) -> 
                 return Some(IntRange::from_pair(read_pos as i64 - 1, read_pos as i64));
             }
         }
-        update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_pos);
+        update_ref_and_read_pos(c, &mut ref_pos, &mut read_pos, true);
     }
 
     None
@@ -377,7 +376,7 @@ pub fn does_alignment_region_have_sv_indel_evidence(
             }
             _ => {}
         }
-        update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_pos);
+        update_ref_and_read_pos(c, &mut ref_pos, &mut read_pos, true);
     }
     false
 }
@@ -401,7 +400,7 @@ pub fn does_alignment_region_have_sv_softclip_evidence(
         {
             return true;
         }
-        update_ref_and_hard_clipped_read_pos(c, &mut ref_pos, &mut read_pos);
+        update_ref_and_read_pos(c, &mut ref_pos, &mut read_pos, true);
     }
     false
 }

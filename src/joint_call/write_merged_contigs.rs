@@ -1,4 +1,5 @@
-use crate::bam_utils::clip_alignment_read_edges;
+use rust_vc_utils::cigar::clip_alignment_read_edges;
+
 use crate::contig_output::{ContigAlignmentInfo, ContigAlignmentSegment, write_contig_alignments};
 use crate::joint_call::read_sample_data::SharedJointCallData;
 use crate::joint_call::{JointCallSettings, SharedSettings};

@@ -1,5 +1,17 @@
 # Change Log
 
+## v2.2.0 - 2025-10-17
+
+### Changed
+- CR-566 Default min mapping quality for SV evidence reads (--min-sv-minq) lowered from 10 to 5 [PacificBiosciences/sawfish#29]
+
+### Fixed
+- CR-526 Adjust SV haplotype merging criteria in joint-call to fix some unmerged replicate cases
+- CR-565 Fix error message when sample name can't be found in MAF input and add option for custom MAF sample name [PacificBiosciences/sawfish#31]
+- CR-564 Prevent writing joint-call output to input discover directory
+- CR-549 Fix VCF output header to improve spec compliance
+  - Change `HOMLEN`, `HOMSEQ`, and `MATEID` to use `Number=A`
+
 ## v2.1.1 - 2025-09-05
 
 ### Fixed

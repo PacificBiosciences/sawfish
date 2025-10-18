@@ -3,13 +3,13 @@ use std::collections::BTreeMap;
 use camino::Utf8Path;
 use log::info;
 use rust_htslib::bam;
-use rust_vc_utils::{ArraySegmenter, ChromList, MeanTracker, bigwig_utils};
+use rust_vc_utils::{ArraySegmenter, ChromList, MeanTracker, RegionMap, bigwig_utils};
 use serde::{Deserialize, Serialize};
 use unwrap::unwrap;
 
 use crate::bam_utils::get_alignment_ref_segments;
 use crate::filenames::DEPTH_BINS_MESSAGEPACK_FILENAME;
-use crate::genome_regions::{ChromRegions, GenomeRegions};
+use crate::genome_regions::GenomeRegions;
 
 /// Return the number of complete bins of size `bin_size` in `total_size`
 ///
@@ -34,7 +34,7 @@ pub enum DepthBin {
 pub type ChromDepthBins = Vec<DepthBin>;
 
 /// All depth bin and related summary info from read scanning
-#[derive(Default, Clone)]
+#[derive(Clone, Default)]
 pub struct AllChromDepthBinInfo {
     pub depth_bins: ChromDepthBins,
     pub read_length: MeanTracker,
@@ -42,11 +42,8 @@ pub struct AllChromDepthBinInfo {
 
 /// Manages all temporary data structures required to produce depth tracks for a single chromosome
 ///
+#[derive(Clone, Default)]
 pub struct DepthBinsBuilder {
-    /// The smallest alignment CIGAR deletion size that will be accounted for while building the depth track
-    /// (split reads are always accounted for)
-    min_del_size: u32,
-
     /// Intermediate structure used to build standrd depth bins, which are used for segmetnation and
     /// most intuitive for visualization outputs for the user.
     ///
@@ -58,14 +55,6 @@ pub struct DepthBinsBuilder {
 }
 
 impl DepthBinsBuilder {
-    pub fn new(min_del_size: u32) -> Self {
-        Self {
-            min_del_size,
-            depth_edges: Default::default(),
-            read_length: Default::default(),
-        }
-    }
-
     /// Merge data from another DepthBinsBuilder into this one
     pub fn merge(&mut self, other: &Self) {
         for (pos, delta) in other.depth_edges.iter() {
@@ -73,11 +62,16 @@ impl DepthBinsBuilder {
         }
     }
 
-    pub fn process_bam_record(&mut self, record: &bam::Record) {
+    /// Process depth bin information from one bam record
+    ///
+    /// # Arguments:
+    /// * min_del_size - The smallest alignment CIGAR deletion size that will be accounted for while building the depth
+    ///   track (split reads are always accounted for)
+    ///
+    pub fn process_bam_record(&mut self, min_del_size: u32, record: &bam::Record) {
         // Update depth edges
         {
-            let ref_segs =
-                get_alignment_ref_segments(record.pos(), &record.cigar(), self.min_del_size);
+            let ref_segs = get_alignment_ref_segments(record.pos(), &record.cigar(), min_del_size);
             for ref_seg in ref_segs {
                 assert!(ref_seg.start <= ref_seg.end);
 
@@ -153,10 +147,10 @@ impl DepthBinsBuilder {
 
     /// Convert processed bam record data into depth bins
     ///
-    pub fn get_regions_over_max_depth(&self, chrom_size: u64, max_depth: u32) -> ChromRegions {
+    pub fn get_regions_over_max_depth(&self, chrom_size: u64, max_depth: u32) -> RegionMap {
         assert!(max_depth > 0);
 
-        let mut chrom_regions = ChromRegions::new();
+        let mut chrom_region_map = RegionMap::default();
 
         let mut total_depth = 0;
         let mut start_pos = None;
@@ -165,7 +159,7 @@ impl DepthBinsBuilder {
             let is_max_depth = total_depth > max_depth as i32;
             if start_pos.is_some() {
                 if !is_max_depth {
-                    chrom_regions.add_region(start_pos.unwrap(), *pos as i64);
+                    chrom_region_map.add_region(start_pos.unwrap(), *pos as i64);
                     start_pos = None;
                 }
             } else if is_max_depth {
@@ -173,12 +167,12 @@ impl DepthBinsBuilder {
             }
         }
         if let Some(start_pos) = start_pos {
-            chrom_regions.add_region(start_pos, chrom_size as i64);
+            chrom_region_map.add_region(start_pos, chrom_size as i64);
         }
 
         assert_eq!(total_depth, 0);
 
-        chrom_regions
+        chrom_region_map
     }
 }
 

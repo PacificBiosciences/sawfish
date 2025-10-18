@@ -1,65 +1,14 @@
 use std::collections::HashMap;
 
-use bio::data_structures::interval_tree::{IntervalTree, IntervalTreeIterator};
+use bio::data_structures::interval_tree::IntervalTreeIterator;
 use camino::Utf8Path;
 use log::info;
-use rust_vc_utils::ChromList;
+use rust_vc_utils::{ChromList, RegionMap, parse_samtools_region_string};
 use unwrap::unwrap;
-
-use crate::genome_segment::parse_samtools_region_string;
-
-/// A set of chromosome regions which can be efficiently queried
-///
-#[derive(Clone)]
-pub struct ChromRegions {
-    regions: IntervalTree<i64, u8>,
-}
-
-impl ChromRegions {
-    pub fn new() -> Self {
-        Self {
-            regions: IntervalTree::new(),
-        }
-    }
-
-    /// Return true if the start-end range intersects with any regions stored in this object
-    ///
-    pub fn intersect(&self, start: i64, end: i64) -> bool {
-        //find any region that overlaps
-        self.regions.find(start..end).next().is_some()
-    }
-
-    /// Return true if `pos` intersects with any regions stored in this object
-    ///
-    pub fn intersect_pos(&self, pos: i64) -> bool {
-        self.intersect(pos, pos + 1)
-    }
-
-    pub fn find_overlaps(&self, start: i64, end: i64) -> IntervalTreeIterator<'_, i64, u8> {
-        self.regions.find(start..end)
-    }
-
-    #[allow(dead_code)]
-    /// Add region
-    ///
-    /// Adds a region with the default value, regions are not collapsed
-    ///
-    pub fn add_region(&mut self, start: i64, end: i64) {
-        self.regions.insert(start..end, Default::default());
-    }
-
-    /// Add region value
-    ///
-    /// Adds a value for a particular region, regions are not collapsed
-    ///
-    pub fn add_region_value(&mut self, start: i64, end: i64, value: u8) {
-        self.regions.insert(start..end, value);
-    }
-}
 
 #[derive(Clone)]
 pub struct GenomeRegions {
-    pub chroms: HashMap<String, ChromRegions>,
+    pub chroms: HashMap<String, RegionMap>,
     pub overlaps_allowed: bool,
 }
 
@@ -167,19 +116,16 @@ impl GenomeRegions {
     /// * `end` - the end coordinates (excluded)
     /// * `value` - the value associated with the region
     pub fn add_region_value(&mut self, chrom: &str, start: i64, end: i64, value: u8) {
-        let chrom_regions = self
-            .chroms
-            .entry(chrom.to_owned())
-            .or_insert_with(ChromRegions::new);
+        let chrom_region_map = self.chroms.entry(chrom.to_owned()).or_default();
 
-        if !self.overlaps_allowed && chrom_regions.intersect(start, end) {
+        if !self.overlaps_allowed && chrom_region_map.intersect(start, end) {
             //TODO: may want to handle this problem as an error instead of a panic, so that e.g.
             // filename can get injected into error msg at higher level
             panic!("Overlaps are not allowed but were detected: {chrom} {start} {end}");
         }
 
         //check if we have a value to load for the track
-        chrom_regions.add_region_value(start, end, value);
+        chrom_region_map.add_region_value(start, end, value);
     }
 
     /// This will return an iterator over any overlapping regions. None if the contig does not exist.
@@ -204,7 +150,7 @@ pub fn write_genome_regions_to_bed(
     label: &str,
     filename: &Utf8Path,
     chrom_list: &ChromList,
-    genome_regions: &[ChromRegions],
+    genome_regions: &[RegionMap],
 ) {
     use std::fs::File;
     use std::io::{BufWriter, Write};
@@ -218,8 +164,8 @@ pub fn write_genome_regions_to_bed(
     let mut f = BufWriter::new(f);
 
     for (chrom_index, chrom_info) in chrom_list.data.iter().enumerate() {
-        let chrom_regions = &genome_regions[chrom_index];
-        for entry in chrom_regions.regions.find(0..chrom_info.length as i64) {
+        let chrom_region_map = &genome_regions[chrom_index];
+        for entry in chrom_region_map.find_overlaps(0, chrom_info.length as i64) {
             let interval = entry.interval();
             writeln!(
                 f,
@@ -231,7 +177,7 @@ pub fn write_genome_regions_to_bed(
     }
 }
 
-/// This reads bed files into a vector of ChromRegions, indexed by chromosome id of the given
+/// This reads bed files into a vector of RegionMap, indexed by chromosome id of the given
 /// chrom_list
 ///
 pub fn read_genome_regions_from_bed(
@@ -240,7 +186,7 @@ pub fn read_genome_regions_from_bed(
     chrom_list: &ChromList,
     quiet: bool,
     payload_required: bool,
-) -> Vec<ChromRegions> {
+) -> Vec<RegionMap> {
     use rust_htslib::bgzf;
     use std::io::Read;
 
@@ -259,7 +205,7 @@ pub fn read_genome_regions_from_bed(
         "Can't parse text from {label} genome regions file: '{filename}'"
     );
 
-    let mut chrom_regions = vec![ChromRegions::new(); chrom_list.data.len()];
+    let mut chrom_regions = vec![RegionMap::default(); chrom_list.data.len()];
 
     let mut last_chrom_index = 0;
     let mut last_chrom = "";
@@ -322,7 +268,7 @@ pub fn read_genome_regions_from_bed(
 /// This is a variant of GenomeRegions that allows fast lookup of chromosomes by index
 #[derive(Clone)]
 pub struct GenomeRegionsByChromIndex {
-    pub chroms: Vec<ChromRegions>,
+    pub chroms: Vec<RegionMap>,
 }
 
 impl GenomeRegionsByChromIndex {
@@ -333,7 +279,7 @@ impl GenomeRegionsByChromIndex {
     #[allow(dead_code)]
     pub fn new(chrom_list: &ChromList, genome_regions: &GenomeRegions) -> Self {
         let chrom_count = chrom_list.data.len();
-        let mut chroms = vec![ChromRegions::new(); chrom_count];
+        let mut chroms = vec![RegionMap::default(); chrom_count];
         for (chrom, chrom_regions) in genome_regions.chroms.iter() {
             if let Some(&chrom_index) = chrom_list.label_to_index.get(chrom) {
                 chroms[chrom_index] = chrom_regions.clone();
@@ -361,34 +307,6 @@ impl GenomeRegionsByChromIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_intersect() {
-        let mut regions = ChromRegions::new();
-
-        regions.add_region(100, 101);
-        assert!(regions.intersect_pos(100));
-        assert!(!regions.intersect_pos(99));
-        assert!(!regions.intersect_pos(101));
-    }
-
-    /*
-    #[test]
-    fn test_find() {
-        let mut regions = ChromRegions::new();
-
-        regions.add_region_value(100, 200, 0);
-        regions.add_region_value(200, 250, 1);
-        regions.add_region_value(250, 300, 2);
-        for x in regions.find_overlaps(175, 275) {
-            let i = x.interval().clone();
-            let s = i.end - i.start;
-            eprintln!("{x:?}");
-            eprintln!("{}", s);
-        }
-        assert!(false);
-    }
-    */
 
     #[test]
     fn test_overlap_nopanic() {

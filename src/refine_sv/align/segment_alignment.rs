@@ -1,12 +1,12 @@
 use rust_htslib::bam::record::Cigar;
 use rust_vc_utils::bam_utils::cigar::{
-    get_cigar_ref_offset, get_cigarseg_hard_clipped_read_offset, get_cigarseg_ref_offset,
-    update_hard_clipped_read_pos, update_ref_pos,
+    get_cigar_ref_offset, get_cigarseg_read_offset, get_cigarseg_ref_offset, update_read_pos,
+    update_ref_pos,
 };
+use rust_vc_utils::indel_breakend_homology::get_indel_breakend_homology_info;
+use rust_vc_utils::int_range::IntRange;
 
 use super::TwoRegionAltHapInfo;
-use super::util;
-use crate::int_range::IntRange;
 use crate::simple_alignment::SimpleAlignment;
 use crate::utils::get_seq_pos_flanks;
 
@@ -51,7 +51,7 @@ fn does_alignment_support_alt_hap(
             }
         }
         update_ref_pos(c, &mut alt_hap_pos);
-        update_hard_clipped_read_pos(c, &mut contig_pos);
+        update_read_pos(c, &mut contig_pos, true);
     }
 
     left_segment_anchor && right_segment_anchor
@@ -156,7 +156,7 @@ pub fn transform_alt_hap_alignment_into_left_right_components(
     fn get_cigarseg_offsets(c: &Cigar) -> (i64, usize) {
         (
             get_cigarseg_ref_offset(c),
-            get_cigarseg_hard_clipped_read_offset(c),
+            get_cigarseg_read_offset(c, true),
         )
     }
 
@@ -321,7 +321,7 @@ pub fn transform_alt_hap_alignment_into_left_right_components(
             sv_alt_hap_range.start,
             sv_alt_hap_range.end + extend_len as i64,
         );
-        util::get_indel_breakend_homology_info(
+        get_indel_breakend_homology_info(
             &alt_hap_info.extended_alt_hap_seq,
             &extended_sv_alt_hap_range,
             contig,
@@ -360,9 +360,8 @@ pub fn transform_alt_hap_alignment_into_left_right_components(
 mod tests {
     use super::*;
     use rust_htslib::bam::record::CigarString;
+    use rust_vc_utils::GenomeSegment;
     use rust_vc_utils::bam_utils::cigar::get_cigar_from_string;
-
-    use crate::genome_segment::GenomeSegment;
 
     fn get_test_alt_hap_info() -> TwoRegionAltHapInfo {
         let alt_hap_seq = b"TTTTACTGACTGTTTNNNNTTTACTGACTGTTTT".to_vec();

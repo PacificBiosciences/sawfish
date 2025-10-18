@@ -7,17 +7,15 @@ use crate::int_range::IntRange;
 /// * `ref_range` - ref span of the indel in its current represented location
 /// * `read_range` - read span of the indel in its current represented location
 ///
-/// Range coordinates are zero-indexed and start at the first position affected by the indel.
-/// For instance:
-///  The deletion 2M1D2M would have refRange(2,3), readRange(2,2)
-///  the insertion 2M1I2M would have refRange(2,2), readRange(2,3)
+/// Range coordinates are zero-indexed and start at the first position affected by the indel. For instance:
+/// - The deletion 2M1D2M would have refRange(2,3), readRange(2,2)
+/// - The insertion 2M1I2M would have refRange(2,2), readRange(2,3)
 ///
-/// Note that this method will push indels all the way to the edge of a read if homology supports
-/// it, which may translate into an alignment like 1D4M. Client code can check and apply alternate
-/// logic for such a case if required.
+/// Note that this method will push indels all the way to the edge of a read if homology supports it, which may
+/// translate into an alignment like 1D4M. Client code can check and apply alternate logic for such a case if required.
 ///
-/// Additionally note that this method does not account for adjacent indels as part of a more complex alignment,
-/// the target indel is assessed assuming perfect mapping along the left and right flanks.
+/// Additionally note that this method does not account for adjacent indels as part of a more complex alignment, the
+/// target indel is assessed assuming perfect mapping along the left and right flanks.
 ///
 /// Return a 2-tuple of
 /// 1. The range of indel offsets relative to the current pos that maintain the edit distance,

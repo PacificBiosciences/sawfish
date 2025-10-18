@@ -1,7 +1,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use log::info;
 use rust_htslib::bcf;
-use rust_vc_utils::{ChromList, GenomeRef, rev_comp_in_place};
+use rust_vc_utils::{ChromList, GenomeRef, GenomeSegment, rev_comp_in_place};
 use strum::EnumCount;
 
 use crate::breakpoint::{
@@ -10,7 +10,6 @@ use crate::breakpoint::{
 };
 use crate::cli;
 use crate::expected_ploidy::SVLocusPloidy;
-use crate::genome_segment::GenomeSegment;
 use crate::refine_sv::{
     AlleleType, Genotype, RefinedSV, SVPhaseStatus, SVSampleScoreInfo, SVScoreInfo,
     get_rsv_id_label,
@@ -71,12 +70,12 @@ fn get_sv_vcf_header(
         br#"##INFO=<ID=END,Number=1,Type=Integer,Description="End position of the variant described in this record">"#,
         br#"##INFO=<ID=EVENT,Number=A,Type=String,Description="ID of associated event">"#,
         br#"##INFO=<ID=EVENTTYPE,Number=A,Type=String,Description="Type of associated event">"#,
-        br#"##INFO=<ID=HOMLEN,Number=.,Type=Integer,Description="Length of base pair identical micro-homology at event breakpoints">"#,
-        br#"##INFO=<ID=HOMSEQ,Number=.,Type=String,Description="Sequence of base pair identical micro-homology at event breakpoints">"#,
+        br#"##INFO=<ID=HOMLEN,Number=A,Type=Integer,Description="Length of base pair identical micro-homology at breakpoints">"#,
+        br#"##INFO=<ID=HOMSEQ,Number=A,Type=String,Description="Sequence of base pair identical micro-homology at breakpoints">"#,
         br#"##INFO=<ID=IMPRECISE,Number=0,Type=Flag,Description="Imprecise structural variation">"#,
         br#"##INFO=<ID=INSLEN,Number=.,Type=Integer,Description="Insertion length">"#,
         br#"##INFO=<ID=INSSEQ,Number=.,Type=String,Description="Insertion sequence (for symbolic alt alleles)">"#,
-        br#"##INFO=<ID=MATEID,Number=.,Type=String,Description="ID of mate breakends">"#,
+        br#"##INFO=<ID=MATEID,Number=A,Type=String,Description="ID of mate breakends">"#,
         br#"##INFO=<ID=SVCLAIM,Number=A,Type=String,Description="Claim made by the structural variant call. Valid values are D, J, DJ for abundance, adjacency and both respectively">"#,
         br#"##INFO=<ID=SVLEN,Number=A,Type=Integer,Description="Length of structural variant">"#,
         br#"##INFO=<ID=SVTYPE,Number=1,Type=String,Description="Type of structural variant">"#,]);

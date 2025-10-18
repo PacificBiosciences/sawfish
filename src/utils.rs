@@ -244,13 +244,6 @@ pub fn option_f64_max(a: &mut Option<f64>, b: &Option<f64>) {
     };
 }
 
-/// Drop all true entries from vector
-pub fn drop_true<T>(vec: &mut Vec<T>, drop_list: &[bool]) {
-    assert_eq!(vec.len(), drop_list.len());
-    let mut drop = drop_list.iter();
-    vec.retain(|_| !*drop.next().unwrap())
-}
-
 // Canonicalize string file paths:
 pub fn canonicalize_string_path(s: &str) -> String {
     Utf8PathBuf::from(s)
@@ -323,14 +316,5 @@ mod tests {
         let b = Some(2.0);
         option_f64_max(&mut a, &b);
         assert_eq!(a, Some(2.0));
-    }
-
-    #[test]
-    fn test_drop_true() {
-        let mut v = vec![1, 2, 3, 4, 5];
-        let p = vec![true, false, false, true, false];
-
-        drop_true(&mut v, &p);
-        assert_eq!(v, vec![2, 3, 5]);
     }
 }

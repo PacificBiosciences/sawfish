@@ -1,6 +1,7 @@
+use rust_vc_utils::GenomeSegment;
+use rust_vc_utils::int_range::get_recip_overlap;
+
 use crate::breakpoint::{BreakendDirection, BreakendNeighbor, InsertInfo};
-use crate::genome_segment::GenomeSegment;
-use crate::int_range::get_recip_overlap;
 use crate::refine_sv::Genotype;
 use crate::sv_group::SVGroup;
 use crate::sv_id::{SVUniqueIdData, get_inv_id_label, get_sv_id_label};

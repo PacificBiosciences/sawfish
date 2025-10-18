@@ -1,11 +1,11 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use rust_vc_utils::{ChromList, rev_comp_in_place};
+use rust_vc_utils::int_range::IntRange;
+use rust_vc_utils::{ChromList, GenomeSegment, rev_comp_in_place};
 pub use strum::EnumCount;
 
-use crate::genome_segment::{GenomeSegment, get_segment_dir_distance, get_segment_distance};
-use crate::int_range::IntRange;
+use crate::genome_segment_utils::{get_segment_dir_distance, get_segment_distance};
 
 /// Direction of a breakend
 ///
@@ -43,7 +43,7 @@ pub struct Breakend {
 impl Breakend {
     pub fn new() -> Self {
         Self {
-            segment: GenomeSegment::new(),
+            segment: GenomeSegment::default(),
             dir: BreakendDirection::LeftAnchor,
         }
     }

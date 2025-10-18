@@ -31,7 +31,6 @@ impl GenomeRef {
         }
     }
 
-    /// Convert all bases besides "ACGTN" to "N"
     pub fn simplify_ambiguous_dna_bases(&mut self) {
         self.convert_disallowed_characters(b"ACGTN", b'N');
     }
