@@ -34,6 +34,7 @@ fn annotate_segmentation_power_boost_breakends(
     sv_groups: &[SVGroup],
     transition_types: &mut [SampleTransitionTypes],
     min_copynum_checked_sv_size: usize,
+    debug: bool,
 ) {
     // For the copy-number track to be resegmented around a smaller SV with relaxed transition scores, the copy number
     // must be consistent already throughout the span of the SV AND through a left and right edge region of the
@@ -120,7 +121,8 @@ fn annotate_segmentation_power_boost_breakends(
                     if context_copy_number_consistent_with_sv && context_segment_large_enough {
                         let start_pos = be1.segment.range.center();
                         let end_pos = be2.segment.range.center();
-                        if be1.dir == BreakendDirection::LeftAnchor {
+                        let is_del = be1.dir == BreakendDirection::LeftAnchor;
+                        if is_del {
                             // DEL
                             sample_transition_types.set_loss_pos(chrom_index, start_pos);
                             sample_transition_types.set_gain_pos(chrom_index, end_pos);
@@ -128,6 +130,12 @@ fn annotate_segmentation_power_boost_breakends(
                             // DUP
                             sample_transition_types.set_gain_pos(chrom_index, start_pos);
                             sample_transition_types.set_loss_pos(chrom_index, end_pos);
+                        }
+                        if debug {
+                            let label = if is_del { "del" } else { "dup" };
+                            eprintln!(
+                                "Adding {label}-like-bnd power-boost segment annotation at: {chrom_index}:{start_pos}-{end_pos}"
+                            );
                         }
                     }
 
@@ -145,6 +153,7 @@ fn annotate_close_fit_breakends(
     sv_groups: &[SVGroup],
     transition_types: &mut [SampleTransitionTypes],
     min_copynum_checked_sv_size: usize,
+    debug: bool,
 ) {
     // Hard-code parameters
     let min_sv_cnv_recip_overlap = 0.8;
@@ -334,6 +343,13 @@ fn annotate_close_fit_breakends(
                     sample_transition_types.set_gain_pos(chrom_index, sv_match_info.start_pos);
                     sample_transition_types.set_loss_pos(chrom_index, sv_match_info.end_pos);
                 }
+                if debug {
+                    let label = if sv_match_info.is_del { "del" } else { "dup" };
+                    eprintln!(
+                        "Adding {label}-like-bnd close-fit segment annotation at: {chrom_index}:{}-{}",
+                        sv_match_info.start_pos, sv_match_info.end_pos,
+                    );
+                }
             }
         }
     }
@@ -347,7 +363,7 @@ fn annotate_close_fit_breakends(
 ///    SV breakends as enhanced CN transition points. The idea here is to boost the power of segmentation for
 ///    SVs that might be too small to segment from the depth track alone.
 ///
-/// 2. "Close fit" - When there is a one to one match of an SV and CNV segment, but the spans of the two events
+/// 2. "Close fit" - When there is a one-to-one match of an SV and CNV segment, but the spans of the two events
 ///    don't quite match up very well, add the SV breakends as enhanced CN transition points to see if the CN
 ///    segmentation to the SV will significantly improve with only a small nudge.
 ///
@@ -359,6 +375,8 @@ pub fn get_copynum_transition_types_from_breakends(
     all_sample_data: &[SampleJointCallData],
     sv_groups: &mut [SVGroup],
 ) -> Vec<SampleTransitionTypes> {
+    let debug = false;
+
     // Start by setting up transition_types data structure, which will contain all of the information produced by this
     // function to suggested alternate transition weights during resegmentation
     //
@@ -387,6 +405,7 @@ pub fn get_copynum_transition_types_from_breakends(
         sv_groups,
         &mut transition_types,
         min_copynum_checked_sv_size,
+        debug,
     );
 
     annotate_close_fit_breakends(
@@ -394,6 +413,7 @@ pub fn get_copynum_transition_types_from_breakends(
         sv_groups,
         &mut transition_types,
         min_copynum_checked_sv_size,
+        debug,
     );
 
     transition_types

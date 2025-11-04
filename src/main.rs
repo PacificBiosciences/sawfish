@@ -1,3 +1,6 @@
+// global lint configuration:
+#![allow(clippy::needless_range_loop)]
+
 mod bam_scanner;
 mod bam_utils;
 mod bcf_utils;

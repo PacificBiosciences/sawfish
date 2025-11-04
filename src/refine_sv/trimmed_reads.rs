@@ -811,7 +811,7 @@ mod tests {
             x
         };
 
-        let mut rval = vec![tr_left_len3, tr_left_len6, tr_right_len6, tr_right_len3];
+        let mut rval = [tr_left_len3, tr_left_len6, tr_right_len6, tr_right_len3];
         rval.sort_by(sort_large_insertion_reads);
 
         let expected_clip_state = vec![Right, Right, Left, Left];

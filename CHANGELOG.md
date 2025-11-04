@@ -1,5 +1,13 @@
 # Change Log
 
+## v2.2.1 - 2025-11-03
+
+### Changed
+- CR-575 Adjust sensitivity of breakpoint-matched copy-number segmentation
+
+### Fixed
+- CR-572 Using a custom MAF sample name no longer prevents MAF track output (issue introduced by CR-565)
+
 ## v2.2.0 - 2025-10-17
 
 ### Changed

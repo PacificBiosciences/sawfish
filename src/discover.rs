@@ -156,7 +156,14 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         } else {
             &sample_name
         };
-        let maf_data = scan_maf_file(maf_filename, &chrom_list, &[maf_sample_name]);
+        let mut maf_data = scan_maf_file(maf_filename, &chrom_list, &[maf_sample_name]);
+
+        // Change sample name back to the bam sample name if necessary:
+        assert!(!maf_data.samples.is_empty());
+        if maf_data.samples[0].sample_name != sample_name {
+            maf_data.samples[0].sample_name = sample_name.clone();
+        }
+
         serialize_maf_data(&settings.output_dir, &maf_data);
     }
 

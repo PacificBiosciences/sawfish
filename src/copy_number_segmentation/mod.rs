@@ -134,6 +134,41 @@ pub fn get_haploid_genome_coverage(
     }
 }
 
+fn dump_transition_lnprob_matrix(tp: &[Vec<f64>]) {
+    let state_count = CopyNumberState::COUNT;
+    eprintln!("from:\tto:");
+    for state_index in 0..state_count {
+        let state = CopyNumberState::from_repr(state_index).unwrap();
+        eprint!("\t{state:?}");
+    }
+    eprintln!();
+    for from_index in 0..state_count {
+        let from_state = CopyNumberState::from_repr(from_index).unwrap();
+        eprint!("{from_state:?}");
+        for to_index in 0..state_count {
+            let val = tp[from_index][to_index];
+            eprint!("\t{val:.3}");
+        }
+        eprintln!();
+    }
+}
+
+fn verify_transition_lnprob_matrix(tp: &[Vec<f64>], label: &str) {
+    let state_count = CopyNumberState::COUNT;
+    for from_index in 0..state_count {
+        for to_index in 0..state_count {
+            let val = tp[from_index][to_index];
+            if val.is_nan() {
+                let from_state = CopyNumberState::from_repr(from_index).unwrap();
+                let to_state = CopyNumberState::from_repr(to_index).unwrap();
+                panic!(
+                    "Transition matrix {label}: value is nan from->to states: {from_state:?}->{to_state:?}"
+                );
+            }
+        }
+    }
+}
+
 #[allow(clippy::needless_range_loop)]
 /// Compute and return the HMM state transition matrix as log prob values
 ///
@@ -215,7 +250,18 @@ fn get_breakpoint_copynum_transition_probs(
         for to_index in 0..state_count {
             sum += tm[from_index][to_index];
         }
-        tm[from_index][from_index] = 1.0 - sum;
+
+        // Limit actual breakpoint_transition_prob per row so that the per-row 'stay' prob is never less than breakpoint_transition_prob
+        tm[from_index][from_index] = {
+            let max_go_prob = transition_prob.max(breakpoint_transition_prob);
+            max_go_prob.max(1.0 - sum)
+        };
+
+        // Normalize:
+        sum += tm[from_index][from_index];
+        for to_index in 0..state_count {
+            tm[from_index][to_index] /= sum;
+        }
     }
 
     // Finally transform the whole to log probs
@@ -243,10 +289,18 @@ impl TransitionProbInfo {
     /// * `breakpoint_transition_factor` - At breakpoint bins, the transition prob is raised to this power
     ///
     pub fn new(transition_prob: f64, breakpoint_transition_factor: f64) -> Self {
+        let debug = false;
+
         assert!((0.0..=1.0).contains(&transition_prob));
         assert!((0.0..=1.0).contains(&breakpoint_transition_factor));
 
         let breakpoint_transition_prob = f64::powf(transition_prob, breakpoint_transition_factor);
+        if debug {
+            eprintln!(
+                "Creating TransitionProbInfo. Inputs: transition_prob: {transition_prob} breakpoint_transition_factor: {breakpoint_transition_factor}"
+            );
+            eprintln!("breakpoint_transition_prob: {breakpoint_transition_prob}");
+        }
 
         let std_transition_lnprob_matrix = get_copynum_transition_probs(transition_prob);
         let breakend_copynum_loss_transition_lnprob_matrix =
@@ -261,6 +315,28 @@ impl TransitionProbInfo {
                 breakpoint_transition_prob,
                 CopyNumTransitionType::Gain,
             );
+
+        if debug {
+            eprintln!("std_transition_lnprob_matrix:");
+            dump_transition_lnprob_matrix(&std_transition_lnprob_matrix);
+            eprintln!("breakend_copynum_loss_transition_lnprob_matrix:");
+            dump_transition_lnprob_matrix(&breakend_copynum_loss_transition_lnprob_matrix);
+            eprintln!("breakend_copynum_gain_transition_lnprob_matrix:");
+            dump_transition_lnprob_matrix(&breakend_copynum_gain_transition_lnprob_matrix);
+        }
+
+        verify_transition_lnprob_matrix(
+            &std_transition_lnprob_matrix,
+            "std_transition_lnprob_matrix",
+        );
+        verify_transition_lnprob_matrix(
+            &breakend_copynum_loss_transition_lnprob_matrix,
+            "breakend_copynum_loss_transition_lnprob_matrix",
+        );
+        verify_transition_lnprob_matrix(
+            &breakend_copynum_gain_transition_lnprob_matrix,
+            "breakend_copynum_gain_transition_lnprob_matrix",
+        );
 
         Self {
             standard_transition_lnprob_matrix: std_transition_lnprob_matrix,
@@ -733,6 +809,7 @@ pub struct SampleCopyNumberSegmentationInput<'a> {
 /// - The bin size used for genome_depth_bins in all samples must be the same
 ///
 /// # Arguments
+/// * `breakpoint_transition_factor` - At breakpoint bins, the transition prob is raised to this power
 /// * `seg_input` - Array with one element for each CNV-enabled sample. Each element includes references to all
 ///   CNV-segmentation input data.
 ///

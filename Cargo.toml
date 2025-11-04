@@ -1,6 +1,6 @@
 [package]
 name = "sawfish"
-version = "2.2.0"
+version = "2.2.1"
 authors = ["Chris Saunders <csaunders@pacificbiosciences.com>"]
 description = "Structural variant and copy number analysis for mapped PacBio HiFi reads"
 edition = "2024"

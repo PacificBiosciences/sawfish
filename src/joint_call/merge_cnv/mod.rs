@@ -1021,7 +1021,7 @@ pub fn merge_sv_with_depth_info(
 
     // Determines how much the copy number transition probability is relaxed at SV breakpoints during re-segmentation:
     //
-    let breakpoint_transition_factor = 0.5;
+    let breakpoint_transition_factor = 0.475;
 
     // Size above which deletions and duplications are reported as breakends if they lack correspondence
     // with depth segmentation.

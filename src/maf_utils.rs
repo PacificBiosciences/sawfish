@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use camino::Utf8Path;
-use log::info;
+use log::{info, warn};
 use rust_htslib::bcf::header::HeaderView;
 use rust_htslib::bcf::{self, Read};
 use rust_vc_utils::{ChromList, bigwig_utils};
@@ -237,11 +237,37 @@ pub fn write_maf_track_files(
     maf_data: &MafData,
     sample_name: &str,
 ) {
-    for sample_maf_data in maf_data.samples.iter() {
-        if sample_name != sample_maf_data.sample_name {
-            continue;
-        }
-        let bigwig_filename = output_dir.join(MAF_BIGWIG_FILENAME);
+    // This is setup with minimal sample name matching.. we don't want to fail to output the MAF file because of some minor
+    // name prefix/suffix, etc.. so try to always output something, but issue a warning if anything surprising comes up.
+    //
+    // We expect any MAF input from the sawfish discover step to be single-sample, even if this was parsed out of a multi-sample VCF,
+    // so a single-sample is always output without name check.
+    //
+    let bigwig_filename = output_dir.join(MAF_BIGWIG_FILENAME);
+    let sample_count = maf_data.samples.len();
+
+    if sample_count == 0 {
+        warn!("Unexpected MAF data format: no samples found in discover step MAF input.");
+    } else {
+        let sample_maf_data = if sample_count == 1 {
+            &maf_data.samples[0]
+        } else {
+            // In this case find the sample name match or output the first one:
+            match maf_data
+                .samples
+                .iter()
+                .find(|x| x.sample_name == sample_name)
+            {
+                Some(x) => x,
+                None => {
+                    warn!(
+                        "Unexpected MAF data format: multiple samples found in discover step MAF input, but without a sample name match. Reporting MAF track for the first sample: '{}'",
+                        &maf_data.samples[0].sample_name
+                    );
+                    &maf_data.samples[0]
+                }
+            }
+        };
         write_maf_bigwig_file(&bigwig_filename, sample_maf_data, chrom_list);
     }
 }
