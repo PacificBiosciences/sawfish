@@ -58,4 +58,15 @@ pub fn setup_output_dir_and_logger(output_dir: &Utf8Path, clobber: bool, debug: 
     };
     create_dir_all(output_dir, "output");
     setup_logger(Some(output_dir), debug).unwrap();
+    setup_panic_hook();
+}
+
+/// Send panic messages to the logger, so that they reach the log file as well as stderr
+///
+/// Sawfish aborts on panic, so without this a panic message is never written to the log file.
+///
+fn setup_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        log::error!("{info}");
+    }));
 }

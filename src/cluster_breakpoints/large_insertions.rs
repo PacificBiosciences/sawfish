@@ -192,8 +192,11 @@ pub fn find_large_insertion_candidates(
     max_large_insertion_pairing_dist: i64,
     max_large_insertion_deletion_pairing_dist: i64,
     clusters: &mut [BreakpointCluster],
+    log: bool,
 ) -> usize {
-    info!("Finding large insertion candidates");
+    if log {
+        info!("Finding large insertion candidates");
+    }
 
     let large_insertion_candidates = discover_large_insertion_candidates(
         max_large_insertion_pairing_dist,

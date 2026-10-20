@@ -9,7 +9,8 @@ use super::add_flanks::{
 use super::{AssemblyResult, RefineSVSettings};
 use crate::refine_sv::trimmed_reads::TrimmedReadInfo;
 use crate::spoa_utils::{
-    get_alignment_to_graph_consensus, get_pairwise_alignment, get_query_alignment_from_msa,
+    get_alignment_to_graph_consensus, get_pairwise_alignment_with_expected_score,
+    get_query_alignment_from_msa,
 };
 
 #[derive(Default)]
@@ -31,21 +32,63 @@ struct AssemblyAlignmentInfo {
 
 /// Standard alignment process applied to trimmed reads against all contigs
 ///
-/// Selects the best scoring alignment. More in-depth analysis of the alignment
+/// Selects the best scoring alignment, taking the first candidate assembly in case of ties, and
+/// skipping alignments without any aligned read bases. More in-depth analysis of the alignment
 /// quality for cluster join/split decisions are left to downstream steps
+///
+/// Only the alignment to the selected candidate assembly is needed, so all candidates are first
+/// aligned with an expected high score, and then other alignments are only computed if they could
+/// be selected. This gives the same result as aligning to all candidates, with less computation.
+///
+/// accept_floor is a lower bound on the score of any alignment which the caller could accept (use
+/// i64::MIN if there is none). Alignments below it are never computed in full, and if no candidate
+/// reaches it the returned alignment is not the best one, but is one which the caller rejects.
 ///
 fn get_best_assembly_alignment_for_trimmed_read(
     alignment_engine: &mut AlignmentEngine,
     cread: &CStr,
     candidate_assemblies: &[CandidateContigAssembly],
+    accept_floor: i64,
 ) -> AssemblyAlignmentInfo {
+    // Expected alignment scores, as fractions of the maximum possible score, to try before
+    // computing full alignments
+    const EXPECTED_SCORE_FRACS: [f64; 1] = [0.97];
+
+    let candidate_count = candidate_assemblies.len();
+    let read_len = cread.to_bytes().len();
+    let max_scores = candidate_assemblies
+        .iter()
+        .map(|x| alignment_engine.max_possible_score(read_len, &x.graph))
+        .collect::<Vec<_>>();
+
+    // Each candidate alignment score is known to be below this value
+    let mut score_limits = max_scores.iter().map(|&x| x + 1).collect::<Vec<_>>();
+    let mut is_aligned = vec![false; candidate_count];
     let mut best_assembly = AssemblyAlignmentInfo::default();
-    for (candidate_assembly_index, candidate_assembly) in candidate_assemblies.iter().enumerate() {
-        let (alignment, score) = alignment_engine.align(cread, &candidate_assembly.graph);
+
+    // Minimum score for candidate_assembly_index to be selected over the current best
+    let get_min_score = |best_assembly: &AssemblyAlignmentInfo, candidate_assembly_index: usize| {
+        if best_assembly.alignment.is_none() {
+            i64::MIN
+        } else if candidate_assembly_index < best_assembly.index {
+            best_assembly.score as i64
+        } else {
+            best_assembly.score as i64 + 1
+        }
+    };
+
+    let update_best = |best_assembly: &mut AssemblyAlignmentInfo,
+                       candidate_assembly_index: usize,
+                       alignment: spoa::Alignment,
+                       score: i32| {
         let overlap = get_alignment_overlap_size(&alignment);
         let clip = get_alignment_clip_size(&alignment);
-        if clip >= 0 && (best_assembly.alignment.is_none() || score > best_assembly.score) {
-            best_assembly = AssemblyAlignmentInfo {
+        if clip >= 0
+            && (best_assembly.alignment.is_none()
+                || score > best_assembly.score
+                || (score == best_assembly.score && candidate_assembly_index < best_assembly.index))
+        {
+            *best_assembly = AssemblyAlignmentInfo {
                 index: candidate_assembly_index,
                 score,
                 overlap,
@@ -53,8 +96,87 @@ fn get_best_assembly_alignment_for_trimmed_read(
                 alignment: Some(alignment),
             };
         }
+    };
+
+    for frac in EXPECTED_SCORE_FRACS {
+        for candidate_assembly_index in 0..candidate_count {
+            if is_aligned[candidate_assembly_index] {
+                continue;
+            }
+            let expected_score = (max_scores[candidate_assembly_index] as f64 * frac) as i64;
+            let min_score = expected_score
+                .max(get_min_score(&best_assembly, candidate_assembly_index))
+                .max(accept_floor)
+                .max(1);
+            if score_limits[candidate_assembly_index] <= min_score {
+                continue;
+            }
+            let (alignment, score, reached) = alignment_engine.align_pruned(
+                cread,
+                &candidate_assemblies[candidate_assembly_index].graph,
+                min_score as i32,
+                false,
+            );
+            // If pruning was abandoned, the full alignment was computed instead, which is the
+            // exact alignment to this candidate even if its score is below min_score
+            if reached || !alignment.is_empty() {
+                is_aligned[candidate_assembly_index] = true;
+                update_best(
+                    &mut best_assembly,
+                    candidate_assembly_index,
+                    alignment,
+                    score,
+                );
+            } else {
+                score_limits[candidate_assembly_index] = min_score;
+            }
+        }
+    }
+
+    // Compute any remaining alignments which could be selected
+    for candidate_assembly_index in 0..candidate_count {
+        if is_aligned[candidate_assembly_index] {
+            continue;
+        }
+        let min_score = get_min_score(&best_assembly, candidate_assembly_index).max(accept_floor);
+        if score_limits[candidate_assembly_index] <= min_score {
+            continue;
+        }
+        let graph = &candidate_assemblies[candidate_assembly_index].graph;
+        if min_score == i64::MIN {
+            let (alignment, score) = alignment_engine.align(cread, graph);
+            update_best(
+                &mut best_assembly,
+                candidate_assembly_index,
+                alignment,
+                score,
+            );
+        } else {
+            // If the alignment doesn't reach min_score, it can't be selected
+            let (alignment, score, reached) =
+                alignment_engine.align_pruned(cread, graph, min_score as i32, false);
+            if reached {
+                update_best(
+                    &mut best_assembly,
+                    candidate_assembly_index,
+                    alignment,
+                    score,
+                );
+            }
+        }
     }
     best_assembly
+}
+
+/// Minimum read bases in an assembly alignment which can be accepted
+const MIN_OVERLAP: u32 = 100;
+
+/// Maximum read bases not aligned at each end of a backup assembly alignment which can be accepted
+const READ_END_TOLERANCE: u32 = 3;
+
+fn sw_floor_verify_enabled() -> bool {
+    static E: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *E.get_or_init(|| std::env::var("SAWFISH_VERIFY_SW_FLOOR").is_ok())
 }
 
 fn get_norm_score(align_info: &AssemblyAlignmentInfo) -> f64 {
@@ -74,7 +196,6 @@ fn reject_assembly_alignment(min_norm_score: f64, align_info: &AssemblyAlignment
     if align_info.overlap == 0 {
         true
     } else {
-        const MIN_OVERLAP: u32 = 100;
         align_info.overlap < MIN_OVERLAP || get_norm_score(align_info) < min_norm_score
     }
 }
@@ -89,15 +210,14 @@ fn reject_assembly_backup_alignment(
     read_size: u32,
     align_info: &AssemblyAlignmentInfo,
 ) -> bool {
-    let read_end_tolerance = 3;
     // Check that read is aligned end to end:
-    if align_info.left_clip > read_end_tolerance {
+    if align_info.left_clip > READ_END_TOLERANCE {
         return true;
     }
     let left_side = align_info.left_clip + align_info.overlap;
     assert!(read_size >= left_side);
     let right_clip = read_size - left_side;
-    if right_clip > read_end_tolerance {
+    if right_clip > READ_END_TOLERANCE {
         return true;
     }
 
@@ -168,8 +288,8 @@ fn add_trimmed_read_to_candidate_assembles(
     if assembly_debug {
         eprintln!(
             "trimmed read index/size/qname: {trimmed_read_index}/{}/{}",
-            &trimmed_read_info.trimmed_read.len(),
-            &trimmed_read_info.qname,
+            trimmed_read_info.trimmed_read.len(),
+            trimmed_read_info.qname,
         );
     }
 
@@ -183,6 +303,7 @@ fn add_trimmed_read_to_candidate_assembles(
             ov_alignment_engine,
             cread,
             candidate_assemblies,
+            i64::MIN,
         );
 
         let reject_alignment = reject_assembly_alignment(min_norm_score, &alignment);
@@ -193,13 +314,56 @@ fn add_trimmed_read_to_candidate_assembles(
             if assembly_debug {
                 eprintln!("Rejecting OV alignment and going to SW");
             }
+            let read_size = trimmed_read_info.trimmed_read_len() as u32;
+
+            // The backup alignment is only accepted if it covers the read except for at most
+            // read_end_tolerance bases at each end, and spans at least MIN_OVERLAP bases, with a
+            // score of at least min_norm_score per base. A lower score can't be accepted. The extra
+            // 1 is a margin for floating point rounding.
+            let sw_accept_floor = {
+                debug_assert!(min_norm_score > 0.0);
+                let min_overlap = std::cmp::max(
+                    read_size.saturating_sub(2 * READ_END_TOLERANCE),
+                    MIN_OVERLAP,
+                );
+                (min_norm_score * min_overlap as f64).floor() as i64 - 1
+            };
             let alignment = get_best_assembly_alignment_for_trimmed_read(
                 sw_alignment_engine,
                 cread,
                 candidate_assemblies,
+                sw_accept_floor,
             );
+            if sw_floor_verify_enabled() {
+                let full = get_best_assembly_alignment_for_trimmed_read(
+                    sw_alignment_engine,
+                    cread,
+                    candidate_assemblies,
+                    i64::MIN,
+                );
+                let reject_full =
+                    reject_assembly_backup_alignment(min_norm_score, read_size, &full);
+                let reject_new =
+                    reject_assembly_backup_alignment(min_norm_score, read_size, &alignment);
+                let same = alignment.index == full.index
+                    && alignment.score == full.score
+                    && alignment.overlap == full.overlap
+                    && alignment.left_clip == full.left_clip;
+                if reject_full != reject_new || (!reject_new && !same) {
+                    eprintln!(
+                        "SW accept floor mismatch: reject {reject_full} vs {reject_new}, \
+                         index {} vs {}, score {} vs {}, overlap {} vs {}",
+                        full.index,
+                        alignment.index,
+                        full.score,
+                        alignment.score,
+                        full.overlap,
+                        alignment.overlap
+                    );
+                    std::process::abort();
+                }
+            }
 
-            let read_size = trimmed_read_info.trimmed_read_len() as u32;
             let reject_alignment =
                 reject_assembly_backup_alignment(min_norm_score, read_size, &alignment);
             (alignment, reject_alignment)
@@ -311,9 +475,15 @@ fn get_trimmed_read_consensus_alignment_info(
 ) -> TrimmedReadConsensusAlignmentInfo {
     let trimmed_cread =
         unsafe { CStr::from_bytes_with_nul_unchecked(&trimmed_read_info.trimmed_read) };
-    let (_score, query_start_clip, _overlap, msa) =
-        get_pairwise_alignment(sw_alignment_engine, consensus, trimmed_cread);
     let read_len = (trimmed_read_info.trimmed_read.len() - 1) as u32;
+    // Trimmed reads are expected to align closely to the consensus, which makes the alignment
+    // faster to compute. The result is the same either way.
+    let (_score, query_start_clip, _overlap, msa) = get_pairwise_alignment_with_expected_score(
+        sw_alignment_engine,
+        consensus,
+        trimmed_cread,
+        &[0.97],
+    );
     let alignment = get_query_alignment_from_msa(query_start_clip, read_len, &msa);
 
     get_consensus_alignment_info(contig_size, &alignment)

@@ -55,16 +55,16 @@ release tarball, or via conda as described below.
 #### Install from GitHub
 
 To install sawfish from github, download the latest release tarball compiled for 64-bit Linux on the [github release
-channel](https://github.com/PacificBiosciences/sawfish/releases/latest), then unpack the tar file. Using v2.0.4 as an
+channel](https://github.com/PacificBiosciences/sawfish/releases/latest), then unpack the tar file. Using v2.3.0 as an
 example, the tar file can be downloaded and unpacked as follows:
 
-    wget https://github.com/PacificBiosciences/sawfish/releases/download/v2.0.0/sawfish-v2.0.0-x86_64-unknown-linux-gnu.tar.gz
-    tar -xzf sawfish-v2.0.4-x86_64-unknown-linux-gnu.tar.gz
+    wget https://github.com/PacificBiosciences/sawfish/releases/download/v2.3.0/sawfish-v2.3.0-x86_64-unknown-linux-gnu.tar.gz
+    tar -xzf sawfish-v2.3.0-x86_64-unknown-linux-gnu.tar.gz
 
 The sawfish binary is found in the `bin/` directory of the unpacked file distribution. This can be run with the help
 option to test the binary and review latest usage details:
 
-    sawfish-v2.0.4-x86_64-unknown-linux-gnu/bin/sawfish --help
+    sawfish-v2.3.0-x86_64-unknown-linux-gnu/bin/sawfish --help
 
 #### Install from conda
 
@@ -269,15 +269,21 @@ For all read sequences in the alignment file, any non-ACGT bases will be convert
 #### Reference fasta
 
 A genome reference sequence file in fasta format is required as input for every run at the discover step, as specified
-by the `--ref` argument. Every chromosome name in the input read alignment file must be be present in the reference
-sequence file. Their is no reciprocal requirement, the reference fasta may contain chromosome names not present in the
+by the `--ref` argument. Every chromosome name in the input read alignment file must be present in the reference
+sequence file. There is no reciprocal requirement, the reference fasta may contain chromosome names not present in the
 input bam file.
 
 All reference sequence input will be uppercased and any non-ACGT bases will be converted to `N`.
 
+If the fasta is uncompressed and has a samtools `.fai` index (`samtools faidx ref.fasta`) next to it, sawfish reads
+the reference on demand, which keeps memory low. If the fasta is bgzip-compressed, the index is older than the fasta
+(a warning is logged), or the index can't be used, the whole reference is loaded into memory instead. The same applies
+when there is no index. Remote reference paths (such as URLs) are not supported: sawfish is built without remote
+file access, so localize any remote input files before the run.
+
 #### Expected copy number
 
-An BED file can be provided for each sample during the discover step to set expected copy number per region of the
+A BED file can be provided for each sample during the discover step to set expected copy number per region of the
 genome, by using the `--expected-cn` option. Any regions not specified will have a default expected copy number of 2. If
 no file is specified the default expected copy number of 2 will apply to the whole genome.
 
@@ -727,8 +733,11 @@ about the call and may be reformatted in future releases.
 
 In general, runtime response to thread count is expected to be nearly linear for both sawfish discover and joint-call steps.
 
-For a typical ~30x HiFi sample analyzed on 16 threads, the `discover` step should complete in about 30-40 minutes and
-the `joint-call` step should complete in about 5 minutes.
+For a typical ~30x HiFi sample analyzed on 16 threads, the `discover` step should complete in about 15-30 minutes and
+the `joint-call` step should complete in about 2-3 minutes (measured on 40-core Xeon nodes reading from network storage).
+These times include the overlap of alignment scanning with SV refinement, which is only used when at least 3 threads
+are available. Runtime also depends on the sample: the slowest cases among 265 HPRC samples took about 30 minutes in
+`discover` at 16 threads.
 
 The current joint calling scheme has been designed with pedigree-scale analysis in mind, so runtimes for typical small
 pedigrees should be practical. However the runtime is super-linear with sample count, so the method is not practical for
@@ -763,8 +772,14 @@ alignment files onto the local compute node storage (such as a /scratch drive) d
 
 #### Memory
 
-The `discover` step should typically require less than 8Gb/thread so long as at least several threads are selected. The
-`joint-call` step should require substantially less memory but hasn't been tested at scale with less than 1Gb/thread.
+The `discover` step should typically require about 4-8 GiB in total for a ~30x sample at 16-32 threads, and memory
+grows only slowly with thread count. Resource requests of 1 GiB/thread are a safe upper bound. A fixed 6 GiB budget
+limits the memory used for aligning long contigs. A 30x sample peaked at 4.6 GiB with 16 threads and 6.2 GiB with 24
+threads.
+
+The `joint-call` step typically needs 1-3 GiB for a single sample. Each worker thread keeps recently read alignment
+windows (up to about 8 MiB per sample), so memory also grows with thread count and sample count: for large cohorts
+budget at least 1 GiB/thread, and note that this has not been tested at scale with the new read cache beyond 3 samples.
 
 ### Discover step input file path storage
 

@@ -3,7 +3,10 @@ use super::merge_sv_shared::{
     set_sv_group_expected_cn_info,
 };
 use super::{CandidateSVGroupInfo, get_duplicate_stats};
-use crate::bio_align_utils::{PairwiseAligner, print_pairwise_alignment};
+use crate::bio_align_utils::{
+    PairwiseAligner, can_merge_alignment_reach_norm_score, merge_alignment_score,
+    print_pairwise_alignment, verify_merge_alignment_filter,
+};
 use crate::joint_call::SampleJointCallData;
 use crate::run_stats::MultiSampleCategoryMergeStats;
 use crate::sv_group::SVGroup;
@@ -54,8 +57,14 @@ fn test_for_duplicate_haplotypes_with_alignment(
         &breakend1_contig_alignment.contig_seq[hq_range.start as usize..hq_range.end as usize]
     };
 
-    let mut aligner = PairwiseAligner::new_merge_aligner();
-    let score = aligner.align(base_contig, query_contig);
+    // Skip the alignment if it can't reach the merge score
+    let can_merge =
+        can_merge_alignment_reach_norm_score(base_contig, query_contig, min_merge_norm_score);
+    if !can_merge && !debug_duptest && !verify_merge_alignment_filter() {
+        return false;
+    }
+
+    let score = merge_alignment_score(base_contig, query_contig);
 
     // normalize the score by the query_contig, which should be globally aligned.
     let norm_score = score as f64 / query_contig.len() as f64;
@@ -69,8 +78,14 @@ fn test_for_duplicate_haplotypes_with_alignment(
 
         print_fasta(150, &[base_contig, query_contig]);
         eprintln!("query to base alignment:");
+        let mut aligner = PairwiseAligner::new_merge_aligner();
+        aligner.align(base_contig, query_contig);
         print_pairwise_alignment(&aligner, base_contig, query_contig);
     }
+    assert!(
+        can_merge || norm_score < min_merge_norm_score,
+        "Merge alignment filter skipped a merge"
+    );
     norm_score >= min_merge_norm_score
 }
 

@@ -1,30 +1,28 @@
+mod read_cache;
+
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::default::Default;
 use std::ops::Range;
 
-use rust_htslib::bam::{self, Read};
-use rust_vc_utils::bam_utils::filter_out_alignment_record;
-use rust_vc_utils::cigar::get_cigar_ref_offset;
-use rust_vc_utils::get_seq_order_read_split_segments;
-use rust_vc_utils::{ChromList, GenomeRef, GenomeSegment, IntRange, RegionMap};
+use rust_htslib::bam;
+use rust_vc_utils::{ChromList, GenomeSegment, IntRange, RegionMap};
 use strum::EnumCount;
-use unwrap::unwrap;
 
-use crate::bam_utils::{
-    TargetMatchType, bam_fetch_segment, get_alignment_closest_to_target_ref_pos,
-    get_bam_alignment_closest_to_target_ref_pos, get_gap_compressed_identity,
-    get_simplified_dna_seq, is_split_read,
-};
+use self::read_cache::ScoringRead;
+pub use self::read_cache::{MAX_WORKER_CACHE_BYTES, SampleReadCache};
+use crate::bam_utils::{TargetMatchType, get_alignment_closest_to_target_ref_pos};
 use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint};
 use crate::expected_ploidy::{SVLocusExpectedCNInfo, SVLocusPloidy};
-use crate::genome_ref_utils::get_ref_segment_seq;
+use crate::genome_ref_utils::{GenomeRef, get_ref_segment_seq};
 use crate::prob_utils::{error_prob_to_phred, ln_error_prob_to_qphred, normalize_ln_distro};
 use crate::refine_sv::{
     AlleleCounts, AlleleType, Genotype, RefinedSV, SVPhaseStatus, SVSampleScoreInfo, SVScoreInfo,
 };
 use crate::sv_group::{ClusterAssemblyAlignment, GroupHaplotypeId, SVGroup, SVGroupHaplotype};
-use crate::wfa2_utils::{PairwiseAligner, print_pairwise_alignment};
+use crate::wfa2_utils::{
+    BoundedScore, ConsensusScoreAligner, PairwiseAligner, print_pairwise_alignment,
+};
 
 /// Get the reference allele breakend flank sequence corresponding to the genotype alignment region of the target SV breakend
 ///
@@ -33,14 +31,14 @@ use crate::wfa2_utils::{PairwiseAligner, print_pairwise_alignment};
 ///
 /// Return the breakend flank sequence, or None if the flank region is too small (ie. trying to sample from the chromosome edge)
 ///
-fn convert_breakend_to_ref_flank<'a>(
+fn convert_breakend_to_ref_flank(
     score_settings: &ScoreSVSettings,
     breakend: &Breakend,
-    reference: &'a GenomeRef,
+    reference: &GenomeRef,
     chrom_list: &ChromList,
     is_breakend1: bool,
     debug: bool,
-) -> Option<&'a [u8]> {
+) -> Option<Vec<u8>> {
     let mut flank_segment = breakend.segment.clone();
     match breakend.dir {
         BreakendDirection::LeftAnchor => {
@@ -73,19 +71,21 @@ fn convert_breakend_to_ref_flank<'a>(
     {
         None
     } else {
-        Some(get_ref_segment_seq(chrom_list, reference, &flank_segment))
+        Some(get_ref_segment_seq(reference, &flank_segment))
     }
 }
 
 /// Get the reference allele breakpoint flank sequences corresponding to the genotype alignment regions of the target SV breakpoint
 ///
-fn get_ref_flank_seqs<'a>(
+/// Returns the flank sequence for breakend1 and breakend2
+///
+fn get_ref_flanks(
     score_settings: &ScoreSVSettings,
     bp: &Breakpoint,
-    reference: &'a GenomeRef,
+    reference: &GenomeRef,
     chrom_list: &ChromList,
     debug: bool,
-) -> BreakpointAlleleFlankSeqs<'a> {
+) -> [Option<Vec<u8>>; 2] {
     let breakend1_flank = convert_breakend_to_ref_flank(
         score_settings,
         &bp.breakend1,
@@ -105,10 +105,18 @@ fn get_ref_flank_seqs<'a>(
         debug,
     );
 
+    [breakend1_flank, breakend2_flank]
+}
+
+/// Get the reference allele flank sequences from the flanks returned by get_ref_flanks
+fn get_ref_flank_seqs(ref_flanks: &[Option<Vec<u8>>; 2]) -> BreakpointAlleleFlankSeqs<'_> {
     // We don't need any alternate registrations for reference sequence, so leave these as None
     //
     BreakpointAlleleFlankSeqs {
-        breakend_flanks: [[breakend1_flank, None], [breakend2_flank, None]],
+        breakend_flanks: [
+            [ref_flanks[0].as_deref(), None],
+            [ref_flanks[1].as_deref(), None],
+        ],
     }
 }
 
@@ -320,7 +328,7 @@ struct ReadFlankInfo {
 ///
 fn get_read_breakend_flank_range(
     score_settings: &ScoreSVSettings,
-    record: &bam::Record,
+    read: &ScoringRead,
     breakend: &Breakend,
     assembly_segment: Option<&GenomeSegment>,
 ) -> Option<ReadFlankInfo> {
@@ -358,8 +366,9 @@ fn get_read_breakend_flank_range(
             };
             let ref_to_read_offset_anchor_pos = ref_to_read_anchor_pos - ref_to_read_anchor_offset;
 
-            let read_to_ref_map = get_bam_alignment_closest_to_target_ref_pos(
-                record,
+            let read_to_ref_map = get_alignment_closest_to_target_ref_pos(
+                read.pos,
+                &read.cigar,
                 ref_to_read_offset_anchor_pos,
                 TargetMatchType::TargetOrLower,
             )?;
@@ -373,7 +382,7 @@ fn get_read_breakend_flank_range(
                 // homology len to the read position to get the intended flank region start position
                 let flank_start = shifted_read_pos + 1 + homology_len;
 
-                let read_len = record.seq_len() as i64;
+                let read_len = read.seq_len() as i64;
                 let full_flank_end = flank_start + score_settings.read_support_flank_size;
                 let (flank_end, end_truncation) = if full_flank_end > read_len {
                     (read_len, (full_flank_end - read_len) as usize)
@@ -401,8 +410,9 @@ fn get_read_breakend_flank_range(
 
             let ref_to_read_offset_anchor_pos = ref_to_read_anchor_pos + ref_to_read_anchor_offset;
 
-            let read_to_ref_map = get_bam_alignment_closest_to_target_ref_pos(
-                record,
+            let read_to_ref_map = get_alignment_closest_to_target_ref_pos(
+                read.pos,
+                &read.cigar,
                 ref_to_read_offset_anchor_pos,
                 TargetMatchType::TargetOrHigher,
             )?;
@@ -411,7 +421,7 @@ fn get_read_breakend_flank_range(
             let shift = ref_target_pos - read_to_ref_map.ref_pos;
             let shifted_read_pos = read_to_ref_map.read_pos as i64 + shift;
 
-            let read_len = record.seq_len() as i64;
+            let read_len = read.seq_len() as i64;
             if (read_len - shifted_read_pos) >= score_settings.read_support_anchor_min_edge_distance
             {
                 // Account for exact homology len to get the intended flank region end position
@@ -524,7 +534,7 @@ fn is_segment_breakend_match(
 /// Check if BAM read segment from a split read alignment matches the given breakend
 ///
 fn does_read_segment_match_breakend(
-    record: &bam::Record,
+    read: &ScoringRead,
     target_breakend: &Breakend,
     mate_breakend: &Breakend,
     split_read_info: &BreakendMatchSplitReadInfo,
@@ -543,7 +553,7 @@ fn does_read_segment_match_breakend(
 
     // Find the adjacent split read segment corresponding to the other side of this breakend
     let is_left_anchor = target_breakend.dir == BreakendDirection::LeftAnchor;
-    let is_plus_one_index = is_left_anchor ^ record.is_reverse();
+    let is_plus_one_index = is_left_anchor ^ read.is_reverse;
     let mate_segment_index = if is_plus_one_index {
         // One segment downstream on the read
         if target_segment_index + 1 < split_read_info.seq_order_read_split_segments.len() {
@@ -571,7 +581,7 @@ fn does_read_segment_match_breakend(
 ///
 fn get_read_flanks_for_breakend(
     score_settings: &ScoreSVSettings,
-    record: &bam::Record,
+    read: &ScoringRead,
     target_breakend: &Breakend,
     mate_breakend: &Breakend,
     assembly_segment: &GenomeSegment,
@@ -579,56 +589,23 @@ fn get_read_flanks_for_breakend(
 ) -> BreakendAlleleFlankRange {
     if split_read_info.is_none()
         || does_read_segment_match_breakend(
-            record,
+            read,
             target_breakend,
             mate_breakend,
             split_read_info.unwrap(),
         )
     {
         let breakend_flank =
-            get_read_breakend_flank_range(score_settings, record, target_breakend, None);
+            get_read_breakend_flank_range(score_settings, read, target_breakend, None);
         let breakend_ext_flank = get_read_breakend_flank_range(
             score_settings,
-            record,
+            read,
             target_breakend,
             Some(assembly_segment),
         );
         vec![breakend_flank, breakend_ext_flank]
     } else {
         vec![None, None]
-    }
-}
-
-fn get_split_read_info(
-    chrom_list: &ChromList,
-    record: &bam::Record,
-    single_region_refinement: bool,
-) -> Option<BreakendMatchSplitReadInfo> {
-    // Check for conditions that require we confirm we're extracting the read from the correct split read segment, otherwise return None
-    if (!single_region_refinement) && is_split_read(record) {
-        let mut seq_order_read_split_segments = Vec::new();
-        let mut primary_split_segment_index = 0;
-        for (split_segment_index, split_segment) in
-            get_seq_order_read_split_segments(chrom_list, record)
-                .into_iter()
-                .enumerate()
-        {
-            if split_segment.from_primary_bam_record {
-                primary_split_segment_index = split_segment_index;
-            }
-            let end = split_segment.pos + get_cigar_ref_offset(&split_segment.cigar);
-            let segment = GenomeSegment {
-                chrom_index: split_segment.chrom_index,
-                range: IntRange::from_pair(split_segment.pos, end),
-            };
-            seq_order_read_split_segments.push(segment);
-        }
-        Some(BreakendMatchSplitReadInfo {
-            seq_order_read_split_segments,
-            primary_split_segment_index,
-        })
-    } else {
-        None
     }
 }
 
@@ -644,38 +621,42 @@ fn get_split_read_info(
 ///
 fn get_read_flanks_for_breakpoint(
     score_settings: &ScoreSVSettings,
-    chrom_list: &ChromList,
-    record: &bam::Record,
+    read: &ScoringRead,
     bp: &Breakpoint,
     assembly_segment: &GenomeSegment,
     single_region_refinement: bool,
     debug: bool,
 ) -> BreakpointAlleleFlankRanges {
-    let split_read_info = get_split_read_info(chrom_list, record, single_region_refinement);
+    // Confirm that the flanks are extracted from the correct split read segment, except for
+    // single-region (indel-like) SVs
+    let split_read_info = if single_region_refinement {
+        None
+    } else {
+        read.split_read_info.as_ref()
+    };
 
     let breakend1 = &bp.breakend1;
     let breakend2 = bp.breakend2.as_ref().unwrap();
 
     let breakend1_flanks = get_read_flanks_for_breakend(
         score_settings,
-        record,
+        read,
         breakend1,
         breakend2,
         assembly_segment,
-        split_read_info.as_ref(),
+        split_read_info,
     );
     let breakend2_flanks = get_read_flanks_for_breakend(
         score_settings,
-        record,
+        read,
         breakend2,
         breakend1,
         assembly_segment,
-        split_read_info.as_ref(),
+        split_read_info,
     );
 
     if debug {
-        let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
-        eprintln!("Evaluating support from read {qname}");
+        eprintln!("Evaluating support from read {}", read.qname);
         eprintln!("read_breakend1_flank_range: {:?}", breakend1_flanks[0]);
         eprintln!("read_breakend1_ext_flank_range: {:?}", breakend1_flanks[1]);
         eprintln!("read_breakend2_flank_range: {:?}", breakend2_flanks[0]);
@@ -687,26 +668,176 @@ fn get_read_flanks_for_breakpoint(
     }
 }
 
+/// Hasher for the flank alignment cache, faster than the default for long byte keys
+#[derive(Default)]
+struct FlankHasher(u64);
+
+impl std::hash::Hasher for FlankHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        const K: u64 = 0x517c_c1b7_2722_0a95;
+        let (chunks, remainder) = bytes.as_chunks::<8>();
+        for &c in chunks {
+            let x = u64::from_le_bytes(c);
+            self.0 = (self.0.rotate_left(5) ^ x).wrapping_mul(K);
+        }
+        for &b in remainder {
+            self.0 = (self.0.rotate_left(5) ^ b as u64).wrapping_mul(K);
+        }
+    }
+
+    fn finish(&self) -> u64 {
+        self.0
+    }
+}
+
+type FlankHashMap<K, V> = HashMap<K, V, std::hash::BuildHasherDefault<FlankHasher>>;
+
+/// Scores read flank alignments to allele flanks, reusing the score of any alignment already
+/// computed for the same SV group
+///
+/// The same alignment comes up repeatedly: both registrations of a read flank are often the same
+/// read segment, aligned to the same reference flank, and SVs of a group often share a breakend.
+/// Scores are cached by the sequences aligned, so they are exactly those of a new alignment.
+///
+struct FlankAlignmentScorer {
+    /// Taken from CONSENSUS_SCORE_ALIGNER, and returned to it on drop
+    aligner: Option<ConsensusScoreAligner>,
+    /// Current read flank, aligned to each allele flank
+    text: Vec<u8>,
+    text_id: usize,
+    /// True if the aligner's text is the current read flank
+    is_aligner_text_set: bool,
+    text_ids: FlankHashMap<Vec<u8>, usize>,
+    pattern_ids: FlankHashMap<Vec<u8>, usize>,
+    /// Exact scores, and upper bounds of scores not computed exactly
+    scores: FlankHashMap<(usize, usize), BoundedScore>,
+    /// Bytes of sequence in the cache
+    cache_bytes: usize,
+}
+
+thread_local! {
+    /// Each thread's aligner, reused between SV groups to avoid setting up WFA2's memory each time
+    static CONSENSUS_SCORE_ALIGNER: std::cell::RefCell<Option<ConsensusScoreAligner>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+impl Drop for FlankAlignmentScorer {
+    fn drop(&mut self) {
+        CONSENSUS_SCORE_ALIGNER.with(|x| *x.borrow_mut() = self.aligner.take());
+    }
+}
+
+impl FlankAlignmentScorer {
+    /// The cache is cleared when it holds more sequence than this
+    const MAX_CACHE_BYTES: usize = 16 * 1024 * 1024;
+
+    fn new() -> Self {
+        let aligner = CONSENSUS_SCORE_ALIGNER
+            .with(|x| x.borrow_mut().take())
+            .unwrap_or_else(ConsensusScoreAligner::new);
+        Self {
+            aligner: Some(aligner),
+            text: Vec::new(),
+            text_id: 0,
+            is_aligner_text_set: false,
+            text_ids: FlankHashMap::default(),
+            pattern_ids: FlankHashMap::default(),
+            scores: FlankHashMap::default(),
+            cache_bytes: 0,
+        }
+    }
+
+    fn intern(
+        ids: &mut FlankHashMap<Vec<u8>, usize>,
+        cache_bytes: &mut usize,
+        seq: &[u8],
+    ) -> usize {
+        if let Some(&id) = ids.get(seq) {
+            id
+        } else {
+            let id = ids.len();
+            ids.insert(seq.to_vec(), id);
+            *cache_bytes += seq.len();
+            id
+        }
+    }
+
+    fn set_text(&mut self, text: &[u8]) {
+        if self.cache_bytes > Self::MAX_CACHE_BYTES {
+            self.text_ids.clear();
+            self.pattern_ids.clear();
+            self.scores.clear();
+            self.cache_bytes = 0;
+        }
+        self.text.clear();
+        self.text.extend_from_slice(text);
+        self.text_id = Self::intern(&mut self.text_ids, &mut self.cache_bytes, text);
+        self.is_aligner_text_set = false;
+    }
+
+    fn text(&self) -> &[u8] {
+        &self.text
+    }
+
+    fn get_aligner(&mut self) -> &mut ConsensusScoreAligner {
+        let aligner = self.aligner.as_mut().unwrap();
+        if !self.is_aligner_text_set {
+            aligner.set_text(&self.text);
+            self.is_aligner_text_set = true;
+        }
+        aligner
+    }
+
+    /// Alignment score of pattern to the current read flank
+    fn align_score(&mut self, pattern: &[u8]) -> i32 {
+        let pattern_id = Self::intern(&mut self.pattern_ids, &mut self.cache_bytes, pattern);
+        let key = (self.text_id, pattern_id);
+        let score = match self.scores.get(&key) {
+            Some(&BoundedScore::Exact(x)) => return x,
+            Some(&BoundedScore::AtMost(_)) => self.get_aligner().dp_align_score(pattern),
+            None => self.get_aligner().align_score(pattern),
+        };
+        self.scores.insert(key, BoundedScore::Exact(score));
+        score
+    }
+
+    /// Alignment score of pattern to the current read flank, or an upper bound if computing it
+    /// needs the DP matrix
+    fn align_score_bounded(&mut self, pattern: &[u8]) -> BoundedScore {
+        let pattern_id = Self::intern(&mut self.pattern_ids, &mut self.cache_bytes, pattern);
+        let key = (self.text_id, pattern_id);
+        if let Some(&score) = self.scores.get(&key) {
+            return score;
+        }
+        let score = self.get_aligner().align_score_bounded(pattern);
+        self.scores.insert(key, score);
+        score
+    }
+}
+
 /// # Arguments
 /// * `label` - Only used for debug messages
 ///
 /// * `breakend_index` - Only used for debug messagesq
 ///
 fn get_read_flank_align_score(
-    aligner: &mut PairwiseAligner,
+    scorer: &mut FlankAlignmentScorer,
     seq: &[u8],
     label: &str,
     breakend_index: usize,
     debug: bool,
 ) -> f64 {
-    let (score, _alignment) = aligner.align(seq);
-    let norm_score = score as f64 / aligner.text().len() as f64;
+    let score = scorer.align_score(seq);
+    let norm_score = score as f64 / scorer.text().len() as f64;
 
     if debug {
         eprintln!(
             "Read to {label} breakend{breakend_index} score: {norm_score}. Alignment (read above):"
         );
-        print_pairwise_alignment(aligner, seq);
+        let mut aligner = PairwiseAligner::new_consensus_aligner();
+        aligner.set_text(scorer.text());
+        aligner.align(seq);
+        print_pairwise_alignment(&aligner, seq);
     }
 
     norm_score
@@ -719,7 +850,7 @@ fn get_read_flank_align_score(
 ///
 #[allow(clippy::too_many_arguments)]
 fn get_read_flank_align_score_option(
-    aligner: &mut PairwiseAligner,
+    scorer: &mut FlankAlignmentScorer,
     seq: Option<&[u8]>,
     label: &str,
     breakend_index: usize,
@@ -728,20 +859,119 @@ fn get_read_flank_align_score_option(
     min_read_support_flank_size: i64,
     debug: bool,
 ) -> Option<f64> {
+    let seq = get_truncated_flank_seq(
+        seq,
+        read_start_truncation,
+        read_end_truncation,
+        min_read_support_flank_size,
+    )?;
+    Some(get_read_flank_align_score(
+        scorer,
+        seq,
+        label,
+        breakend_index,
+        debug,
+    ))
+}
+
+/// Get the part of an allele flank sequence aligned to a read flank with the given truncation,
+/// or None if it is too short
+fn get_truncated_flank_seq(
+    seq: Option<&[u8]>,
+    read_start_truncation: usize,
+    read_end_truncation: usize,
+    min_read_support_flank_size: i64,
+) -> Option<&[u8]> {
     let seq = seq?;
     if (read_start_truncation + read_end_truncation + min_read_support_flank_size as usize)
         > seq.len()
     {
         return None;
     }
-    let seq = &seq[read_start_truncation..seq.len() - read_end_truncation];
-    Some(get_read_flank_align_score(
-        aligner,
-        seq,
-        label,
-        breakend_index,
-        debug,
-    ))
+    Some(&seq[read_start_truncation..seq.len() - read_end_truncation])
+}
+
+/// Get the normalized alignment scores of the current read flank to the ref and alt allele flanks,
+/// and the higher of the two scores that are exact
+///
+/// These two scores are only used to find the best allele for this read flank: they're compared
+/// to each other and to the score of an overlapping haplotype's flank, the best score must be at
+/// least zero, and ties for the best score are handled specially. So a score that is lower than
+/// the other score can't change the result, provided it stays lower.
+///
+/// The scores of read flanks that don't match an allele need the DP matrix (see
+/// ConsensusScoreAligner), which is slow. When such a score's upper bound is already lower than the
+/// other allele's exact score, the upper bound is used as its value instead.
+///
+fn get_ref_alt_flank_scores(
+    scorer: &mut FlankAlignmentScorer,
+    ref_flank: Option<&[u8]>,
+    alt_flank: Option<&[u8]>,
+) -> (Option<f64>, Option<f64>, Option<i32>) {
+    let ref_bound = ref_flank.map(|x| scorer.align_score_bounded(x));
+    let alt_bound = alt_flank.map(|x| scorer.align_score_bounded(x));
+    let exact = |x: Option<BoundedScore>| match x {
+        Some(BoundedScore::Exact(x)) => Some(x),
+        _ => None,
+    };
+
+    // A score known to be lower than the other's exact score, or else the exact score
+    let mut resolve =
+        |bound: Option<BoundedScore>, flank: Option<&[u8]>, other_exact: Option<i32>| match bound {
+            Some(BoundedScore::Exact(x)) => Some((x, true)),
+            Some(BoundedScore::AtMost(x)) if other_exact.is_some_and(|y| x < y) => Some((x, false)),
+            Some(BoundedScore::AtMost(_)) => Some((scorer.align_score(flank.unwrap()), true)),
+            None => None,
+        };
+    let ref_score = resolve(ref_bound, ref_flank, exact(alt_bound));
+    let ref_exact = ref_score.and_then(|(x, is_exact)| is_exact.then_some(x));
+    let alt_score = resolve(alt_bound, alt_flank, ref_exact);
+
+    let alt_exact = alt_score.and_then(|(x, is_exact)| is_exact.then_some(x));
+    let text_len = scorer.text().len() as f64;
+    (
+        ref_score.map(|(x, _)| x as f64 / text_len),
+        alt_score.map(|(x, _)| x as f64 / text_len),
+        ref_exact.max(alt_exact),
+    )
+}
+
+/// Get the normalized alignment score of the current read flank to an overlapping haplotype's
+/// allele flank, when this score isn't averaged (see `are_overlap_scores_averaged`)
+///
+/// The score is then only used to find the best allele for this read flank, together with the ref
+/// and alt scores, as in `get_ref_alt_flank_scores`. So if it needs the DP matrix and its upper bound
+/// is already lower than the ref or alt allele's exact score, the upper bound is used instead.
+///
+fn get_overlap_flank_score(
+    scorer: &mut FlankAlignmentScorer,
+    flank: &[u8],
+    max_ref_alt_exact_score: Option<i32>,
+) -> f64 {
+    let score = match scorer.align_score_bounded(flank) {
+        BoundedScore::Exact(x) => x,
+        BoundedScore::AtMost(x) if max_ref_alt_exact_score.is_some_and(|y| x < y) => x,
+        BoundedScore::AtMost(_) => scorer.align_score(flank),
+    };
+    score as f64 / scorer.text().len() as f64
+}
+
+/// True if the overlapping haplotype scores of this sample are averaged to select a guest
+/// haplotype, see `select_overlapping_guest_haplotype_index`
+///
+fn is_overlapping_guest_haplotype_selected(
+    treat_single_copy_as_haploid: bool,
+    sv_group: &SVGroup,
+    sample_index: usize,
+) -> bool {
+    let sample_haplotype_list = &sv_group.sample_haplotype_list[sample_index];
+    let max_haplotype_count =
+        match sv_group.sample_expected_cn_info[sample_index].ploidy(treat_single_copy_as_haploid) {
+            SVLocusPloidy::Diploid => 2,
+            SVLocusPloidy::Haploid => 1,
+        };
+    let sv_group_haplotype_count = sv_group.group_haplotypes.len();
+    sample_haplotype_list.len() == 1 && max_haplotype_count > 1 && sv_group_haplotype_count > 1
 }
 
 /// Scan one search segment to process read support for the SV allele
@@ -752,6 +982,9 @@ fn get_read_flank_align_score_option(
 ///
 /// * `search_segment` - An expansion of target_segment, intended for setting the range of read scanning
 ///
+/// * `are_overlap_scores_averaged` - True if overlapping haplotype scores must be exact, see
+///   `get_overlap_flank_score`
+///
 /// * `scores` - All read support information indexed on read qname, all read scores are appended to this structure.
 ///
 #[allow(clippy::too_many_arguments)]
@@ -760,12 +993,15 @@ fn get_read_support_scores_from_segment(
     reference: &GenomeRef,
     chrom_list: &ChromList,
     bam_reader: &mut bam::IndexedReader,
+    read_cache: &mut SampleReadCache,
     target_sv: &RefinedSV,
     ref_flank_seqs: &BreakpointAlleleFlankSeqs,
     contig_flank_seqs: &BreakpointAlleleFlankSeqs,
     overlapping_haplotypes_flank_seqs: &[OverlappingHaplotypeFlankSeqs],
     assembly_segment: &GenomeSegment,
     search_segment: &GenomeSegment,
+    are_overlap_scores_averaged: bool,
+    scorer: &mut FlankAlignmentScorer,
     scores: &mut LocusSupportScores,
     debug: bool,
 ) {
@@ -774,134 +1010,158 @@ fn get_read_support_scores_from_segment(
     let single_region_refinement = target_sv.single_region_refinement;
     let bp = &target_sv.bp;
 
-    let chrom_label = &chrom_list.data[search_segment.chrom_index].label;
-    let chrom_sequence = reference.chroms.get(chrom_label).unwrap();
-    bam_fetch_segment(bam_reader, search_segment);
-    let mut record = bam::Record::new();
-    while let Some(r) = bam_reader.read(&mut record) {
-        unwrap!(r, "Failed to parse alignment record");
-
-        if filter_out_alignment_record(&record) {
-            continue;
-        }
-
-        if record.mapq() < score_settings.min_sv_mapq as u8 {
-            continue;
-        }
-
-        if get_gap_compressed_identity(&record, chrom_sequence)
-            < score_settings.min_gap_compressed_identity
-        {
-            continue;
-        }
-
-        let read_flanks = get_read_flanks_for_breakpoint(
-            score_settings,
-            chrom_list,
-            &record,
-            bp,
-            assembly_segment,
-            single_region_refinement,
-            debug,
-        );
-        if read_flanks.is_empty() {
-            continue;
-        }
-
-        let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
-        let read_scores = scores.entry(qname).or_default();
-
-        let read = get_simplified_dna_seq(&record);
-
-        for breakend_index in 0..2 {
-            // This filter is added for cases where the same qname is encountered multiple times as
-            // both primary and supplementary alignments, as would be typical in a duplication
-            // (N=2+), large non-dup insertion (N=2), inversion or other complex SV type.
-            //
-            // Only the reference allele is checked because the ref and alt alleles should always be
-            // filled in as a pair and the intent of subsequent read updates is not to fill in a
-            // 'better' version of the allele score if it's defined in both cases, but rather just
-            // to fill in any scores that were missing.
-            //
-            if read_scores.ref_allele.breakend_flanks[breakend_index].is_any_condition_scored() {
-                continue;
+    let mut read_flank_buffer = Vec::new();
+    read_cache.for_each_read(
+        score_settings,
+        reference,
+        chrom_list,
+        bam_reader,
+        search_segment,
+        |scoring_read| {
+            let read_flanks = get_read_flanks_for_breakpoint(
+                score_settings,
+                scoring_read,
+                bp,
+                assembly_segment,
+                single_region_refinement,
+                debug,
+            );
+            if read_flanks.is_empty() {
+                return;
             }
 
-            for (registration_index, breakend_flank) in read_flanks.breakend_flanks[breakend_index]
-                .iter()
-                .enumerate()
-                .filter_map(|(i, x)| x.clone().map(|x| (i, x)))
-            {
-                let read_breakend_flank = &read[breakend_flank.range];
+            let read_scores = scores.entry(scoring_read.qname.clone()).or_default();
 
-                let mut aligner = PairwiseAligner::new_consensus_aligner();
-                aligner.set_text(read_breakend_flank);
-
-                // This activates more detailed scoring output than we normally want from standard
-                // scoring debug.
-                let debug_score_alignments = false;
-                let ref_score = get_read_flank_align_score_option(
-                    &mut aligner,
-                    ref_flank_seqs.breakend_flanks[breakend_index][standard_registration_index],
-                    "ref",
-                    breakend_index,
-                    breakend_flank.start_truncation,
-                    breakend_flank.end_truncation,
-                    score_settings.min_read_support_flank_size,
-                    debug_score_alignments,
-                );
-                read_scores.ref_allele.breakend_flanks[breakend_index].registrations
-                    [registration_index] = ref_score;
-
-                let alt_score = get_read_flank_align_score_option(
-                    &mut aligner,
-                    contig_flank_seqs.breakend_flanks[breakend_index][registration_index],
-                    "alt",
-                    breakend_index,
-                    breakend_flank.start_truncation,
-                    breakend_flank.end_truncation,
-                    score_settings.min_read_support_flank_size,
-                    debug_score_alignments,
-                );
-                read_scores.alt_allele.breakend_flanks[breakend_index].registrations
-                    [registration_index] = alt_score;
-
-                // Expand overlap score structure to match the size of overlap flanking sequences
+            for breakend_index in 0..2 {
+                // This filter is added for cases where the same qname is encountered multiple times as
+                // both primary and supplementary alignments, as would be typical in a duplication
+                // (N=2+), large non-dup insertion (N=2), inversion or other complex SV type.
                 //
-                for haplotype_index in (read_scores.overlapping_alleles.len()
-                    ..overlapping_haplotypes_flank_seqs.len())
-                    .map(|x| overlapping_haplotypes_flank_seqs[x].haplotype_index)
+                // Only the reference allele is checked because the ref and alt alleles should always be
+                // filled in as a pair and the intent of subsequent read updates is not to fill in a
+                // 'better' version of the allele score if it's defined in both cases, but rather just
+                // to fill in any scores that were missing.
+                //
+                if read_scores.ref_allele.breakend_flanks[breakend_index].is_any_condition_scored()
                 {
-                    read_scores
-                        .overlapping_alleles
-                        .push(OverlappingHaplotypeSupportScores {
-                            haplotype_index,
-                            ..Default::default()
-                        });
+                    continue;
                 }
 
-                for (overlap_index, overlapping_haplotype_flank_seqs) in
-                    overlapping_haplotypes_flank_seqs.iter().enumerate()
+                for (registration_index, breakend_flank) in read_flanks.breakend_flanks
+                    [breakend_index]
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, x)| x.clone().map(|x| (i, x)))
                 {
-                    let overlap_hap_score = get_read_flank_align_score_option(
-                        &mut aligner,
-                        overlapping_haplotype_flank_seqs.flank_seqs.breakend_flanks[breakend_index]
-                            [registration_index],
-                        "overlap_hap",
-                        breakend_index,
-                        breakend_flank.start_truncation,
-                        breakend_flank.end_truncation,
-                        score_settings.min_read_support_flank_size,
-                        debug_score_alignments,
-                    );
-                    read_scores.overlapping_alleles[overlap_index]
-                        .scores
-                        .breakend_flanks[breakend_index]
-                        .registrations[registration_index] = overlap_hap_score;
+                    scoring_read.get_seq(breakend_flank.range, &mut read_flank_buffer);
+                    let read_breakend_flank = read_flank_buffer.as_slice();
+
+                    scorer.set_text(read_breakend_flank);
+
+                    // This activates more detailed scoring output than we normally want from standard
+                    // scoring debug.
+                    let debug_score_alignments = false;
+                    let (ref_score, alt_score, max_ref_alt_exact_score) = if debug_score_alignments
+                    {
+                        let ref_score = get_read_flank_align_score_option(
+                            scorer,
+                            ref_flank_seqs.breakend_flanks[breakend_index]
+                                [standard_registration_index],
+                            "ref",
+                            breakend_index,
+                            breakend_flank.start_truncation,
+                            breakend_flank.end_truncation,
+                            score_settings.min_read_support_flank_size,
+                            debug_score_alignments,
+                        );
+                        let alt_score = get_read_flank_align_score_option(
+                            scorer,
+                            contig_flank_seqs.breakend_flanks[breakend_index][registration_index],
+                            "alt",
+                            breakend_index,
+                            breakend_flank.start_truncation,
+                            breakend_flank.end_truncation,
+                            score_settings.min_read_support_flank_size,
+                            debug_score_alignments,
+                        );
+                        (ref_score, alt_score, None)
+                    } else {
+                        let truncated_flank_seq = |seq| {
+                            get_truncated_flank_seq(
+                                seq,
+                                breakend_flank.start_truncation,
+                                breakend_flank.end_truncation,
+                                score_settings.min_read_support_flank_size,
+                            )
+                        };
+                        get_ref_alt_flank_scores(
+                            scorer,
+                            truncated_flank_seq(
+                                ref_flank_seqs.breakend_flanks[breakend_index]
+                                    [standard_registration_index],
+                            ),
+                            truncated_flank_seq(
+                                contig_flank_seqs.breakend_flanks[breakend_index]
+                                    [registration_index],
+                            ),
+                        )
+                    };
+                    read_scores.ref_allele.breakend_flanks[breakend_index].registrations
+                        [registration_index] = ref_score;
+                    read_scores.alt_allele.breakend_flanks[breakend_index].registrations
+                        [registration_index] = alt_score;
+
+                    // Expand overlap score structure to match the size of overlap flanking sequences
+                    //
+                    for haplotype_index in (read_scores.overlapping_alleles.len()
+                        ..overlapping_haplotypes_flank_seqs.len())
+                        .map(|x| overlapping_haplotypes_flank_seqs[x].haplotype_index)
+                    {
+                        read_scores
+                            .overlapping_alleles
+                            .push(OverlappingHaplotypeSupportScores {
+                                haplotype_index,
+                                ..Default::default()
+                            });
+                    }
+
+                    for (overlap_index, overlapping_haplotype_flank_seqs) in
+                        overlapping_haplotypes_flank_seqs.iter().enumerate()
+                    {
+                        let overlap_flank_seq = overlapping_haplotype_flank_seqs
+                            .flank_seqs
+                            .breakend_flanks[breakend_index][registration_index];
+                        let overlap_hap_score = if are_overlap_scores_averaged
+                            || debug_score_alignments
+                        {
+                            get_read_flank_align_score_option(
+                                scorer,
+                                overlap_flank_seq,
+                                "overlap_hap",
+                                breakend_index,
+                                breakend_flank.start_truncation,
+                                breakend_flank.end_truncation,
+                                score_settings.min_read_support_flank_size,
+                                debug_score_alignments,
+                            )
+                        } else {
+                            get_truncated_flank_seq(
+                                overlap_flank_seq,
+                                breakend_flank.start_truncation,
+                                breakend_flank.end_truncation,
+                                score_settings.min_read_support_flank_size,
+                            )
+                            .map(|x| get_overlap_flank_score(scorer, x, max_ref_alt_exact_score))
+                        };
+                        read_scores.overlapping_alleles[overlap_index]
+                            .scores
+                            .breakend_flanks[breakend_index]
+                            .registrations[registration_index] = overlap_hap_score;
+                    }
                 }
             }
-        }
-    }
+        },
+    );
 }
 
 #[derive(Clone, Debug)]
@@ -1140,7 +1400,7 @@ fn set_allele_depth_counts_for_single_sample_and_sv_allele(
     if debug {
         let target_sv = &sv_group.refined_svs[sv_index];
         let id = &target_sv.id;
-        eprintln!("Getting AD counts for refined SV bp: {:?}", &target_sv.bp);
+        eprintln!("Getting AD counts for refined SV bp: {:?}", target_sv.bp);
         eprintln!(
             "SV ID: {}:{}:{}:{}",
             id.sample_index, id.cluster_index, id.assembly_index, id.alignment_index
@@ -1583,10 +1843,8 @@ fn get_overlapping_haplotype_indexes(
                 );
             }
         }
-        SampleSVRelation::Guest => {
-            if sample_haplotype_list.len() == 1 {
-                overlapping_haplotype_indexes.push(sample_haplotype_list[0]);
-            }
+        SampleSVRelation::Guest if sample_haplotype_list.len() == 1 => {
+            overlapping_haplotype_indexes.push(sample_haplotype_list[0]);
         }
         _ => (),
     };
@@ -1596,6 +1854,19 @@ fn get_overlapping_haplotype_indexes(
 /// Capture support information between different reads and SV alleles at a given locus for one
 /// sample
 type LocusSupportScores = BTreeMap<String, ReadSupportScores>;
+
+/// Expand SV group regions into the larger search segments used to find candidate supporting reads
+pub fn get_search_segments(
+    chrom_list: &ChromList,
+    group_regions: &[GenomeSegment],
+) -> Vec<GenomeSegment> {
+    let search_segment_expansion_size = 50;
+    let mut search_segments = group_regions.to_vec();
+    for search_segment in search_segments.iter_mut() {
+        search_segment.expand_by(chrom_list, search_segment_expansion_size);
+    }
+    search_segments
+}
 
 /// Get read support scores for a single sample and a single SV allele, but considered in the context of
 /// other overlapping SV haplotypes in the same sv_group
@@ -1619,9 +1890,11 @@ fn get_locus_support_scores(
     chrom_list: &ChromList,
     genome_max_sv_depth_regions: &[RegionMap],
     bam_readers: &mut [&mut bam::IndexedReader],
+    read_caches: &mut [SampleReadCache],
     sv_group: &mut SVGroup,
     sample_sv_info: &SampleSVInfo,
     sample_index: usize,
+    scorer: &mut FlankAlignmentScorer,
     debug: bool,
 ) -> Option<LocusSupportScores> {
     let sv_index = sample_sv_info.sv_index;
@@ -1631,7 +1904,7 @@ fn get_locus_support_scores(
     if debug {
         eprintln!(
             "Getting locus support scores for sample {sample_index} refined SV bp: {:?}",
-            &target_sv.bp
+            target_sv.bp
         );
         eprintln!(
             "SV ID: {}:{}:{}:{}",
@@ -1646,15 +1919,7 @@ fn get_locus_support_scores(
         );
     }
 
-    // Expand target segments into larger search segments used to find candidate supporting reads:
-    let search_segments = {
-        let search_segment_expansion_size = 50;
-        let mut search_segments = target_segments.to_vec();
-        for search_segment in search_segments.iter_mut() {
-            search_segment.expand_by(chrom_list, search_segment_expansion_size);
-        }
-        search_segments
-    };
+    let search_segments = get_search_segments(chrom_list, target_segments);
 
     // Check whether AD counting for this SV should be skipped due to high depth:
     for search_segment in search_segments.iter() {
@@ -1668,8 +1933,16 @@ fn get_locus_support_scores(
     // Drop mutable reference after this point:
     let sv_group: &SVGroup = sv_group;
 
-    let ref_flank_seqs =
-        get_ref_flank_seqs(score_settings, &target_sv.bp, reference, chrom_list, debug);
+    // Overlapping haplotype scores need to be exact if they're averaged
+    let are_overlap_scores_averaged = sample_sv_info.relation == SampleSVRelation::Native
+        && is_overlapping_guest_haplotype_selected(
+            score_settings.treat_single_copy_as_haploid,
+            sv_group,
+            sample_index,
+        );
+
+    let ref_flanks = get_ref_flanks(score_settings, &target_sv.bp, reference, chrom_list, debug);
+    let ref_flank_seqs = get_ref_flank_seqs(&ref_flanks);
 
     let mut scores = LocusSupportScores::new();
 
@@ -1718,12 +1991,15 @@ fn get_locus_support_scores(
             reference,
             chrom_list,
             bam_readers[sample_index],
+            &mut read_caches[sample_index],
             target_sv,
             &ref_flank_seqs,
             &contig_flank_seqs,
             &overlapping_haplotypes_flank_seqs,
             target_segment,
             search_segment,
+            are_overlap_scores_averaged,
+            scorer,
             &mut scores,
             debug,
         );
@@ -2151,6 +2427,7 @@ fn get_sv_group_read_alignment_scores(
     chrom_list: &ChromList,
     all_sample_genome_max_sv_depth_regions: &[&[RegionMap]],
     bam_readers: &mut [&mut bam::IndexedReader],
+    read_caches: &mut [SampleReadCache],
     sv_group: &mut SVGroup,
     sample_sv_order: &[Vec<SampleSVInfo>],
     debug_settings: &ScoreDebugSettings,
@@ -2158,6 +2435,7 @@ fn get_sv_group_read_alignment_scores(
     let mut all_sample_locus_scores = Vec::new();
 
     let sv_count = sv_group.refined_svs.len();
+    let mut scorer = FlankAlignmentScorer::new();
 
     for (sample_index, genome_max_sv_depth_regions) in
         all_sample_genome_max_sv_depth_regions.iter().enumerate()
@@ -2179,9 +2457,11 @@ fn get_sv_group_read_alignment_scores(
                 chrom_list,
                 genome_max_sv_depth_regions,
                 bam_readers,
+                read_caches,
                 sv_group,
                 sample_sv_info,
                 sample_index,
+                &mut scorer,
                 debug,
             );
         }
@@ -2204,14 +2484,9 @@ fn select_overlapping_guest_haplotype_index(
     all_sv_locus_scores_for_sample: &[Option<LocusSupportScores>],
     sample_index: usize,
 ) -> Option<usize> {
-    let sample_haplotype_list = &sv_group.sample_haplotype_list[sample_index];
-    let max_haplotype_count =
-        match sv_group.sample_expected_cn_info[sample_index].ploidy(treat_single_copy_as_haploid) {
-            SVLocusPloidy::Diploid => 2,
-            SVLocusPloidy::Haploid => 1,
-        };
     let sv_group_haplotype_count = sv_group.group_haplotypes.len();
-    if sample_haplotype_list.len() == 1 && max_haplotype_count > 1 && sv_group_haplotype_count > 1 {
+    if is_overlapping_guest_haplotype_selected(treat_single_copy_as_haploid, sv_group, sample_index)
+    {
         for sample_sv_info in sample_sv_order[sample_index]
             .iter()
             .filter(|x| x.relation == SampleSVRelation::Native)
@@ -2519,6 +2794,7 @@ fn score_refined_sv_group(
     chrom_list: &ChromList,
     all_sample_genome_max_sv_depth_regions: &[&[RegionMap]],
     bam_readers: &mut [&mut bam::IndexedReader],
+    read_caches: &mut [SampleReadCache],
     sv_group: &mut SVGroup,
     debug_settings: &ScoreDebugSettings,
 ) {
@@ -2541,6 +2817,7 @@ fn score_refined_sv_group(
         chrom_list,
         all_sample_genome_max_sv_depth_regions,
         bam_readers,
+        read_caches,
         sv_group,
         &sample_sv_order,
         debug_settings,
@@ -2627,6 +2904,7 @@ pub fn score_and_assess_refined_sv_group(
     chrom_list: &ChromList,
     all_sample_data: &[SampleScoreData],
     bam_readers: &mut [&mut bam::IndexedReader],
+    read_caches: &mut [SampleReadCache],
     sv_group: &mut SVGroup,
     debug_settings: &ScoreDebugSettings,
 ) {
@@ -2635,6 +2913,7 @@ pub fn score_and_assess_refined_sv_group(
     let sample_count = all_sample_data.len();
     assert_ne!(sample_count, 0);
     assert_eq!(sample_count, bam_readers.len());
+    assert_eq!(sample_count, read_caches.len());
     assert_eq!(sample_count, sv_group.sample_haplotype_list.len());
     assert!(!sv_group.refined_svs.is_empty());
     assert!(!sv_group.group_regions.is_empty());
@@ -2650,6 +2929,7 @@ pub fn score_and_assess_refined_sv_group(
         chrom_list,
         &all_sample_genome_max_sv_depth_regions,
         bam_readers,
+        read_caches,
         sv_group,
         debug_settings,
     );
@@ -2732,5 +3012,132 @@ mod tests {
         let mut v = [bsomealt.clone(), bsomeref.clone()];
         v.sort_by(sort_best_allele_conditions);
         assert_eq!(v[0].best_allele_score.allele_type, AlleleType::Alt);
+    }
+
+    fn random_seq(rand: &mut impl FnMut(usize) -> usize, len: usize) -> Vec<u8> {
+        (0..len).map(|_| b"ACGT"[rand(4)]).collect()
+    }
+
+    fn xorshift(seed: u64) -> impl FnMut(usize) -> usize {
+        let mut state = seed;
+        move |n: usize| -> usize {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state % n as u64) as usize
+        }
+    }
+
+    /// Flanks related to the read flank with a few edits, so that their scores are found exactly,
+    /// or unrelated, so that they need the DP matrix
+    fn random_allele_flank(rand: &mut impl FnMut(usize) -> usize, text: &[u8]) -> Vec<u8> {
+        match rand(3) {
+            0 => {
+                let mut x = text.to_vec();
+                for _ in 0..rand(6) {
+                    let i = rand(x.len());
+                    x[i] = b"ACGT"[rand(4)];
+                }
+                x
+            }
+            1 => text[rand(text.len() / 3)..].to_vec(),
+            _ => {
+                let len = 30 + rand(text.len());
+                random_seq(rand, len)
+            }
+        }
+    }
+
+    /// Scores from the cache are those of a new alignment, whether the first request was for the
+    /// exact score or a bound, and after the cache is cleared
+    #[test]
+    fn test_flank_alignment_scorer_cache() {
+        let mut rand = xorshift(0x1357_9bdf_2468_ace0);
+        let mut scorer = FlankAlignmentScorer::new();
+        let mut fresh = ConsensusScoreAligner::new();
+        for case in 0..30 {
+            let text_len = 80 + rand(300);
+            let text = random_seq(&mut rand, text_len);
+            if case == 15 {
+                // The next text clears the cache
+                scorer.cache_bytes = FlankAlignmentScorer::MAX_CACHE_BYTES + 1;
+            }
+            scorer.set_text(&text);
+            if case == 15 {
+                assert_eq!(scorer.cache_bytes, text.len());
+                assert!(scorer.scores.is_empty());
+            }
+            fresh.set_text(&text);
+            let flanks = (0..4)
+                .map(|_| random_allele_flank(&mut rand, &text))
+                .collect::<Vec<_>>();
+            for round in 0..2 {
+                for flank in flanks.iter() {
+                    let expected = fresh.align_score(flank);
+                    // The first round asks for the bound first, and the second for the exact score
+                    if round == 0 {
+                        match scorer.align_score_bounded(flank) {
+                            BoundedScore::Exact(x) => assert_eq!(x, expected),
+                            BoundedScore::AtMost(x) => assert!(expected <= x),
+                        }
+                    }
+                    assert_eq!(scorer.align_score(flank), expected, "case {case}");
+                    assert!(matches!(
+                        scorer.align_score_bounded(flank),
+                        BoundedScore::Exact(x) if x == expected
+                    ));
+                }
+            }
+        }
+    }
+
+    /// The scores from get_ref_alt_flank_scores may be upper bounds, but only for a score whose bound
+    /// is lower than the other's exact score, so the comparison of the two, and the best exact score, are
+    /// those of the exact scores
+    #[test]
+    fn test_get_ref_alt_flank_scores_preserve_comparison() {
+        let mut rand = xorshift(0x2468_ace0_1357_9bdf);
+        let mut scorer = FlankAlignmentScorer::new();
+        let mut exact_scorer = ConsensusScoreAligner::new();
+        let mut bound_count = 0;
+        for case in 0..60 {
+            let text_len = 80 + rand(300);
+            let text = random_seq(&mut rand, text_len);
+            scorer.set_text(&text);
+            exact_scorer.set_text(&text);
+            let ref_flank = (rand(5) != 0).then(|| random_allele_flank(&mut rand, &text));
+            let alt_flank = (rand(5) != 0).then(|| random_allele_flank(&mut rand, &text));
+
+            let (ref_score, alt_score, best_exact) =
+                get_ref_alt_flank_scores(&mut scorer, ref_flank.as_deref(), alt_flank.as_deref());
+
+            let text_len = text.len() as f64;
+            let mut exact =
+                |x: &Option<Vec<u8>>| x.as_ref().map(|y| exact_scorer.dp_align_score(y));
+            let ref_exact = exact(&ref_flank);
+            let alt_exact = exact(&alt_flank);
+            assert_eq!(ref_score.is_some(), ref_exact.is_some());
+            assert_eq!(alt_score.is_some(), alt_exact.is_some());
+            let to_score = |x: Option<f64>| x.map(|y| (y * text_len).round() as i32);
+            let (ref_score, alt_score) = (to_score(ref_score), to_score(alt_score));
+
+            // A returned score is the exact score, or an upper bound of it
+            for (returned, expected) in [(ref_score, ref_exact), (alt_score, alt_exact)] {
+                if let (Some(r), Some(e)) = (returned, expected) {
+                    assert!(r >= e, "case {case}");
+                    bound_count += usize::from(r > e);
+                }
+            }
+            if let (Some(r), Some(a)) = (ref_score, alt_score) {
+                assert_eq!(
+                    r.cmp(&a),
+                    ref_exact.cmp(&alt_exact),
+                    "case {case}: {ref_score:?} {alt_score:?} vs {ref_exact:?} {alt_exact:?}"
+                );
+            }
+            assert_eq!(best_exact, ref_exact.max(alt_exact), "case {case}");
+        }
+        // Some scores must have been replaced by bounds
+        assert!(bound_count > 0);
     }
 }

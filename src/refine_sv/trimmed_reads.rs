@@ -2,61 +2,108 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use rust_htslib::bam::{self, Read, record::CigarString};
-use rust_vc_utils::bam_utils::aux::{get_optional_float_aux_tag, is_aux_tag_found};
+use rust_vc_utils::bam_utils::aux::is_aux_tag_found;
 use rust_vc_utils::bam_utils::cigar::{
     get_cigar_ref_offset, is_hard_clipped, update_ref_and_read_pos,
 };
 use rust_vc_utils::bam_utils::filter_out_alignment_record;
-use rust_vc_utils::{ChromList, GenomeRef, GenomeSegment, IntRange, get_int_range_distance};
+use rust_vc_utils::{ChromList, GenomeSegment, IntRange, get_int_range_distance};
 use rust_vc_utils::{SeqOrderSplitReadSegment, get_seq_order_read_split_segments};
 use unwrap::unwrap;
 
 use crate::bam_utils::{
-    LargeInsertionSoftClipState, bam_fetch_segment, get_gap_compressed_identity,
-    get_simplified_dna_seq, test_read_for_large_insertion_soft_clip,
-    translate_ref_range_to_hardclipped_read_range,
+    LargeInsertionSoftClipState, bam_fetch_segment, decode_simplified_dna_seq,
+    test_read_for_large_insertion_soft_clip, translate_ref_range_to_hardclipped_read_range,
 };
 use crate::breakpoint::{Breakend, BreakendDirection, Breakpoint, BreakpointCluster, InsertInfo};
+use crate::genome_ref_utils::{self, GenomeRef};
 use crate::refine_sv::RefineSVSettings;
 use crate::utils::remove_sorted_indices;
 
-/// Expand read range by the expansion factor and extract the corresponding read sequence
+/// A read trimmed for assembly, whose sequence is not yet decoded
 ///
+/// Everything that dedups, sorts and downsamples the reads of a locus only needs the fields of
+/// this object, so the sequence is kept in its packed BAM encoding and only the reads that are
+/// kept are expanded into `TrimmedReadInfo` by `into_trimmed_read_info`.
+///
+#[derive(Clone)]
+pub struct PendingTrimmedRead {
+    /// Same as `TrimmedReadInfo::qname`
+    pub qname: String,
+
+    /// True if the bam record used to create the trimmed read is supplementary
+    ///
+    /// This flag helps to distinguish cases where we would expect to see repeated qnames from
+    /// potential read trimming or bam formatting bugs
+    ///
+    is_supplementary: bool,
+
+    /// Same as `TrimmedReadInfo::read_range`
+    pub read_range: IntRange,
+
+    /// Whether there is a large soft-clip on one end of the read, consistent with a large insertion
+    pub large_insertion_clip_state: LargeInsertionSoftClipState,
+
+    /// The whole read in BAM's 4-bit encoding
+    seq_4bit: Vec<u8>,
+
+    /// Number of bases in seq_4bit
+    seq_len: usize,
+}
+
+impl PendingTrimmedRead {
+    /// Length of the trimmed section of the read
+    fn trimmed_len(&self) -> usize {
+        (self.read_range.end - self.read_range.start) as usize
+    }
+
+    /// Decode the read sequence and split it into the prefix, trimmed read and suffix
+    pub fn into_trimmed_read_info(self) -> TrimmedReadInfo {
+        let trim_start = self.read_range.start as usize;
+        let trim_end = self.read_range.end as usize;
+        let mut read = decode_simplified_dna_seq(&self.seq_4bit, self.seq_len);
+        let read_suffix = read.split_off(trim_end);
+        let trimmed_read = read.split_off(trim_start);
+        let mut read_prefix = read;
+        read_prefix.shrink_to_fit();
+
+        TrimmedReadInfo {
+            qname: self.qname,
+            read_range: self.read_range,
+            trimmed_read,
+            read_prefix,
+            read_suffix,
+            is_trimmed_read_nul_terminated: false,
+        }
+    }
+}
+
+/// Expand read range by the expansion factor and select the corresponding read section
+///
+/// The read sequence is not decoded here, see `PendingTrimmedRead`.
 ///
 fn get_trimmed_read_from_read_range(
     expand_by: usize,
     record: &bam::Record,
     read_range: &IntRange,
     large_insertion_clip_state: LargeInsertionSoftClipState,
-) -> TrimmedReadInfo {
+) -> PendingTrimmedRead {
     let read_range = IntRange::from_pair(
         std::cmp::max(0, read_range.start - expand_by as i64),
         std::cmp::min(record.seq_len() as i64, read_range.end + expand_by as i64),
     );
 
-    let trim_start = read_range.start as usize;
-    let trim_end = read_range.end as usize;
-    let read = get_simplified_dna_seq(record);
-    let read_prefix = read[..trim_start].to_vec();
-    let trimmed_read = read[trim_start..trim_end].to_vec();
-    let read_suffix = read[trim_end..].to_vec();
-
-    // Read quality has experimental uses by one of the alternate assemblers but isn't critical for performance, so allow this tag
-    // to be optional. The most common reason an rq tag will be missing is read mapping from fastqs.
-    let default_read_quality = 0.99;
-    let read_quality = get_optional_float_aux_tag(record, b"rq").unwrap_or(default_read_quality);
+    // The slices of the whole read taken when the trimmed read is built must be valid
+    assert!(read_range.start <= read_range.end && read_range.end <= record.seq_len() as i64);
 
     let qname = std::str::from_utf8(record.qname()).unwrap().to_string();
-    TrimmedReadInfo {
+    PendingTrimmedRead {
         qname,
         is_supplementary: record.is_supplementary(),
         read_range,
-        trimmed_read,
-        read_prefix,
-        read_suffix,
         large_insertion_clip_state,
-        is_trimmed_read_nul_terminated: false,
-        read_quality,
+        seq_4bit: record.seq().encoded.to_vec(),
+        seq_len: record.seq_len(),
     }
 }
 
@@ -69,15 +116,15 @@ fn get_trimmed_read_from_read_range(
 /// 2. Right side soft-clip reads should be sorted from longest to shortest
 /// 3. Left side soft-clip reads should be sorted from longest to shortest
 ///
-fn sort_large_insertion_reads(a: &TrimmedReadInfo, b: &TrimmedReadInfo) -> Ordering {
+fn sort_large_insertion_reads(a: &PendingTrimmedRead, b: &PendingTrimmedRead) -> Ordering {
     let order1 = a
         .large_insertion_clip_state
         .cmp(&b.large_insertion_clip_state);
     if let Ordering::Equal = order1 {
         use LargeInsertionSoftClipState::*;
         match a.large_insertion_clip_state {
-            Right => b.trimmed_read.len().cmp(&a.trimmed_read.len()),
-            Left => b.trimmed_read.len().cmp(&a.trimmed_read.len()),
+            Right => b.trimmed_len().cmp(&a.trimmed_len()),
+            Left => b.trimmed_len().cmp(&a.trimmed_len()),
             _ => order1,
         }
     } else {
@@ -284,13 +331,6 @@ pub struct TrimmedReadInfo {
     ///
     pub qname: String,
 
-    /// True if the bam records used to create the trimmed read is supplementary
-    ///
-    /// This flag helps to distinguish cases where we would expect to see repeated qnames from
-    /// potential read trimming or bam formatting bugs
-    ///
-    pub is_supplementary: bool,
-
     /// Range of trimmed read section in read coordinates
     pub read_range: IntRange,
 
@@ -303,10 +343,6 @@ pub struct TrimmedReadInfo {
     /// Segment of read after trimmed_read
     pub read_suffix: Vec<u8>,
 
-    /// Record whether there is a large soft-clip on one end of the read, consistent with a large
-    /// insertion
-    pub large_insertion_clip_state: LargeInsertionSoftClipState,
-
     /// True if a nul-char has been added to trimmed_read
     ///
     /// This addition is used to interact with certain c libraries.
@@ -316,9 +352,6 @@ pub struct TrimmedReadInfo {
     /// stop adding the nul-term in future.
     ///
     pub is_trimmed_read_nul_terminated: bool,
-
-    /// From the rq tag
-    pub read_quality: f32,
 }
 
 impl TrimmedReadInfo {
@@ -367,12 +400,11 @@ pub fn does_alignment_region_have_sv_indel_evidence(
                     return true;
                 }
             }
-            Ins(len) => {
+            Ins(len)
                 if *len > min_evidence_indel_size
-                    && ref_range.intersect_range(&IntRange::from_int(ref_pos))
-                {
-                    return true;
-                }
+                    && ref_range.intersect_range(&IntRange::from_int(ref_pos)) =>
+            {
+                return true;
             }
             _ => {}
         }
@@ -416,7 +448,7 @@ fn get_bam_record_trimmed_read(
     is_large_insertion_inferred_from_alignment: bool,
     insert_size_estimate: i64,
     record: &bam::record::Record,
-) -> Option<TrimmedReadInfo> {
+) -> Option<PendingTrimmedRead> {
     let is_large_insertion_type =
         is_large_insertion_inferred_from_clipping || is_large_insertion_inferred_from_alignment;
 
@@ -515,7 +547,7 @@ fn get_bam_record_trimmed_read(
 /// trimmed read locus (mainly in large duplicated insertions). This method helps to remove the
 /// duplicate cases so they aren't counted as double supporting evidence.
 ///
-fn dedup_trimmed_reads(trimmed_reads: &mut Vec<TrimmedReadInfo>) {
+fn dedup_trimmed_reads(trimmed_reads: &mut Vec<PendingTrimmedRead>) {
     // Get duplicate qnames
     let mut duplicate_qnames = HashSet::new();
     {
@@ -549,9 +581,8 @@ fn dedup_trimmed_reads(trimmed_reads: &mut Vec<TrimmedReadInfo>) {
         // (1) longest read
         // (2) for same read size choose the primary of supp reads
         duplicate_read_set.sort_by(|a, b| {
-            b.1.trimmed_read
-                .len()
-                .cmp(&a.1.trimmed_read.len())
+            b.1.trimmed_len()
+                .cmp(&a.1.trimmed_len())
                 .then(a.1.is_supplementary.cmp(&b.1.is_supplementary))
         });
         tr_remove_indices.extend(duplicate_read_set.iter().skip(1).map(|x| x.0));
@@ -570,7 +601,7 @@ fn dedup_trimmed_reads(trimmed_reads: &mut Vec<TrimmedReadInfo>) {
 /// This method assumes simple indel like SVs where both breakend regions are nearby and colinear.
 /// It supports a special mode targeting very large insertions.
 ///
-/// Returns a vector of trimmed reads for assembly
+/// Returns a vector of trimmed reads for assembly, with sequence not yet decoded
 ///
 #[allow(clippy::too_many_arguments)]
 pub fn get_sv_candidate_region_trimmed_reads(
@@ -580,7 +611,7 @@ pub fn get_sv_candidate_region_trimmed_reads(
     bam_reader: &mut bam::IndexedReader,
     target_segment: &GenomeSegment,
     bpc: &BreakpointCluster,
-) -> Vec<TrimmedReadInfo> {
+) -> Vec<PendingTrimmedRead> {
     // True for large insertions inferred from pairs of soft-clipped breakpoints, where no cigar
     // based large insertion candidate was found
     let is_large_insertion_inferred_from_clipping = bpc.large_insertion_info.is_some();
@@ -617,10 +648,6 @@ pub fn get_sv_candidate_region_trimmed_reads(
             .assembly_read_flank_size
             .saturating_sub(trimmed_region_search_expansion_size as usize);
 
-        let chrom_sequence = {
-            let chrom_label = &chrom_list.data[target_segment.chrom_index].label;
-            reference.chroms.get(chrom_label).unwrap()
-        };
         bam_fetch_segment(bam_reader, &target_segment);
         let mut record = bam::Record::new();
         while let Some(r) = bam_reader.read(&mut record) {
@@ -634,8 +661,11 @@ pub fn get_sv_candidate_region_trimmed_reads(
                 continue;
             }
 
-            if get_gap_compressed_identity(&record, chrom_sequence)
-                < refine_settings.min_gap_compressed_identity
+            if genome_ref_utils::get_gap_compressed_identity(
+                &record,
+                reference,
+                target_segment.chrom_index,
+            ) < refine_settings.min_gap_compressed_identity
             {
                 continue;
             }
@@ -678,7 +708,7 @@ pub fn get_sv_breakpoint_candidate_trimmed_reads(
     bam_reader: &mut bam::IndexedReader,
     target_segments: &[GenomeSegment],
     bp: &Breakpoint,
-) -> Vec<TrimmedReadInfo> {
+) -> Vec<PendingTrimmedRead> {
     let debug = false;
 
     assert_eq!(target_segments.len(), 2);
@@ -717,9 +747,6 @@ pub fn get_sv_breakpoint_candidate_trimmed_reads(
 
     let mut trimmed_reads = Vec::new();
 
-    let chrom_label = &chrom_list.data[trimmed_reads_search_segment.chrom_index].label;
-    let chrom_sequence = reference.chroms.get(chrom_label).unwrap();
-
     bam_fetch_segment(bam_reader, &trimmed_reads_search_segment);
     let mut record = bam::Record::new();
     while let Some(r) = bam_reader.read(&mut record) {
@@ -733,7 +760,11 @@ pub fn get_sv_breakpoint_candidate_trimmed_reads(
             continue;
         }
 
-        let gci = get_gap_compressed_identity(&record, chrom_sequence);
+        let gci = genome_ref_utils::get_gap_compressed_identity(
+            &record,
+            reference,
+            trimmed_reads_search_segment.chrom_index,
+        );
         if gci < refine_settings.min_gap_compressed_identity {
             if debug {
                 eprintln!("Filtering read gci: {gci}");
@@ -777,25 +808,60 @@ pub fn get_sv_breakpoint_candidate_trimmed_reads(
 mod tests {
     use super::*;
 
+    /// The decoded pieces must be the same as slicing the simplified read sequence directly
+    #[test]
+    fn test_pending_trimmed_read_decode() {
+        let seq = b"ACGTRNACGTYAC";
+        let mut record = bam::Record::new();
+        record.set(
+            b"read1",
+            Some(&CigarString(vec![bam::record::Cigar::Equal(
+                seq.len() as u32
+            )])),
+            seq,
+            &vec![30u8; seq.len()],
+        );
+        for (flank, range) in [
+            (0usize, IntRange::from_pair(3, 7)),
+            (2, IntRange::from_pair(3, 7)),
+            (100, IntRange::from_pair(3, 7)),
+            (0, IntRange::from_pair(0, seq.len() as i64)),
+            (1, IntRange::from_pair(0, 0)),
+        ] {
+            let pending = get_trimmed_read_from_read_range(
+                flank,
+                &record,
+                &range,
+                LargeInsertionSoftClipState::Null,
+            );
+            let info = pending.into_trimmed_read_info();
+
+            let full = crate::bam_utils::get_simplified_dna_seq(&record);
+            let start = info.read_range.start as usize;
+            let end = info.read_range.end as usize;
+            assert_eq!(info.read_prefix, full[..start].to_vec());
+            assert_eq!(info.trimmed_read, full[start..end].to_vec());
+            assert_eq!(info.read_suffix, full[end..].to_vec());
+            assert_eq!(info.qname, "read1");
+        }
+    }
+
     #[test]
     fn test_trimmed_read_sort() {
         use LargeInsertionSoftClipState::*;
 
-        let tr_right_len6 = TrimmedReadInfo {
+        let tr_right_len6 = PendingTrimmedRead {
             qname: "foo".to_string(),
             is_supplementary: false,
-            read_range: IntRange::from_int(0),
-            trimmed_read: b"ACTCTA".to_vec(),
-            read_prefix: b"".to_vec(),
-            read_suffix: b"GGT".to_vec(),
+            read_range: IntRange::from_pair(0, 6),
             large_insertion_clip_state: Right,
-            is_trimmed_read_nul_terminated: false,
-            read_quality: 0.99,
+            seq_4bit: Vec::new(),
+            seq_len: 9,
         };
 
         let tr_right_len3 = {
             let mut x = tr_right_len6.clone();
-            x.trimmed_read = b"ACT".to_vec();
+            x.read_range = IntRange::from_pair(0, 3);
             x
         };
 
@@ -807,7 +873,7 @@ mod tests {
 
         let tr_left_len3 = {
             let mut x = tr_left_len6.clone();
-            x.trimmed_read = b"ACT".to_vec();
+            x.read_range = IntRange::from_pair(0, 3);
             x
         };
 
@@ -824,9 +890,7 @@ mod tests {
 
         let expected_tread_len = vec![6, 3, 6, 3];
         assert_eq!(
-            rval.iter()
-                .map(|x| x.trimmed_read.len())
-                .collect::<Vec<_>>(),
+            rval.iter().map(|x| x.trimmed_len()).collect::<Vec<_>>(),
             expected_tread_len
         );
     }

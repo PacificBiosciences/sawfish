@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
 mod align;
 mod assemble;
 pub mod assembly_regions;
 mod debug_output;
 mod filter_dups;
+pub mod speculative;
 mod trimmed_reads;
 
 use std::fmt;
@@ -16,9 +18,7 @@ use std::time::Instant;
 use itertools::Itertools;
 use log::info;
 use rust_htslib::bam;
-use rust_vc_utils::{
-    ChromList, GenomeRef, GenomeSegment, IntRange, ProgressReporter, downsample_vector,
-};
+use rust_vc_utils::{ChromList, GenomeSegment, IntRange, ProgressReporter, downsample_vector};
 use strum::EnumCount;
 use unwrap::unwrap;
 
@@ -27,7 +27,9 @@ use self::assembly_regions::{
     get_assembly_regions_from_breakpoint_cluster, write_assembly_regions_to_bed,
 };
 use self::debug_output::*;
-use self::filter_dups::filter_redundant_duplications;
+use self::filter_dups::{
+    add_insertion_keys, filter_redundant_duplications, get_dup_filter_candidate_key,
+};
 use self::trimmed_reads::{
     get_sv_breakpoint_candidate_trimmed_reads, get_sv_candidate_region_trimmed_reads,
 };
@@ -37,6 +39,8 @@ use crate::cli;
 use crate::contig_output::{ContigAlignmentInfo, write_contig_alignments};
 use crate::discover::StaticDiscoverSettings;
 use crate::expected_ploidy::{SVLocusExpectedCNInfo, get_max_haplotype_count_for_regions};
+use crate::genome_ref_utils::GenomeRef;
+use crate::large_variant_output::{CandidateSvBcfWriter, VcfSettings};
 use crate::log_utils::debug_msg;
 use crate::refine_sv::SVFilterType::{GTExcluded, NoFilter, Replicated};
 use crate::refined_cnv::{SharedSampleScoreInfo, SharedVariantScoreInfo};
@@ -491,7 +495,11 @@ fn refine_sv_candidate_breakpoint(
     };
 
     // When more than downsample_target reads are found, deterministically subsample:
-    let trimmed_reads = downsample_vector(trimmed_reads, downsample_target);
+    // The reads that are kept are the only ones whose sequence is decoded
+    let trimmed_reads = downsample_vector(trimmed_reads, downsample_target)
+        .into_iter()
+        .map(|x| x.into_trimmed_read_info())
+        .collect::<Vec<_>>();
 
     let mut cluster_duration_info = ClusterDurationInfo::default();
 
@@ -681,7 +689,7 @@ impl RefineSVSettings {
     }
 }
 
-type RefineWorkerReturnType = (ClusterDebugInfo, Vec<ContigAlignmentInfo>, Option<SVGroup>);
+pub type RefineWorkerReturnType = (ClusterDebugInfo, Vec<ContigAlignmentInfo>, Option<SVGroup>);
 
 /// Complete process to run refinement on a single breakpoint cluster, including various debug
 /// overheads and channeling the result back to parent thread
@@ -773,7 +781,66 @@ fn get_cluster_job_order(clusters: &[BreakpointCluster]) -> Vec<(usize, &Breakpo
     job_order
 }
 
-/// Refine all SV candidates
+/// Get settings for refinement
+pub fn get_refine_settings(
+    settings: &cli::DiscoverSettings,
+    static_settings: &StaticDiscoverSettings,
+) -> RefineSVSettings {
+    RefineSVSettings::new(
+        settings.min_indel_size,
+        settings.get_min_evidence_indel_size(),
+        settings.min_sv_mapq,
+        settings.min_gap_compressed_identity,
+        settings.reduce_overlapping_sv_alleles,
+        static_settings.assembly_read_flank_size,
+    )
+}
+
+/// Get the cluster indices to refine, in refinement job order
+pub fn get_refine_job_indices(
+    shared_settings: &cli::SharedSettings,
+    settings: &cli::DiscoverSettings,
+    clusters: &[BreakpointCluster],
+) -> Vec<usize> {
+    let disable_small_indels = settings.fast_cnv_mode || shared_settings.disable_small_indels;
+    get_cluster_job_order(clusters)
+        .into_iter()
+        .filter(|(_, bpc)| !disable_small_indels || (bpc.assembly_segments.len() > 1))
+        .map(|(cluster_index, _)| cluster_index)
+        .collect()
+}
+
+/// Refine one cluster for speculative refinement, see speculative module
+///
+/// Refinement runs on the calling rayon thread, using the BAM reader for that thread
+///
+pub fn refine_cluster(
+    worker_thread_dataset: &BamReaderWorkerThreadDataSet,
+    refine_settings: &RefineSVSettings,
+    reference: &GenomeRef,
+    chrom_list: &ChromList,
+    cluster: &BreakpointCluster,
+    cluster_index: usize,
+) -> RefineWorkerReturnType {
+    let (tx, rx) = channel();
+    let worker_debug_info: AllWorkerDebugInfo = Arc::new(Vec::new());
+    refine_sv_candidate_breakpoint_wrapper(
+        false,
+        &worker_debug_info,
+        worker_thread_dataset,
+        tx,
+        refine_settings,
+        reference,
+        chrom_list,
+        cluster_index,
+        cluster,
+        None,
+        false,
+    );
+    rx.recv().unwrap()
+}
+
+/// Refine all breakpoint clusters into SV candidates, and write these to the candidate SV BCF file
 ///
 /// SV candidate refinement is distributed over a threadpool
 ///
@@ -786,7 +853,9 @@ pub fn refine_sv_candidates(
     reference: &GenomeRef,
     chrom_list: &ChromList,
     clusters: &[BreakpointCluster],
-) -> (Vec<SVGroup>, RefineStats) {
+    vcf_settings: &VcfSettings,
+    mut reused_results: BTreeMap<usize, RefineWorkerReturnType>,
+) -> RefineStats {
     info!("Refining SV Candidates");
 
     // When true, a worker thread status report is reported at regular time intervals during
@@ -796,28 +865,16 @@ pub fn refine_sv_candidates(
     // enabled.
     let debug_worker_status_report = false;
 
-    let refine_settings = &RefineSVSettings::new(
-        settings.min_indel_size,
-        settings.get_min_evidence_indel_size(),
-        settings.min_sv_mapq,
-        settings.min_gap_compressed_identity,
-        settings.reduce_overlapping_sv_alleles,
-        static_settings.assembly_read_flank_size,
-    );
+    let refine_settings = &get_refine_settings(settings, static_settings);
 
     let mut refine_stats = RefineStats::default();
 
     // Set the cluster processing order so that large insertions are handled first, to improve
     // thread utilization (b/c large insertion jobs are slow)
     //
-    let cluster_job_order = get_cluster_job_order(clusters);
-
-    let disable_small_indels = settings.fast_cnv_mode || shared_settings.disable_small_indels;
-
-    // Optionally apply debug filter
-    let cluster_job_order = cluster_job_order
+    let cluster_job_order = get_refine_job_indices(shared_settings, settings, clusters)
         .into_iter()
-        .filter(|(_, bpc)| !disable_small_indels || (bpc.assembly_segments.len() > 1))
+        .map(|cluster_index| (cluster_index, &clusters[cluster_index]))
         .collect::<Vec<_>>();
 
     write_assembly_regions_to_bed(&settings.output_dir, chrom_list, clusters);
@@ -857,43 +914,73 @@ pub fn refine_sv_candidates(
     };
     let progress_reporter = progress_reporter.as_ref();
 
-    let (tx, rx) = channel();
-    worker_pool.scope(move |scope| {
-        for (cluster_index, bpc) in cluster_job_order {
-            let mut debug = false;
-            if let Some(target_cluster_index) = settings.target_cluster_index {
-                if cluster_index != target_cluster_index {
-                    continue;
-                }
-                debug = true;
-            }
-            let tx = tx.clone();
-            scope.spawn(move |_| {
-                refine_sv_candidate_breakpoint_wrapper(
-                    debug_worker_status_report,
-                    worker_debug_info,
-                    worker_thread_dataset,
-                    tx,
-                    refine_settings,
-                    reference,
-                    chrom_list,
-                    cluster_index,
-                    bpc,
-                    progress_reporter,
-                    debug,
-                );
-            });
-        }
-    });
-
+    // SV groups are consumed as they arrive from the worker threads. Each SV group is converted to
+    // its candidate VCF records and dropped right away, except for duplications which could still
+    // be removed by the redundant duplication filter. This avoids holding all SV groups, with
+    // their assembled contigs, until refinement is complete.
+    //
+    let mut candidate_writer = CandidateSvBcfWriter::new(vcf_settings, chrom_list);
+    let mut dup_sv_groups = Vec::new();
+    let mut dup_candidates = Vec::new();
+    let mut insertion_keys = Vec::new();
     let mut debug_info = Vec::new();
     let mut contig_alignments = Vec::new();
-    let mut sv_groups = Vec::new();
-    for (chunk_debug_info, chunk_contig_alignments, sv_group) in rx {
-        debug_info.push(chunk_debug_info);
-        contig_alignments.extend(chunk_contig_alignments);
-        sv_groups.push(sv_group);
-    }
+
+    let (tx, rx) = channel();
+    std::thread::scope(|thread_scope| {
+        thread_scope.spawn(move || {
+            worker_pool.scope(move |scope| {
+                for (cluster_index, bpc) in cluster_job_order {
+                    // Use results already computed by speculative refinement
+                    if let Some(result) = reused_results.remove(&cluster_index) {
+                        tx.send(result).unwrap();
+                        if let Some(progress_reporter) = progress_reporter {
+                            progress_reporter.inc(1);
+                        }
+                        continue;
+                    }
+                    let mut debug = false;
+                    if let Some(target_cluster_index) = settings.target_cluster_index {
+                        if cluster_index != target_cluster_index {
+                            continue;
+                        }
+                        debug = true;
+                    }
+                    let tx = tx.clone();
+                    scope.spawn(move |_| {
+                        refine_sv_candidate_breakpoint_wrapper(
+                            debug_worker_status_report,
+                            worker_debug_info,
+                            worker_thread_dataset,
+                            tx,
+                            refine_settings,
+                            reference,
+                            chrom_list,
+                            cluster_index,
+                            bpc,
+                            progress_reporter,
+                            debug,
+                        );
+                    });
+                }
+            });
+        });
+
+        for (chunk_debug_info, chunk_contig_alignments, sv_group) in rx {
+            debug_info.push(chunk_debug_info);
+            contig_alignments.extend(chunk_contig_alignments);
+            let Some(sv_group) = sv_group else {
+                continue;
+            };
+            if let Some(dup_candidate) = get_dup_filter_candidate_key(&sv_group) {
+                dup_candidates.push(dup_candidate);
+                dup_sv_groups.push(sv_group);
+            } else {
+                add_insertion_keys(chrom_list, &sv_group, &mut insertion_keys);
+                candidate_writer.add_sv_group(vcf_settings, reference, chrom_list, &sv_group);
+            }
+        }
+    });
 
     // To clear the progress bar, this needs to be called before any other log entries are written:
     if let Some(progress_reporter) = progress_reporter {
@@ -901,12 +988,17 @@ pub fn refine_sv_candidates(
     }
     info!("Finished refining all breakpoint evidence clusters");
 
-    // Filter sv group options down to just existing sv groups:
-    let mut sv_groups = sv_groups.into_iter().flatten().collect::<Vec<_>>();
-
     // Add an extra step to identify redundant SVs to filter out
-    refine_stats.redundant_duplications_filtered_out =
-        filter_redundant_duplications(chrom_list, &mut sv_groups);
+    let (dup_sv_groups, redundant_duplications_filtered_out) =
+        filter_redundant_duplications(dup_sv_groups, dup_candidates, insertion_keys);
+    refine_stats.redundant_duplications_filtered_out = redundant_duplications_filtered_out;
+    for sv_group in dup_sv_groups.iter() {
+        candidate_writer.add_sv_group(vcf_settings, reference, chrom_list, sv_group);
+    }
+
+    let vcf_stats = candidate_writer.finish(shared_settings);
+    refine_stats.candidate_vcf_output_record_count = vcf_stats.output_record_count;
+    refine_stats.candidate_vcf_duplicate_record_count = vcf_stats.duplicate_record_count;
 
     if debug_worker_status_report {
         // Turn off the worker status reporter if it's running:
@@ -933,5 +1025,5 @@ pub fn refine_sv_candidates(
     // Write out debug information for the N most time-consuming clusters:
     write_debug_cluster_info(&settings.output_dir, debug_info);
 
-    (sv_groups, refine_stats)
+    refine_stats
 }

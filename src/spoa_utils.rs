@@ -31,9 +31,25 @@ pub fn get_pairwise_alignment(
     text: &CStr,
     query: &CStr,
 ) -> (i32, u32, u32, Vec<CString>) {
+    get_pairwise_alignment_with_expected_score(engine, text, query, &[])
+}
+
+/// Same as get_pairwise_alignment, computed more efficiently if the alignment score is close to
+/// one of expected_fracs of the maximum possible score
+///
+pub fn get_pairwise_alignment_with_expected_score(
+    engine: &mut AlignmentEngine,
+    text: &CStr,
+    query: &CStr,
+    expected_fracs: &[f64],
+) -> (i32, u32, u32, Vec<CString>) {
     let mut tmp_graph = get_single_seq_graph(text);
 
-    let (aln, score) = engine.align(query, &tmp_graph);
+    let (aln, score) = if expected_fracs.is_empty() {
+        engine.align(query, &tmp_graph)
+    } else {
+        engine.align_pruned_auto(query, &tmp_graph, expected_fracs)
+    };
     let query_clip = get_alignment_clip_size(&aln);
     let overlap = get_alignment_overlap_size(&aln);
     assert!(query_clip >= 0);
@@ -285,9 +301,8 @@ impl PairwiseAligner {
     /// can we delete get_spoa_graph_for_assembly_region now?
     pub fn set_text(&mut self, text: &[u8]) {
         // Convert text to a CString for use in spoa
-        let mut t = text.to_vec();
-        t.push(0u8);
-        let t = unsafe { CStr::from_bytes_with_nul_unchecked(&t) };
+        let t = CString::new(text).expect("text has an interior nul byte");
+        let t = t.as_c_str();
 
         let (alignment, _score) = self.engine.align(t, &self.graph);
         self.graph.add_alignment_noqual(&alignment, t);
@@ -295,9 +310,8 @@ impl PairwiseAligner {
 
     pub fn align_pattern(&mut self, pattern: &[u8]) -> Option<SimpleAlignment> {
         // Convert pattern to a CString for use in spoa
-        let mut p = pattern.to_vec();
-        p.push(0u8);
-        let p = unsafe { CStr::from_bytes_with_nul_unchecked(&p) };
+        let p = CString::new(pattern).expect("pattern has an interior nul byte");
+        let p = p.as_c_str();
 
         let (_score, query_start_clip, _query_overlap, msa) =
             get_alignment_to_graph_consensus(&mut self.engine, &mut self.graph, p);

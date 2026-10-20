@@ -7,7 +7,7 @@ use rust_vc_utils::{ArraySegmenter, ChromList, MeanTracker, RegionMap, bigwig_ut
 use serde::{Deserialize, Serialize};
 use unwrap::unwrap;
 
-use crate::bam_utils::get_alignment_ref_segments;
+use crate::bam_utils::{get_alignment_ref_segments, get_record_cigar};
 use crate::filenames::DEPTH_BINS_MESSAGEPACK_FILENAME;
 use crate::genome_regions::GenomeRegions;
 
@@ -71,7 +71,8 @@ impl DepthBinsBuilder {
     pub fn process_bam_record(&mut self, min_del_size: u32, record: &bam::Record) {
         // Update depth edges
         {
-            let ref_segs = get_alignment_ref_segments(record.pos(), &record.cigar(), min_del_size);
+            let ref_segs =
+                get_alignment_ref_segments(record.pos(), &get_record_cigar(record), min_del_size);
             for ref_seg in ref_segs {
                 assert!(ref_seg.start <= ref_seg.end);
 

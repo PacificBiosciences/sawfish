@@ -989,6 +989,7 @@ fn write_resegment_results_to_file(
 /// actually checked anywhere yet.
 ///
 pub fn merge_sv_with_depth_info(
+    thread_count: usize,
     settings: &JointCallSettings,
     shared_data: &SharedJointCallData,
     all_sample_data: &[SampleJointCallData],
@@ -1042,6 +1043,7 @@ pub fn merge_sv_with_depth_info(
         &shared_data.genome_gc_levels,
         breakpoint_transition_factor,
         &seg_input,
+        thread_count,
     );
 
     // Estimate depth of "High" state segments

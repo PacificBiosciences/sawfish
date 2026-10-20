@@ -5,9 +5,11 @@
 //! are found outside of sawfish
 //!
 
+use std::borrow::Cow;
+
 use rust_htslib::bam::{
     self,
-    record::{Cigar, CigarString},
+    record::{Cigar, CigarString, CigarStringView},
 };
 use rust_vc_utils::bam_utils::aux::is_aux_tag_found;
 use rust_vc_utils::bam_utils::cigar::{
@@ -15,6 +17,113 @@ use rust_vc_utils::bam_utils::cigar::{
     update_ref_pos,
 };
 use rust_vc_utils::{GenomeSegment, IntRange};
+
+/// Get gap-compressed sequence identity directly from the raw (packed BAM) CIGAR words, without
+/// the read or reference sequence
+///
+/// Returns None if the CIGAR contains any alignment match (M) operation, because the identity
+/// then depends on the sequences. Otherwise the result is exactly the value of
+/// `get_gap_compressed_identity_from_alignment`: reference skips, clips and pads are ignored.
+///
+pub fn get_gap_compressed_identity_from_raw_cigar_no_align_match(raw_cigar: &[u32]) -> Option<f64> {
+    let mut mismatch_events = 0u32;
+    let mut match_bases = 0u32;
+
+    for &c in raw_cigar.iter() {
+        let len = c >> 4;
+        match c & 0xf {
+            // M
+            0 => return None,
+            // I, D
+            1 | 2 => mismatch_events += 1,
+            // =
+            7 => match_bases += len,
+            // X
+            8 => mismatch_events += len,
+            // N, S, H, P and anything else
+            _ => {}
+        }
+    }
+
+    // Same final step as get_gap_compressed_identity_from_alignment
+    Some(if (match_bases + mismatch_events) == 0 {
+        1.0f64
+    } else {
+        match_bases as f64 / (match_bases + mismatch_events) as f64
+    })
+}
+
+/// Pack one CIGAR operation into BAM's raw 32-bit form (length in the high 28 bits, operation in
+/// the low 4)
+fn get_raw_cigar_word(cigar: &Cigar) -> u32 {
+    use Cigar::*;
+    let (len, op) = match cigar {
+        Match(l) => (*l, 0),
+        Ins(l) => (*l, 1),
+        Del(l) => (*l, 2),
+        RefSkip(l) => (*l, 3),
+        SoftClip(l) => (*l, 4),
+        HardClip(l) => (*l, 5),
+        Pad(l) => (*l, 6),
+        Equal(l) => (*l, 7),
+        Diff(l) => (*l, 8),
+    };
+    (len << 4) | op
+}
+
+/// Inverse of `get_raw_cigar_word`
+fn get_cigar_from_raw_word(raw: u32) -> Cigar {
+    use Cigar::*;
+    let len = raw >> 4;
+    match raw & 0xf {
+        0 => Match(len),
+        1 => Ins(len),
+        2 => Del(len),
+        3 => RefSkip(len),
+        4 => SoftClip(len),
+        5 => HardClip(len),
+        6 => Pad(len),
+        7 => Equal(len),
+        8 => Diff(len),
+        op => panic!("Invalid CIGAR operation code {op}"),
+    }
+}
+
+/// Get the record's CIGAR, borrowing the one cached by `Record::cache_cigar` when there is one
+///
+/// `Record::cigar` copies the cached CIGAR on every call, so a caller that reads the CIGAR more
+/// than once per record should call `cache_cigar` once and then use this function.
+///
+/// The cache is not cleared when a new alignment is read into the record, so a cached CIGAR is
+/// only used if it is identical to the record's current CIGAR (compared with the raw CIGAR, which
+/// is cheap next to decoding it). Otherwise the CIGAR is decoded from the record. This makes the
+/// function correct for any cache state, but `Record::cigar` is not: code that can run on a record
+/// with a stale cache has to call this function instead.
+///
+pub fn get_record_cigar(record: &bam::Record) -> Cow<'_, CigarStringView> {
+    match record.cigar_cached() {
+        Some(cigar)
+            if cigar.len() == record.cigar_len()
+                && cigar
+                    .iter()
+                    .zip(record.raw_cigar())
+                    .all(|(c, &raw)| get_raw_cigar_word(c) == raw) =>
+        {
+            Cow::Borrowed(cigar)
+        }
+        // Record::cigar would return the stale cached CIGAR, so decode from the raw CIGAR
+        _ => Cow::Owned(
+            CigarString(
+                record
+                    .raw_cigar()
+                    .iter()
+                    .map(|&raw| get_cigar_from_raw_word(raw))
+                    .collect(),
+            )
+            .into_view(record.pos()),
+        ),
+    }
+}
 
 // Specify a subset of an alignment for gap_compressed identity metric
 //
@@ -56,6 +165,9 @@ pub fn get_gap_compressed_identity_from_cigar_segment_range(
 
 /// Get gap-compressed sequence identity from the bam record
 ///
+/// See genome_ref_utils::get_gap_compressed_identity for the version used with the reference
+///
+#[cfg(test)]
 pub fn get_gap_compressed_identity(record: &bam::Record, chrom_seq: &[u8]) -> f64 {
     let ignore_hard_clip = true;
 
@@ -151,19 +263,6 @@ pub fn get_alignment_closest_to_target_ref_pos(
     closest
 }
 
-pub fn get_bam_alignment_closest_to_target_ref_pos(
-    record: &bam::Record,
-    target_ref_pos: i64,
-    target_match_type: TargetMatchType,
-) -> Option<ReadToRefMapping> {
-    get_alignment_closest_to_target_ref_pos(
-        record.pos(),
-        &record.cigar(),
-        target_ref_pos,
-        target_match_type,
-    )
-}
-
 /// Translate a range in ref coordinates into a range in read coordinates
 ///
 /// All read coordinates reflect the position in the read after hard-clipping
@@ -195,7 +294,7 @@ pub fn translate_ref_range_to_hardclipped_read_range(
 
     // Read position after last alignment match to reference
     let mut read_pos_match_end = 0usize;
-    for c in record.cigar().iter() {
+    for c in get_record_cigar(record).iter() {
         match c {
             Diff(len) | Equal(len) | Match(len) => {
                 if read_start.is_none() {
@@ -286,7 +385,7 @@ pub fn test_read_for_large_insertion_soft_clip(
     min_soft_clip_len: usize,
 ) -> LargeInsertionSoftClipState {
     let (left_sclip_len, right_sclip_start, read_size) =
-        get_read_clip_positions(&record.cigar(), true);
+        get_read_clip_positions(&get_record_cigar(record), true);
     let right_sclip_len = read_size.checked_sub(right_sclip_start).unwrap();
 
     let is_left_sclip = left_sclip_len >= min_soft_clip_len;
@@ -313,25 +412,34 @@ pub fn is_split_read(record: &bam::Record) -> bool {
     is_aux_tag_found(record, SA_AUX_TAG)
 }
 
-pub fn get_allowed_u8_lut(allowed: &[u8]) -> [bool; 256] {
-    let mut x = [false; 256];
-    for &c in allowed.iter() {
-        x[c as usize] = true;
-    }
-    x
-}
-
 /// Get sequence from bam record, but convert any non-ACGT bases to N
 ///
 pub fn get_simplified_dna_seq(record: &bam::Record) -> Vec<u8> {
-    let allowed_lut = get_allowed_u8_lut(b"ACGTN");
-    let seq = record.seq();
-    (0..seq.len())
-        .map(|i| {
-            let b = seq[i];
-            if allowed_lut[b as usize] { b } else { b'N' }
-        })
-        .collect()
+    decode_simplified_dna_seq(record.seq().encoded, record.seq_len())
+}
+
+/// Decode a sequence from BAM's 4-bit encoding, converting any non-ACGT bases to N
+///
+/// `encoded` is the packed sequence of a bam record and `len` is its number of bases.
+///
+pub fn decode_simplified_dna_seq(encoded: &[u8], len: usize) -> Vec<u8> {
+    // Decode both bases of each byte of BAM's 4-bit sequence encoding ("=ACMGRSVTWYHKDBN") at once
+    const DECODE: &[u8; 16] = b"NACNGNNNTNNNNNNN";
+    const PAIR_DECODE: [[u8; 2]; 256] = {
+        let mut x = [[0u8; 2]; 256];
+        let mut i = 0;
+        while i < 256 {
+            x[i] = [DECODE[i >> 4], DECODE[i & 0xf]];
+            i += 1;
+        }
+        x
+    };
+    let mut seq = Vec::with_capacity(len + 1);
+    for &b in encoded {
+        seq.extend_from_slice(&PAIR_DECODE[b as usize]);
+    }
+    seq.truncate(len);
+    seq
 }
 
 /// Parse all ref-ranges from cigar alignment with gaps no larger than min_gap_size
@@ -348,14 +456,12 @@ pub fn get_alignment_ref_segments(
 
     for c in cigar.iter() {
         match c {
-            Del(d) | RefSkip(d) => {
-                if *d >= min_gap_size {
-                    let ref_range = IntRange::from_pair(begin_pos, ref_pos);
-                    if ref_range.size() > 0 {
-                        ref_segments.push(ref_range)
-                    }
-                    begin_pos = ref_pos + *d as i64;
+            Del(d) | RefSkip(d) if *d >= min_gap_size => {
+                let ref_range = IntRange::from_pair(begin_pos, ref_pos);
+                if ref_range.size() > 0 {
+                    ref_segments.push(ref_range)
                 }
+                begin_pos = ref_pos + *d as i64;
             }
             _ => {}
         }
@@ -373,6 +479,131 @@ pub fn get_alignment_ref_segments(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A cigar cached for one record must never be used for the next record read into the buffer
+    #[test]
+    fn test_get_record_cigar_ignores_stale_cache() {
+        use bam::{Read, Writer};
+        use rust_htslib::bam::record::CigarString;
+
+        let cigars = [
+            vec![Cigar::Match(10), Cigar::Del(2), Cigar::Match(8)],
+            // Same number of operations as the first, to defeat a length-only check
+            vec![Cigar::Match(7), Cigar::Ins(3), Cigar::Match(10)],
+            vec![Cigar::Equal(20)],
+        ];
+        let tmp_path = std::env::temp_dir().join(format!(
+            "sawfish_test_stale_cigar_{}.bam",
+            std::process::id()
+        ));
+        {
+            let mut header = bam::Header::new();
+            header.push_record(
+                bam::header::HeaderRecord::new(b"SQ")
+                    .push_tag(b"SN", "chr1")
+                    .push_tag(b"LN", 1000),
+            );
+            let mut writer = Writer::from_path(&tmp_path, &header, bam::Format::Bam).unwrap();
+            for (i, cigar) in cigars.iter().enumerate() {
+                let mut record = bam::Record::new();
+                let len = cigar.iter().map(|c| c.len() as usize).sum::<usize>();
+                let seq = vec![b'A'; if i == 1 { 20 } else { len }];
+                record.set(
+                    format!("r{i}").as_bytes(),
+                    Some(&CigarString(cigar.clone())),
+                    &seq,
+                    &vec![30u8; seq.len()],
+                );
+                record.set_tid(0);
+                record.set_pos(100 * (i as i64 + 1));
+                writer.write(&record).unwrap();
+            }
+        }
+
+        let mut reader = bam::Reader::from_path(&tmp_path).unwrap();
+        let mut record = bam::Record::new();
+        for (i, cigar) in cigars.iter().enumerate() {
+            reader.read(&mut record).unwrap().unwrap();
+            let observed = get_record_cigar(&record);
+            assert_eq!(observed.as_slice(), cigar.as_slice(), "record {i}");
+            assert_eq!(observed.pos(), record.pos());
+            // Stale cache left over from this record
+            record.cache_cigar();
+            assert_eq!(get_record_cigar(&record).as_slice(), cigar.as_slice());
+            assert!(matches!(get_record_cigar(&record), Cow::Borrowed(_)));
+        }
+        std::fs::remove_file(&tmp_path).unwrap();
+    }
+
+    /// The CIGAR-only identity must be bit-identical to the sequence-based one for =/X cigars
+    #[test]
+    fn test_gci_from_raw_cigar_matches_alignment_version() {
+        use Cigar::*;
+        let mut state = 12345u64;
+        let mut next = |n: u64| {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            (state >> 33) % n
+        };
+        for _ in 0..2000 {
+            let mut cigar = Vec::new();
+            for _ in 0..(1 + next(12)) {
+                let len = 1 + next(50) as u32;
+                cigar.push(match next(8) {
+                    0 => Ins(len),
+                    1 => Del(len),
+                    2 => RefSkip(len),
+                    3 => SoftClip(len),
+                    4 => HardClip(len),
+                    5 => Pad(len),
+                    6 => Diff(len),
+                    _ => Equal(len),
+                });
+            }
+            let raw = cigar.iter().map(get_raw_cigar_word).collect::<Vec<u32>>();
+            // The sequence-based version never reads the sequences for =/X cigars
+            let expected = get_gap_compressed_identity_from_alignment(0, &cigar, &[], &[], true);
+            let observed = get_gap_compressed_identity_from_raw_cigar_no_align_match(&raw).unwrap();
+            assert_eq!(expected.to_bits(), observed.to_bits(), "{cigar:?}");
+        }
+        assert!(
+            get_gap_compressed_identity_from_raw_cigar_no_align_match(&[
+                (10 << 4) | 7,
+                (10 << 4) | 8
+            ]) == Some(0.5)
+        );
+        assert!(
+            get_gap_compressed_identity_from_raw_cigar_no_align_match(&[10 << 4]).is_none(),
+            "an M operation needs the sequences"
+        );
+    }
+
+    /// Compare with decoding each base, then converting bases other than ACGTN to N
+    #[test]
+    fn test_get_simplified_dna_seq() {
+        let bases = b"=ACMGRSVTWYHKDBN";
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        for len in 0..50 {
+            let seq = (0..len)
+                .map(|_| {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    bases[(state % 16) as usize]
+                })
+                .collect::<Vec<_>>();
+            let mut record = bam::Record::new();
+            record.set(b"r", None, &seq, &vec![30; len]);
+            let mut expected = record.seq().as_bytes();
+            for b in expected.iter_mut() {
+                if !matches!(*b, b'A' | b'C' | b'G' | b'T' | b'N') {
+                    *b = b'N';
+                }
+            }
+            assert_eq!(get_simplified_dna_seq(&record), expected);
+        }
+    }
     use rust_htslib::bam::{Header, HeaderView, header};
 
     #[test]

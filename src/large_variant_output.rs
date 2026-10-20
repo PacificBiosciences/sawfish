@@ -1,7 +1,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use log::info;
 use rust_htslib::bcf;
-use rust_vc_utils::{ChromList, GenomeRef, GenomeSegment, rev_comp_in_place};
+use rust_vc_utils::{ChromList, GenomeSegment, rev_comp_in_place};
 use strum::EnumCount;
 
 use crate::breakpoint::{
@@ -10,6 +10,7 @@ use crate::breakpoint::{
 };
 use crate::cli;
 use crate::expected_ploidy::SVLocusPloidy;
+use crate::genome_ref_utils::GenomeRef;
 use crate::refine_sv::{
     AlleleType, Genotype, RefinedSV, SVPhaseStatus, SVSampleScoreInfo, SVScoreInfo,
     get_rsv_id_label,
@@ -54,7 +55,7 @@ fn get_sv_vcf_header(
 
     let min_qual_filter = format!(
         "##FILTER=<ID=MinQUAL,Description=\"QUAL score is less than {}\">",
-        &settings.min_qual
+        settings.min_qual
     );
 
     if !candidate_mode {
@@ -587,8 +588,7 @@ fn get_rsv_vcf_sv_type(rsv: &RefinedSV) -> VcfSVType {
 
 fn convert_refined_sv_to_non_bnd_vcf_record(
     settings: &VcfSettings,
-    genome_ref: &GenomeRef,
-    chrom_list: &ChromList,
+    reference: &GenomeRef,
     vcf: &bcf::Writer,
     rsv: &RefinedSV,
     group_contig_indexes: &[usize],
@@ -633,20 +633,22 @@ fn convert_refined_sv_to_non_bnd_vcf_record(
     let is_symbolic_alt = is_symbolic_del || is_symbolic_dup || is_symbolic_inv;
 
     // Set REF and ALT
-    let chrom_info = &chrom_list.data[seg1.chrom_index];
-    let chrom_seq = genome_ref.chroms.get(chrom_info.label.as_str()).unwrap();
     if let InsertInfo::SizeRange(_) = &rsv.bp.insert_info {
         assert_ne!(
             sv_type,
             VcfSVType::Insertion,
             "Unexpected CandidateSV format"
         );
-        let ref_seq = &chrom_seq[start as usize..(start + 1) as usize];
+        let ref_seq = reference.get_seq(seg1.chrom_index, start as usize, (start + 1) as usize);
         let alt_seq = "<INS>".as_bytes();
-        record.set_alleles(&[ref_seq, alt_seq]).unwrap();
+        record.set_alleles(&[&ref_seq, alt_seq]).unwrap();
     } else {
         let ref_seq_len = if is_symbolic_alt { 0 } else { del_size };
-        let ref_seq = &chrom_seq[start as usize..(start + 1 + ref_seq_len) as usize];
+        let ref_seq = reference.get_seq(
+            seg1.chrom_index,
+            start as usize,
+            (start + 1 + ref_seq_len) as usize,
+        );
         let alt_seq = if is_symbolic_del {
             b"<DEL>".to_vec()
         } else if is_symbolic_dup {
@@ -660,7 +662,7 @@ fn convert_refined_sv_to_non_bnd_vcf_record(
             };
             x
         };
-        record.set_alleles(&[ref_seq, alt_seq.as_slice()]).unwrap();
+        record.set_alleles(&[&ref_seq, alt_seq.as_slice()]).unwrap();
     }
 
     add_sv_type(sv_type, &mut record);
@@ -833,7 +835,7 @@ fn get_bnd_alt_seq(
 #[allow(clippy::too_many_arguments)]
 fn convert_refined_sv_to_bnd_vcf_record(
     settings: &VcfSettings,
-    genome_ref: &GenomeRef,
+    reference: &GenomeRef,
     chrom_list: &ChromList,
     vcf: &bcf::Writer,
     rsv: &RefinedSV,
@@ -865,16 +867,13 @@ fn convert_refined_sv_to_bnd_vcf_record(
     }
 
     //set REF and ALT
-    let chrom_info = &chrom_list.data[seg.chrom_index];
-    let chrom_seq = genome_ref.chroms.get(chrom_info.label.as_str()).unwrap();
     {
-        let ref_seq = &chrom_seq[start as usize..(start + 1) as usize];
-        let alt_seq = get_bnd_alt_seq(chrom_list, &rsv.bp, is_breakend1, ref_seq);
+        let ref_seq = reference.get_seq(seg.chrom_index, start as usize, (start + 1) as usize);
+        let alt_seq = get_bnd_alt_seq(chrom_list, &rsv.bp, is_breakend1, &ref_seq);
 
-        if let Some(alt_seq) = alt_seq {
-            record.set_alleles(&[ref_seq, alt_seq.as_bytes()]).unwrap();
-        } else {
-            return None;
+        {
+            let alt_seq = alt_seq?;
+            record.set_alleles(&[&ref_seq, alt_seq.as_bytes()]).unwrap();
         }
     }
 
@@ -1013,7 +1012,7 @@ fn dedup_records(records: Vec<VcfRecord>) -> (Vec<VcfRecord>, usize) {
 #[allow(clippy::too_many_arguments)]
 fn convert_sv_group_to_vcf_records(
     settings: &VcfSettings,
-    genome_ref: &GenomeRef,
+    reference: &GenomeRef,
     chrom_list: &ChromList,
     sample_count: usize,
     vcf: &bcf::Writer,
@@ -1059,8 +1058,7 @@ fn convert_sv_group_to_vcf_records(
             | VcfSVType::Inversion => {
                 let record = convert_refined_sv_to_non_bnd_vcf_record(
                     settings,
-                    genome_ref,
-                    chrom_list,
+                    reference,
                     vcf,
                     refined_sv,
                     &group_contig_indexes,
@@ -1076,7 +1074,7 @@ fn convert_sv_group_to_vcf_records(
             VcfSVType::Breakpoint => {
                 let record0 = convert_refined_sv_to_bnd_vcf_record(
                     settings,
-                    genome_ref,
+                    reference,
                     chrom_list,
                     vcf,
                     refined_sv,
@@ -1086,7 +1084,7 @@ fn convert_sv_group_to_vcf_records(
                 );
                 let record1 = convert_refined_sv_to_bnd_vcf_record(
                     settings,
-                    genome_ref,
+                    reference,
                     chrom_list,
                     vcf,
                     refined_sv,
@@ -1225,8 +1223,7 @@ fn get_cnv_id_label(cnv: &RefinedCNV) -> String {
 
 fn convert_cnv_to_vcf_record(
     settings: &VcfSettings,
-    genome_ref: &GenomeRef,
-    chrom_list: &ChromList,
+    reference: &GenomeRef,
     sample_count: usize,
     vcf: &bcf::Writer,
     cnv: &RefinedCNV,
@@ -1270,13 +1267,10 @@ fn convert_cnv_to_vcf_record(
     }
 
     // Set REF and ALT
-    let chrom_info = &chrom_list.data[seg.chrom_index];
-    let chrom_seq = genome_ref.chroms.get(chrom_info.label.as_str()).unwrap();
-
     let ref_seq = if start >= 0 {
-        &chrom_seq[start as usize..(start + 1) as usize]
+        reference.get_seq(seg.chrom_index, start as usize, (start + 1) as usize)
     } else {
-        b"N"
+        b"N".to_vec()
     };
 
     let alt_seq = match sv_type {
@@ -1284,7 +1278,7 @@ fn convert_cnv_to_vcf_record(
         VcfSVType::Duplication => b"<DUP>",
         _ => b"<CNV>",
     };
-    record.set_alleles(&[ref_seq, alt_seq]).unwrap();
+    record.set_alleles(&[&ref_seq, alt_seq]).unwrap();
 
     record.push_info_flag(b"IMPRECISE").unwrap();
 
@@ -1317,7 +1311,7 @@ fn convert_cnv_to_vcf_record(
 #[allow(clippy::too_many_arguments)]
 fn get_vcf_records(
     settings: &VcfSettings,
-    genome_ref: &GenomeRef,
+    reference: &GenomeRef,
     chrom_list: &ChromList,
     sample_count: usize,
     sv_groups: &[SVGroup],
@@ -1330,7 +1324,7 @@ fn get_vcf_records(
     for sv_group in sv_groups.iter() {
         convert_sv_group_to_vcf_records(
             settings,
-            genome_ref,
+            reference,
             chrom_list,
             sample_count,
             vcf,
@@ -1353,8 +1347,7 @@ fn get_vcf_records(
     // style of FP duplicate we experience from breakpoint-based calling.
     //
     for cnv in cnvs {
-        let cnv_vcf_record =
-            convert_cnv_to_vcf_record(settings, genome_ref, chrom_list, sample_count, vcf, cnv);
+        let cnv_vcf_record = convert_cnv_to_vcf_record(settings, reference, sample_count, vcf, cnv);
         if let Some(x) = cnv_vcf_record {
             deduplicated_records.push(x);
         }
@@ -1372,7 +1365,7 @@ fn get_vcf_records(
 fn write_sv_vcf_file(
     settings: &VcfSettings,
     filename: &Utf8Path,
-    genome_ref: &GenomeRef,
+    reference: &GenomeRef,
     chrom_list: &ChromList,
     sample_names: &[&str],
     sv_groups: &[SVGroup],
@@ -1391,7 +1384,7 @@ fn write_sv_vcf_file(
     let sample_count = sample_names.len();
     let (vcf_records, vcf_duplicate_record_count) = get_vcf_records(
         settings,
-        genome_ref,
+        reference,
         chrom_list,
         sample_count,
         sv_groups,
@@ -1461,7 +1454,7 @@ pub struct VcfStats {
 pub fn write_indexed_sv_vcf_file(
     shared_settings: &cli::SharedSettings,
     settings: &VcfSettings,
-    genome_ref: &GenomeRef,
+    reference: &GenomeRef,
     chrom_list: &ChromList,
     sample_names: &[&str],
     sv_groups: &[SVGroup],
@@ -1487,7 +1480,7 @@ pub fn write_indexed_sv_vcf_file(
     let vcf_stats = write_sv_vcf_file(
         settings,
         &filename,
-        genome_ref,
+        reference,
         chrom_list,
         sample_names,
         sv_groups,
@@ -1499,4 +1492,263 @@ pub fn write_indexed_sv_vcf_file(
     vcf_utils::build_bcf_index(&filename, shared_settings.thread_count, build_tbi).unwrap();
 
     vcf_stats
+}
+
+/// Writes the candidate SV BCF in discover from candidate SV groups added one at a time
+///
+/// This allows each SV group to be converted to its VCF records and dropped as soon as it is
+/// finalized, rather than holding all SV groups (with their assembled contigs) until the end of
+/// refinement. The output is the same as write_indexed_sv_vcf_file in candidate mode, given SV
+/// groups added in any order.
+///
+pub struct CandidateSvBcfWriter {
+    filename: Utf8PathBuf,
+    vcf: bcf::Writer,
+
+    /// Each record is stored with the cluster index of its SV group and its index among the
+    /// group's records, to sort records with equal position and ID in the same order as
+    /// write_indexed_sv_vcf_file, which converts SV groups in cluster index order.
+    records: Vec<(VcfRecord, usize, usize)>,
+}
+
+impl CandidateSvBcfWriter {
+    pub fn new(settings: &VcfSettings, chrom_list: &ChromList) -> Self {
+        let filename = settings.output_dir.join("candidate.sv.bcf");
+        let candidate_mode = true;
+        let header = get_sv_vcf_header(settings, chrom_list, &[], candidate_mode);
+        let vcf = bcf::Writer::from_path(&filename, &header, false, bcf::Format::Bcf).unwrap();
+        Self {
+            filename,
+            vcf,
+            records: Vec::new(),
+        }
+    }
+
+    pub fn add_sv_group(
+        &mut self,
+        settings: &VcfSettings,
+        reference: &GenomeRef,
+        chrom_list: &ChromList,
+        sv_group: &SVGroup,
+    ) {
+        let cluster_index = sv_group.refined_svs.first().unwrap().id.cluster_index;
+        let mut records = Vec::new();
+        let sample_count = 0;
+        let candidate_mode = true;
+        convert_sv_group_to_vcf_records(
+            settings,
+            reference,
+            chrom_list,
+            sample_count,
+            &self.vcf,
+            candidate_mode,
+            sv_group,
+            &mut records,
+        );
+        self.records.extend(
+            records
+                .into_iter()
+                .enumerate()
+                .map(|(record_index, record)| (record, cluster_index, record_index)),
+        );
+    }
+
+    /// Sort and write all records, then index the BCF file
+    pub fn finish(mut self, shared_settings: &cli::SharedSettings) -> VcfStats {
+        info!(
+            "Writing candidate structural variants to file: '{}'",
+            self.filename
+        );
+
+        self.records
+            .sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+        for (record, _, _) in self.records.iter() {
+            self.vcf.write(&record.record).unwrap();
+        }
+        let output_record_count = self.records.len();
+        drop(self.records);
+        drop(self.vcf);
+
+        let build_tbi = false;
+        vcf_utils::build_bcf_index(&self.filename, shared_settings.thread_count, build_tbi)
+            .unwrap();
+
+        VcfStats {
+            output_record_count,
+            duplicate_record_count: 0,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestRecords {
+        vcf: bcf::Writer,
+        path: std::path::PathBuf,
+    }
+
+    impl TestRecords {
+        fn new(name: &str) -> Self {
+            let mut header = bcf::Header::new();
+            header.push_record(b"##contig=<ID=chr1,length=1000000>");
+            header.push_record(b"##contig=<ID=chr2,length=1000000>");
+            for tag in ["END", "SVLEN", "HOMLEN"] {
+                header.push_record(
+                    format!("##INFO=<ID={tag},Number=1,Type=Integer,Description=\"{tag}\">")
+                        .as_bytes(),
+                );
+            }
+            let path = std::env::temp_dir().join(format!(
+                "sawfish_vcf_records_{name}_{}.vcf",
+                std::process::id()
+            ));
+            let vcf = bcf::Writer::from_path(&path, &header, true, bcf::Format::Vcf).unwrap();
+            Self { vcf, path }
+        }
+
+        /// Record on chromosome `rid` at `pos`, with the given ID, alleles and INFO values
+        #[allow(clippy::too_many_arguments)]
+        fn record(
+            &self,
+            rid: u32,
+            pos: i64,
+            id: &str,
+            alleles: &[&[u8]],
+            end: Option<i32>,
+            svlen: Option<i32>,
+            homlen: Option<i32>,
+            is_inversion: bool,
+        ) -> VcfRecord {
+            let mut record = self.vcf.empty_record();
+            record.set_rid(Some(rid));
+            record.set_pos(pos);
+            record.set_id(id.as_bytes()).unwrap();
+            record.set_alleles(alleles).unwrap();
+            if let Some(x) = end {
+                record.push_info_integer(b"END", &[x]).unwrap();
+            }
+            if let Some(x) = svlen {
+                record.push_info_integer(b"SVLEN", &[x]).unwrap();
+            }
+            if let Some(x) = homlen {
+                record.push_info_integer(b"HOMLEN", &[x]).unwrap();
+            }
+            VcfRecord {
+                record,
+                is_inversion,
+            }
+        }
+    }
+
+    impl Drop for TestRecords {
+        fn drop(&mut self) {
+            std::fs::remove_file(&self.path).ok();
+        }
+    }
+
+    fn ids(records: &[VcfRecord]) -> Vec<String> {
+        records
+            .iter()
+            .map(|x| String::from_utf8(x.record.id()).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn test_vcf_record_order() {
+        let t = TestRecords::new("order");
+        let alleles: &[&[u8]] = &[b"A", b"<DEL>"];
+        let mut records = vec![
+            t.record(1, 10, "c", alleles, None, None, None, false),
+            t.record(0, 20, "b", alleles, None, None, None, false),
+            t.record(0, 10, "z", alleles, None, None, None, false),
+            // Inversions come before other records at the same position, whatever their ID
+            t.record(0, 10, "y", alleles, None, None, None, false),
+            t.record(0, 10, "zz_inv", alleles, None, None, None, true),
+            t.record(0, 10, "a", alleles, None, None, None, false),
+        ];
+        records.sort();
+        assert_eq!(ids(&records), ["zz_inv", "a", "y", "z", "b", "c"]);
+    }
+
+    /// The candidate writer sorts records with this key, so that records with equal position,
+    /// inversion flag and ID (which shouldn't happen) are ordered by SV group, then by position in
+    /// the group, as when SV groups are converted in cluster index order
+    #[test]
+    fn test_candidate_record_sort_key_is_independent_of_arrival_order() {
+        let t = TestRecords::new("candidate_order");
+        let alleles: &[&[u8]] = &[b"A", b"<INS>"];
+        let make = |order: &[(usize, usize)]| {
+            let mut records = order
+                .iter()
+                .map(|&(cluster_index, record_index)| {
+                    // Same position and ID, distinguished by their SVLEN
+                    let svlen = Some((cluster_index * 10 + record_index) as i32);
+                    (
+                        t.record(0, 100, "same", alleles, None, svlen, None, false),
+                        cluster_index,
+                        record_index,
+                    )
+                })
+                .collect::<Vec<_>>();
+            records.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
+            records
+                .iter()
+                .map(|x| get_bcf_record_svlen(&x.0.record).unwrap())
+                .collect::<Vec<_>>()
+        };
+        let expected = vec![10, 11, 20, 21, 30];
+        assert_eq!(make(&[(1, 0), (1, 1), (2, 0), (2, 1), (3, 0)]), expected);
+        assert_eq!(make(&[(3, 0), (2, 1), (1, 1), (2, 0), (1, 0)]), expected);
+    }
+
+    #[test]
+    fn test_dedup_records() {
+        let t = TestRecords::new("dedup");
+        let del: &[&[u8]] = &[b"AC", b"A"];
+        let other_alleles: &[&[u8]] = &[b"AC", b"AG"];
+        let records = vec![
+            t.record(0, 10, "kept1", del, Some(60), Some(-50), Some(2), false),
+            // Same position, alleles and INFO values as the first, so a duplicate
+            t.record(0, 10, "dup1", del, Some(60), Some(-50), Some(2), false),
+            // Same position, but each of these differs in one compared value
+            t.record(
+                0,
+                10,
+                "alleles",
+                other_alleles,
+                Some(60),
+                Some(-50),
+                Some(2),
+                false,
+            ),
+            t.record(0, 10, "homlen", del, Some(60), Some(-50), Some(3), false),
+            t.record(0, 10, "svlen", del, Some(60), Some(-51), Some(2), false),
+            t.record(0, 10, "end", del, Some(61), Some(-50), Some(2), false),
+            t.record(0, 10, "no_homlen", del, Some(60), Some(-50), None, false),
+            // Duplicate of a record which isn't the first at the position
+            t.record(0, 10, "dup2", del, Some(60), Some(-50), None, false),
+            // Different position or chromosome
+            t.record(0, 11, "pos", del, Some(60), Some(-50), Some(2), false),
+            t.record(1, 11, "chrom", del, Some(60), Some(-50), Some(2), false),
+            // The same as a record at the previous position, but only the same position matters
+            t.record(1, 11, "dup3", del, Some(60), Some(-50), Some(2), false),
+        ];
+        let (records, duplicates) = dedup_records(records);
+        assert_eq!(duplicates, 3);
+        assert_eq!(
+            ids(&records),
+            [
+                "kept1",
+                "alleles",
+                "homlen",
+                "svlen",
+                "end",
+                "no_homlen",
+                "pos",
+                "chrom"
+            ]
+        );
+    }
 }

@@ -1,0 +1,21 @@
+[package]
+name = "spoa"
+description = "A rust wrapper around the spoa C++ SIMD partial order alignment library."
+version = "0.1.1"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/nlhepler/spoa-rs"
+
+[features]
+default = []
+simde = ["spoa-sys/simde"]
+
+[workspace]
+
+[dependencies]
+cxx = "1.0"
+spoa-sys = { version = "0.1.1", path = "spoa-sys" }
+
+[dev-dependencies]
+flate2 = "1.0"

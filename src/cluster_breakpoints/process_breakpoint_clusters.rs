@@ -301,7 +301,25 @@ mod cluster {
     /// Cluster breakpoint observations into breakpoint clusters
     ///
     pub fn cluster_breakpoint_observations(bpos: &mut BreakObservations) -> Vec<BreakpointCluster> {
-        info!("Completing breakpoint observation clustering");
+        cluster_breakpoint_observations_impl(bpos, true, false)
+    }
+
+    /// cluster_breakpoint_observations without logging, which keeps the observations so that more
+    /// can be merged in and clustered again
+    pub fn cluster_breakpoint_observations_quiet(
+        bpos: &mut BreakObservations,
+    ) -> Vec<BreakpointCluster> {
+        cluster_breakpoint_observations_impl(bpos, false, true)
+    }
+
+    fn cluster_breakpoint_observations_impl(
+        bpos: &mut BreakObservations,
+        log: bool,
+        keep_observations: bool,
+    ) -> Vec<BreakpointCluster> {
+        if log {
+            info!("Completing breakpoint observation clustering");
+        }
 
         // cluster algo intention:
         // - cluster all breakpoint observations where both breakends are in the same direction and
@@ -346,8 +364,10 @@ mod cluster {
         }
 
         // We've clustered everything at this point so get rid of the individual breakpoint
-        // observations:
-        bpos.singles.data.clear();
+        // observations, unless more will be merged in and clustered again:
+        if !keep_observations {
+            bpos.singles.data.clear();
+        }
 
         // Sort the breakpoint clusters now that the we've finished finding them all
         breakpoint_clusters.sort_by_key(|x| x.breakpoint.breakend1.segment.clone());
@@ -359,7 +379,9 @@ mod cluster {
         }
         */
 
-        info!("Finished breakpoint observation clustering");
+        if log {
+            info!("Finished breakpoint observation clustering");
+        }
 
         breakpoint_clusters
     }
@@ -407,8 +429,11 @@ fn consolidate_indel_candidates(
     cluster_settings: &ClusterSettings,
     chrom_list: &ChromList,
     clusters: &mut [BreakpointCluster],
+    log: bool,
 ) -> usize {
-    info!("Consolidating adjacent indel candidates");
+    if log {
+        info!("Consolidating adjacent indel candidates");
+    }
 
     struct ConsolidatedAssemblyData<'a> {
         segment: GenomeSegment,
@@ -697,7 +722,7 @@ fn annotate_neighboring_breakend_clusters(
                     None => {
                         panic!(
                             "failed get_segment_distance between next_be: {:?} last_be_neighbor: {:?}",
-                            &last_be.segment, &be.segment
+                            last_be.segment, be.segment
                         );
                     }
                 }
@@ -782,6 +807,7 @@ fn process_clusters(
     chrom_list: &ChromList,
     clusters: &mut [BreakpointCluster],
     cluster_stats: &mut ClusterStats,
+    log: bool,
 ) {
     // Add assembly regions to clusters
     for bpc in clusters.iter_mut() {
@@ -799,7 +825,7 @@ fn process_clusters(
 
     // Further cluster small indel candidates to keep refinement regions from overlapping
     cluster_stats.consolidated_single_region_candidate_count =
-        consolidate_indel_candidates(cluster_settings, chrom_list, clusters);
+        consolidate_indel_candidates(cluster_settings, chrom_list, clusters, log);
 
     // Pair soft-clip breakpoints into large-insertion candidates
     cluster_stats.large_insertion_candidate_count = if !settings.disable_large_insertions {
@@ -809,14 +835,13 @@ fn process_clusters(
             cluster_settings.max_large_insertion_pairing_dist,
             cluster_settings.max_large_insertion_deletion_pairing_dist,
             clusters,
+            log,
         )
     } else {
         0
     };
 
     annotate_neighboring_breakend_clusters(settings.max_close_breakend_distance, clusters);
-
-    write_breakpoint_clusters_to_bed(&settings.output_dir, chrom_list, clusters);
 }
 
 struct ClusterSettings {
@@ -913,7 +938,38 @@ pub fn process_breakpoint_clusters(
         chrom_list,
         &mut breakpoint_clusters,
         &mut cluster_stats,
+        true,
     );
 
+    write_breakpoint_clusters_to_bed(&settings.output_dir, chrom_list, &breakpoint_clusters);
+
     (breakpoint_clusters, cluster_stats)
+}
+
+/// Cluster breakpoint observations as in process_breakpoint_clusters, without writing any output
+///
+/// This is used to cluster the observations found so far during the alignment scan, for
+/// speculative refinement. The observations are kept, so that later chromosomes can be merged in
+/// and the whole set clustered again.
+///
+pub fn get_breakpoint_clusters_quiet(
+    settings: &cli::DiscoverSettings,
+    assembly_read_flank_size: usize,
+    chrom_list: &ChromList,
+    genome_break_observations: &mut BreakObservations,
+) -> Vec<BreakpointCluster> {
+    let cluster_settings = ClusterSettings::new();
+    let mut cluster_stats = ClusterStats::default();
+    let mut breakpoint_clusters =
+        cluster::cluster_breakpoint_observations_quiet(genome_break_observations);
+    process_clusters(
+        settings,
+        &cluster_settings,
+        assembly_read_flank_size,
+        chrom_list,
+        &mut breakpoint_clusters,
+        &mut cluster_stats,
+        false,
+    );
+    breakpoint_clusters
 }

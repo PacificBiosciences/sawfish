@@ -3,6 +3,7 @@
 
 mod bam_scanner;
 mod bam_utils;
+mod banded_score;
 mod bcf_utils;
 mod bio_align_utils;
 mod breakpoint;
@@ -40,6 +41,15 @@ mod utils;
 mod vcf_utils;
 mod wfa2_utils;
 mod worker_thread_data;
+
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+/// jemalloc options: purge freed memory on a background thread instead of on allocating threads
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+#[unsafe(export_name = "malloc_conf")]
+pub static MALLOC_CONF: &[u8; 23] = b"background_thread:true\0";
 
 use std::{error, process};
 

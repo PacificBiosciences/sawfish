@@ -2,7 +2,7 @@ use std::sync::mpsc::channel;
 
 use camino::Utf8Path;
 use log::info;
-use rust_vc_utils::{ArraySegmenter, ChromList, bigwig_utils, genome_ref};
+use rust_vc_utils::{ArraySegmenter, ChromList, bigwig_utils};
 use serde::{Deserialize, Serialize};
 use unwrap::unwrap;
 
@@ -12,6 +12,7 @@ use crate::filenames::{
     GC_BIAS_CORRECTED_DEPTH_BINS_BIGWIG_FILENAME, GENOME_GC_LEVELS_MESSAGEPACK_FILENAME,
     SAMPLE_GC_BIAS_MESSAGEPACK_FILENAME,
 };
+use crate::genome_ref_utils::GenomeRef;
 
 /// GC content information for a region
 ///
@@ -87,11 +88,12 @@ impl GenomeGCBins {
 /// (1) The GCContent data for all depth bins in the chromosome
 /// (2) GCContent data for the entire chromosome
 fn get_chrom_depth_bin_gc_content(
-    chrom_ref: &[u8],
+    reference: &GenomeRef,
+    chrom_index: usize,
     depth_bin_size: u32,
     gc_genome_window_size: u32,
 ) -> (Vec<GCContent>, GCContent) {
-    let chrom_size = chrom_ref.len();
+    let chrom_size = reference.chrom_len(chrom_index);
     let bin_count = depth_bins::get_complete_bin_count(chrom_size as u64, depth_bin_size) as i64;
 
     // Local struct used to enumerate and sort all boundary points
@@ -149,21 +151,28 @@ fn get_chrom_depth_bin_gc_content(
     assert!(final_gc_segs.is_empty() || final_gc_segs[0] == 0);
 
     // Walk through chromosome sequence and produce a GCContent entry for each partition
+    //
+    // The sequence is read in chunks so that the whole chromosome isn't held in memory
     let fgcs_size = final_gc_segs.len();
     let mut fgcs_index_head = 0;
     let mut chrom_segment_gc_content = Vec::new();
     let mut chrom_gc_content = GCContent::default();
-    for (pos, base) in chrom_ref.iter().enumerate() {
-        if fgcs_index_head < fgcs_size {
-            if final_gc_segs[fgcs_index_head] == pos {
-                // Advance to next gcbin
-                chrom_segment_gc_content.push(GCContent::default());
-                fgcs_index_head += 1;
+    let chunk_size = 1 << 20;
+    let mut pos = 0;
+    reference.for_each_chrom_chunk(chrom_index, chunk_size, |chunk| {
+        for base in chunk.iter() {
+            if fgcs_index_head < fgcs_size {
+                if final_gc_segs[fgcs_index_head] == pos {
+                    // Advance to next gcbin
+                    chrom_segment_gc_content.push(GCContent::default());
+                    fgcs_index_head += 1;
+                }
+                chrom_segment_gc_content[fgcs_index_head - 1].update_from_base(base);
             }
-            chrom_segment_gc_content[fgcs_index_head - 1].update_from_base(base);
+            chrom_gc_content.update_from_base(base);
+            pos += 1;
         }
-        chrom_gc_content.update_from_base(base);
-    }
+    });
 
     // Sum segments for each depth bin
     let mut chrom_depth_bin_gc_content = Vec::new();
@@ -190,31 +199,13 @@ fn get_chrom_depth_bin_gc_content(
 ///   consider the effect of the larger scale GC-content on the reads overlapping the depth bin itself.
 ///
 pub fn get_depth_bin_gc_content(
-    genome_ref: &genome_ref::GenomeRef,
+    reference: &GenomeRef,
     chrom_list: &ChromList,
     depth_bin_size: u32,
     gc_genome_window_size: u32,
     thread_count: usize,
 ) -> GenomeGCBins {
     info!("Getting depth bin GC content");
-
-    // Check that chrom_list labels exist in the reference, and have the expected length
-    for chrom_info in chrom_list.data.iter() {
-        let chrom_ref = genome_ref.chroms.get(chrom_info.label.as_str());
-        let chrom_ref = unwrap!(
-            chrom_ref,
-            "Can't find alignment file chromosome '{}' in the fasta reference genome input.",
-            chrom_info.label
-        );
-        if chrom_ref.len() != chrom_info.length as usize {
-            panic!(
-                "Length of chromosome '{}' differs between alignment file header '{}' and fasta reference genome input '{}'",
-                chrom_info.label,
-                chrom_ref.len(),
-                chrom_info.length
-            );
-        }
-    }
 
     let worker_pool = rayon::ThreadPoolBuilder::new()
         .num_threads(thread_count)
@@ -223,12 +214,12 @@ pub fn get_depth_bin_gc_content(
 
     let (tx, rx) = channel();
     worker_pool.scope(move |scope| {
-        for (chrom_index, chrom_info) in chrom_list.data.iter().enumerate() {
+        for chrom_index in 0..reference.chrom_count() {
             let tx = tx.clone();
-            let chrom_ref = genome_ref.chroms.get(chrom_info.label.as_str()).unwrap();
             scope.spawn(move |_| {
                 let result = get_chrom_depth_bin_gc_content(
-                    chrom_ref,
+                    reference,
+                    chrom_index,
                     depth_bin_size,
                     gc_genome_window_size,
                 );
@@ -781,29 +772,20 @@ pub fn deserialize_sample_gc_bias_data(discover_dir: &Utf8Path) -> SampleGCBiasC
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_vc_utils::GenomeRef;
-    use std::collections::HashMap;
 
     #[test]
     fn test_get_depth_bin_gc_content() {
-        let mut genome_ref = GenomeRef {
-            chroms: HashMap::new(),
-        };
-        genome_ref.chroms.insert(
-            "foo".to_string(),
+        let reference = GenomeRef::from_chrom_seqs(vec![
             b"AAAAAAAAAACCCCCCCCCCGGGGGGGGGGTTTTTTTTTT".to_vec(),
-        );
-        genome_ref.chroms.insert(
-            "bar".to_string(),
             b"CCCCCCCCCCGGGGGGGGGGTTTTTTTTTTAAAAAAAA".to_vec(),
-        );
+        ]);
 
         let mut chrom_list = ChromList::default();
         chrom_list.add_chrom("foo", 40);
         chrom_list.add_chrom("bar", 38);
 
         let depth_bin_size = 5;
-        let result = get_depth_bin_gc_content(&genome_ref, &chrom_list, depth_bin_size, 9, 1);
+        let result = get_depth_bin_gc_content(&reference, &chrom_list, depth_bin_size, 9, 1);
         assert_eq!(result.bin_size, depth_bin_size);
         approx::assert_ulps_eq!(result.genome_bin.at, 38.0, max_ulps = 4);
         approx::assert_ulps_eq!(result.genome_bin.gc, 40.0, max_ulps = 4);

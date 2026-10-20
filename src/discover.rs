@@ -1,9 +1,11 @@
-use rust_vc_utils::{ChromList, GenomeRef, get_genome_ref_from_fasta, get_sample_name};
+use std::sync::mpsc::channel;
+
+use rust_vc_utils::{ChromList, get_sample_name};
 
 use crate::bam_scanner::SampleAlignmentScanResult;
 use crate::bam_scanner::scan_sample_bam_for_sv_evidence;
 use crate::cli;
-use crate::cluster_breakpoints;
+use crate::cluster_breakpoints::{self, BreakObservations};
 use crate::copy_number_segmentation::{
     HaploidCoverage, get_sample_copy_number_segments, serialize_copy_number_segments,
     write_copy_number_segment_file,
@@ -11,9 +13,10 @@ use crate::copy_number_segmentation::{
 use crate::depth_bins;
 use crate::filenames::EXPECTED_COPY_NUMBER_BED_FILENAME;
 use crate::gc_correction::*;
+use crate::genome_ref_utils::{GenomeRef, get_ref_chrom_array};
 use crate::genome_regions::GenomeRegions;
 use crate::globals::PROGRAM_VERSION;
-use crate::large_variant_output::{VcfSettings, write_indexed_sv_vcf_file};
+use crate::large_variant_output::VcfSettings;
 use crate::maf_utils::{scan_maf_file, serialize_maf_data};
 use crate::refine_sv;
 use crate::run_data::{DiscoverRunData, write_discover_run_data};
@@ -36,17 +39,44 @@ impl StaticDiscoverSettings {
     }
 }
 
+/// Soft memory limit shared by all contig alignments: alignments wait for memory when the total
+/// would exceed it, but the oldest alignment is never blocked, and a single alignment larger than
+/// the limit still runs. Waiting does not change any alignment result.
+const CONTIG_ALIGNMENT_MEMORY_BUDGET_BYTES: u64 = 6 << 30;
+
+/// Number of threads to use for speculative refinement during the alignment scan
+///
+/// The alignment scan is usually limited by reading the alignment file, so only some threads are
+/// used for the scan, and the remainder for speculative refinement.
+///
+fn get_speculation_thread_count(
+    shared_settings: &cli::SharedSettings,
+    settings: &cli::DiscoverSettings,
+    target_regions: &Option<GenomeRegions>,
+) -> usize {
+    let thread_count = shared_settings.thread_count;
+    if thread_count < 3
+        || target_regions.is_some()
+        || settings.target_cluster_index.is_some()
+        || std::env::var("SAWFISH_DISABLE_SPECULATION").is_ok()
+    {
+        return 0;
+    }
+    let scan_threads = std::cmp::max(1, (thread_count * 3).div_ceil(10));
+    thread_count - scan_threads
+}
+
 /// These steps of discover are only run with CNV is enabled
 ///
 fn run_discover_cnv_steps(
     shared_settings: &cli::SharedSettings,
     settings: &cli::DiscoverSettings,
-    genome_ref: &GenomeRef,
+    reference: &GenomeRef,
     chrom_list: &ChromList,
     sample_scan_result: &SampleAlignmentScanResult,
 ) -> HaploidCoverage {
     let depth_bin_gc_content = get_depth_bin_gc_content(
-        genome_ref,
+        reference,
         chrom_list,
         settings.depth_bin_size,
         settings.gc_genome_window_size,
@@ -96,6 +126,8 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
     cli::write_discover_settings(&settings.output_dir, settings);
 
     let static_settings = StaticDiscoverSettings::new();
+
+    rust_wfa2::set_memory_budget(CONTIG_ALIGNMENT_MEMORY_BUDGET_BYTES);
     let chrom_list = ChromList::from_bam_filename(&settings.bam_filename);
     let target_regions = if shared_settings.target_region_list.is_empty() {
         None
@@ -107,11 +139,7 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         ))
     };
 
-    let genome_ref = {
-        let mut x = get_genome_ref_from_fasta(&settings.ref_filename);
-        x.simplify_ambiguous_dna_bases();
-        x
-    };
+    let reference = get_ref_chrom_array(&settings.ref_filename, &chrom_list);
 
     let cnv_excluded_regions = settings
         .cnv_excluded_regions_filename
@@ -167,70 +195,125 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         serialize_maf_data(&settings.output_dir, &maf_data);
     }
 
-    // Scan input bam for breakend and depth information
-    let mut sample_scan_result = scan_sample_bam_for_sv_evidence(
+    // Breakpoint clusters are refined speculatively during the alignment scan, which is usually
+    // limited by reading the alignment file, on threads which the scan doesn't need. See
+    // refine_sv::speculative
+    let speculation_threads =
+        get_speculation_thread_count(shared_settings, settings, &target_regions);
+    let speculation_dataset = (speculation_threads > 0).then(|| {
+        get_bam_reader_worker_thread_data(
+            shared_settings,
+            &settings.ref_filename,
+            &[&settings.bam_filename],
+        )
+    });
+
+    let (
+        sample_scan_result_name,
+        max_sv_scoring_depth,
+        breakpoint_clusters,
+        cluster_stats,
+        speculative_results,
+    ) = std::thread::scope(|thread_scope| {
+        let (obs_tx, obs_rx) = channel();
+        let speculation = speculation_dataset.as_ref().map(|dataset| {
+            let reference = &reference;
+            let chrom_list = &chrom_list;
+            let static_settings = &static_settings;
+            thread_scope.spawn(move || {
+                refine_sv::speculative::run_speculative_refinement(
+                    obs_rx,
+                    shared_settings,
+                    settings,
+                    static_settings,
+                    dataset,
+                    reference,
+                    chrom_list,
+                    speculation_threads,
+                )
+            })
+        });
+
+        // Scan input bam for breakend and depth information
+        let mut sample_scan_result = {
+            let on_chrom_complete = |chrom_index: usize, obs: &BreakObservations| {
+                if speculation.is_some() {
+                    obs_tx.send((chrom_index, obs.clone())).unwrap();
+                }
+            };
+            scan_sample_bam_for_sv_evidence(
+                shared_settings,
+                settings,
+                &bam_reader_worker_thread_dataset,
+                sample_name,
+                &chrom_list,
+                &reference,
+                target_regions.as_ref(),
+                shared_settings.thread_count - speculation_threads,
+                &on_chrom_complete,
+            )
+        };
+        drop(obs_tx);
+
+        // Apply CNV excluded regions to sample_scan_result depth_bins
+        depth_bins::apply_excluded_regions(
+            &chrom_list,
+            cnv_excluded_regions.as_ref(),
+            sample_scan_result.genome_depth_bins.bin_size,
+            &mut sample_scan_result.genome_depth_bins.depth_bins,
+        );
+
+        // Write depth bins out to binary serialization format (for reading back in by sawfish joint genotyper)
+        depth_bins::serialize_genome_depth_bins(
+            &settings.output_dir,
+            &sample_scan_result.genome_depth_bins,
+        );
+
+        let haploid_coverage = if !settings.disable_cnv {
+            Some(run_discover_cnv_steps(
+                shared_settings,
+                settings,
+                &reference,
+                &chrom_list,
+                &sample_scan_result,
+            ))
+        } else {
+            None
+        };
+
+        let max_sv_scoring_depth = generate_and_write_sv_scoring_exclusion_regions(
+            settings,
+            &chrom_list,
+            haploid_coverage.as_ref(),
+            sample_scan_result.genome_depth_bins_builder,
+        );
+
+        // Cluster breakpoint signatures
+        let (breakpoint_clusters, cluster_stats) = cluster_breakpoints::process_breakpoint_clusters(
+            settings,
+            static_settings.assembly_read_flank_size,
+            &chrom_list,
+            &mut sample_scan_result.genome_break_observations,
+        );
+
+        let speculative_results = speculation.map(|x| x.join().unwrap()).unwrap_or_default();
+
+        (
+            sample_scan_result.sample_name,
+            max_sv_scoring_depth,
+            breakpoint_clusters,
+            cluster_stats,
+            speculative_results,
+        )
+    });
+
+    // Reuse speculative refinement results for any cluster with the same signature
+    let reused_results = refine_sv::speculative::get_reusable_results(
         shared_settings,
         settings,
-        &bam_reader_worker_thread_dataset,
-        sample_name,
-        &chrom_list,
-        &genome_ref,
-        target_regions.as_ref(),
+        &breakpoint_clusters,
+        speculative_results,
     );
-
-    // Apply CNV excluded regions to sample_scan_result depth_bins
-    depth_bins::apply_excluded_regions(
-        &chrom_list,
-        cnv_excluded_regions.as_ref(),
-        sample_scan_result.genome_depth_bins.bin_size,
-        &mut sample_scan_result.genome_depth_bins.depth_bins,
-    );
-
-    // Write depth bins out to binary serialization format (for reading back in by sawfish joint genotyper)
-    depth_bins::serialize_genome_depth_bins(
-        &settings.output_dir,
-        &sample_scan_result.genome_depth_bins,
-    );
-
-    let haploid_coverage = if !settings.disable_cnv {
-        Some(run_discover_cnv_steps(
-            shared_settings,
-            settings,
-            &genome_ref,
-            &chrom_list,
-            &sample_scan_result,
-        ))
-    } else {
-        None
-    };
-
-    let max_sv_scoring_depth = generate_and_write_sv_scoring_exclusion_regions(
-        settings,
-        &chrom_list,
-        haploid_coverage.as_ref(),
-        sample_scan_result.genome_depth_bins_builder,
-    );
-
-    // Cluster breakpoint signatures
-    let (breakpoint_clusters, cluster_stats) = cluster_breakpoints::process_breakpoint_clusters(
-        settings,
-        static_settings.assembly_read_flank_size,
-        &chrom_list,
-        &mut sample_scan_result.genome_break_observations,
-    );
-
-    // Refine the SVs
-    let (sv_candidate_groups, mut refine_stats) = {
-        refine_sv::refine_sv_candidates(
-            shared_settings,
-            settings,
-            &static_settings,
-            &bam_reader_worker_thread_dataset,
-            &genome_ref,
-            &chrom_list,
-            &breakpoint_clusters,
-        )
-    };
 
     let vcf_settings = {
         let no_vcf_dedup = false;
@@ -246,20 +329,18 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         )
     };
 
-    // Write SV candidate BCF output
-    let vcf_stats = write_indexed_sv_vcf_file(
+    // Refine the SVs, and write SV candidate BCF output
+    let refine_stats = refine_sv::refine_sv_candidates(
         shared_settings,
-        &vcf_settings,
-        &genome_ref,
+        settings,
+        &static_settings,
+        &bam_reader_worker_thread_dataset,
+        &reference,
         &chrom_list,
-        &[],
-        &sv_candidate_groups,
-        &[],
-        true,
+        &breakpoint_clusters,
+        &vcf_settings,
+        reused_results,
     );
-
-    refine_stats.candidate_vcf_output_record_count = vcf_stats.output_record_count;
-    refine_stats.candidate_vcf_duplicate_record_count = vcf_stats.duplicate_record_count;
 
     let run_step = RunStep {
         name: "discover".to_string(),
@@ -270,7 +351,7 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         &settings.output_dir,
         &DiscoverRunData {
             run_step: run_step.clone(),
-            sample_name: sample_scan_result.sample_name.clone(),
+            sample_name: sample_scan_result_name.clone(),
             max_sv_scoring_depth,
         },
     );
@@ -280,7 +361,7 @@ pub fn run_discover(shared_settings: &cli::SharedSettings, settings: &cli::Disco
         &settings.output_dir,
         &DiscoverRunStats {
             run_step,
-            sample_name: sample_scan_result.sample_name.clone(),
+            sample_name: sample_scan_result_name.clone(),
             cluster_stats,
             refine_stats,
         },

@@ -340,11 +340,11 @@ impl Breakpoint {
 
     pub fn get_dir_type_index(&self) -> usize {
         let i1 = self.breakend1.dir as usize;
-        if self.breakend2.is_none() {
-            i1
-        } else {
-            let i2 = self.breakend2.as_ref().unwrap().dir as usize;
-            BreakendDirection::COUNT + i1 * BreakendDirection::COUNT + i2
+        match self.breakend2.as_ref() {
+            None => i1,
+            Some(breakend2) => {
+                BreakendDirection::COUNT + i1 * BreakendDirection::COUNT + breakend2.dir as usize
+            }
         }
     }
 
@@ -491,7 +491,7 @@ pub struct BreakendNeighborObservation {
 ///
 /// A breakend 'observation' is a breakpoint proposal from a single piece of evidence, such as a single sequencing read
 ///
-#[derive(Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Eq, PartialEq, PartialOrd, Ord)]
 pub struct BreakpointObservation {
     pub breakpoint: Breakpoint,
     pub evidence: BreakpointEvidenceType,

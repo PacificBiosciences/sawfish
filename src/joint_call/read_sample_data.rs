@@ -3,7 +3,7 @@ use std::sync::mpsc::channel;
 use camino::{Utf8Path, Utf8PathBuf};
 use log::info;
 use regex::Regex;
-use rust_vc_utils::{ChromList, GenomeRef, RegionMap, get_genome_ref_from_fasta};
+use rust_vc_utils::{ChromList, RegionMap};
 use unwrap::unwrap;
 
 use super::get_refined_svs::get_sample_sv_groups;
@@ -19,6 +19,7 @@ use crate::gc_correction::{
     GenomeGCLevels, SampleGCBiasCorrectionData, deserialize_genome_gc_levels,
     deserialize_sample_gc_bias_data,
 };
+use crate::genome_ref_utils::{GenomeRef, get_ref_chrom_array};
 use crate::genome_regions::{
     GenomeRegions, GenomeRegionsByChromIndex, read_genome_regions_from_bed,
 };
@@ -30,7 +31,7 @@ use crate::sv_group::SVGroup;
 pub(super) struct SharedJointCallData {
     pub ref_filename: String,
     pub chrom_list: ChromList,
-    pub genome_ref: GenomeRef,
+    pub reference: GenomeRef,
     pub genome_gc_levels: GenomeGCLevels,
 }
 
@@ -322,11 +323,7 @@ pub(super) fn read_all_sample_data(
 
     let ref_filename = get_multi_sample_ref_filename(settings, &all_sample_data);
 
-    let genome_ref = {
-        let mut x = get_genome_ref_from_fasta(&ref_filename);
-        x.simplify_ambiguous_dna_bases();
-        x
-    };
+    let reference = get_ref_chrom_array(&ref_filename, &chrom_list);
 
     // if CNV is enabled, read in genome GC levels from the first sample with CNV enabled, else return an empty vector
     let genome_gc_levels = if settings.disable_cnv {
@@ -344,7 +341,7 @@ pub(super) fn read_all_sample_data(
     let shared_data = SharedJointCallData {
         ref_filename,
         chrom_list,
-        genome_ref,
+        reference,
         genome_gc_levels,
     };
 

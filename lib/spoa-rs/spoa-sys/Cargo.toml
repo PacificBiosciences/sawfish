@@ -1,0 +1,21 @@
+[package]
+name = "spoa-sys"
+description = "Low-level bindings to the spoa C++ library."
+version = "0.1.1"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/nlhepler/spoa-rs"
+build = "build.rs"
+links = "spoa"
+
+[features]
+default = []
+simde = []
+
+[dependencies]
+cxx = "1.0"
+
+[build-dependencies]
+cmake = "0.1"
+cxx-build = "1.0"
+walkdir = "2"

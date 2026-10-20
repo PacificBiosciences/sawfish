@@ -1,5 +1,4 @@
 mod add_flanks;
-mod banded_pairwise_assembler;
 mod spoa_assembler;
 
 use rust_vc_utils::int_range::IntRange;
@@ -71,38 +70,13 @@ pub(super) fn assemble_and_cluster_reads(
         refine_settings.max_candidate_assemblies
     };
 
-    // Disable banded_pairwise assembler for all cases for now. It may use less memory from larger insertions but still
-    // unclear if this is how we want to do it
-    //
-    let big_asm_mode = false;
-
-    /*
-    // Determine if we use alt assembly routine for larger reads:
-    let min_big_asm_len = 8_000;
-    let big_asm_mode = trimmed_reads
-        .iter()
-        .any(|x| x.trimmed_read_len() > min_big_asm_len);
-    */
-
-    if big_asm_mode {
-        banded_pairwise_assembler::assemble_and_cluster_reads(
-            refine_settings,
-            cluster_index,
-            max_candidate_assemblies,
-            max_assembly_count,
-            trimmed_reads,
-            is_multi_region,
-            assembly_debug,
-        )
-    } else {
-        spoa_assembler::assemble_and_cluster_reads(
-            refine_settings,
-            cluster_index,
-            max_candidate_assemblies,
-            max_assembly_count,
-            trimmed_reads,
-            is_multi_region,
-            assembly_debug,
-        )
-    }
+    spoa_assembler::assemble_and_cluster_reads(
+        refine_settings,
+        cluster_index,
+        max_candidate_assemblies,
+        max_assembly_count,
+        trimmed_reads,
+        is_multi_region,
+        assembly_debug,
+    )
 }

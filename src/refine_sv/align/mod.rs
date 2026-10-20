@@ -10,7 +10,7 @@ use rust_vc_utils::cigar::{
 };
 use rust_vc_utils::indel_breakend_homology::get_indel_breakend_homology_info;
 use rust_vc_utils::int_range::{IntRange, get_overlap_range};
-use rust_vc_utils::{ChromList, GenomeRef, GenomeSegment, rev_comp_in_place};
+use rust_vc_utils::{ChromList, GenomeSegment, rev_comp_in_place};
 
 use self::segment_alignment::{
     AltHapLeftRightComponentAlignmentInfo, transform_alt_hap_alignment_into_left_right_components,
@@ -24,7 +24,7 @@ use crate::breakpoint::{
 };
 use crate::contig_output::{ContigAlignmentInfo, ContigAlignmentSegment};
 use crate::expected_ploidy::SVLocusExpectedCNInfo;
-use crate::genome_ref_utils::get_ref_segment_seq;
+use crate::genome_ref_utils::{GenomeRef, get_ref_segment_seq};
 use crate::log_utils::debug_msg;
 use crate::refine_sv::AnnotatedOverlappingHaplotype;
 use crate::simple_alignment::{SimpleAlignment, clip_alignment_ref_edges};
@@ -54,7 +54,7 @@ fn get_chrom_info_from_target_segment(
     let (actual_left_flank_size, actual_right_flank_size) =
         ref_segment.asymmetric_expand_by(chrom_list, left_ref_flank_size, right_ref_flank_size);
 
-    let ref_seq = get_ref_segment_seq(chrom_list, reference, &ref_segment).to_vec();
+    let ref_seq = get_ref_segment_seq(reference, &ref_segment);
     (
         ref_segment,
         ref_seq,
@@ -327,11 +327,8 @@ fn get_single_region_refined_sv_candidates(
                         .push((get_indel_refined_sv_candidate(*len, 0), cigar_segment_index));
                 }
             }
-            Ins(len) => {
-                if *len >= refine_settings.min_indel_size && in_hiqual_contig_region {
-                    tmp_sv_buffer
-                        .push((get_indel_refined_sv_candidate(0, *len), cigar_segment_index));
-                }
+            Ins(len) if *len >= refine_settings.min_indel_size && in_hiqual_contig_region => {
+                tmp_sv_buffer.push((get_indel_refined_sv_candidate(0, *len), cigar_segment_index));
             }
             _ => {}
         };
@@ -1079,7 +1076,7 @@ fn extract_reference_segment_info(
 
     if debug {
         eprintln!("Finished extract_reference_segment_info");
-        eprintln!("extended_ref_segment: {:?}", &extended_ref_segment);
+        eprintln!("extended_ref_segment: {:?}", extended_ref_segment);
         eprintln!(
             "actual_left_flank_seq_size/actual_left_flank_range_size/left_ref_flank/left_seq_trim/left_range_trim: {actual_left_flank_seq_size}/{actual_left_flank_range_size}/{left_ref_flank_size}/{left_seq_trim}/{left_range_trim}"
         );
@@ -1101,7 +1098,7 @@ fn extract_reference_segment_info(
         extended_ref_segment_seq[left_seq_trim..(seq_len - right_seq_trim)].to_vec();
 
     if debug {
-        eprintln!("ref_segment: {:?}", &ref_segment);
+        eprintln!("ref_segment: {:?}", ref_segment);
     }
 
     (
@@ -1260,7 +1257,7 @@ fn get_two_region_alt_hap_info(
         eprintln!(
             "ref_segment1_seq_len {} ref_segment1 {:?} ref_segment1_size {} segment1_extension_size {}",
             ref_segment1_seq.len(),
-            &ref_segment1,
+            ref_segment1,
             ref_segment1.range.size(),
             segment1_neighbor_extension_size
         );

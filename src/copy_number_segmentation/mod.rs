@@ -2,6 +2,7 @@ mod copy_number_boundary_sync;
 
 use camino::Utf8Path;
 use log::{info, warn};
+use rayon::prelude::*;
 use rust_vc_utils::{ChromList, GenomeSegment, IntRange};
 use serde::{Deserialize, Serialize};
 use statrs::distribution::Discrete;
@@ -819,6 +820,7 @@ pub fn get_single_pass_sample_copy_number_segments(
     genome_gc_levels: &GenomeGCLevels,
     breakpoint_transition_factor: f64,
     seg_input: &[SampleCopyNumberSegmentationInput],
+    thread_count: usize,
 ) -> Vec<SampleCopyNumberSegments> {
     let cn_sample_count = seg_input.len();
     if cn_sample_count == 0 {
@@ -834,8 +836,7 @@ pub fn get_single_pass_sample_copy_number_segments(
     let mut cn_segments = (0..cn_sample_count).map(|_| Vec::new()).collect::<Vec<_>>();
 
     //Run a parse for each chromosome:
-    let chrom_count = genome_gc_levels.len();
-    for chrom_index in 0..chrom_count {
+    let get_chrom_cn_segments = |chrom_index: usize| {
         let mut chrom_cn_segments = Vec::new();
         for sample_seg_input in seg_input.iter() {
             let sample_chrom_cn_segments = viterbi_copy_number_parse(
@@ -860,7 +861,27 @@ pub fn get_single_pass_sample_copy_number_segments(
             depth_bin_size,
             &mut chrom_cn_segments,
         );
+        chrom_cn_segments
+    };
 
+    // Chromosomes are independent, so they're parsed in parallel and collected in order
+    let chrom_count = genome_gc_levels.len();
+    let all_chrom_cn_segments = if thread_count > 1 {
+        let worker_pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(thread_count)
+            .build()
+            .unwrap();
+        worker_pool.install(|| {
+            (0..chrom_count)
+                .into_par_iter()
+                .map(get_chrom_cn_segments)
+                .collect::<Vec<_>>()
+        })
+    } else {
+        (0..chrom_count).map(get_chrom_cn_segments).collect()
+    };
+
+    for chrom_cn_segments in all_chrom_cn_segments {
         for (sample_chrom_cn_segments, sample_cn_segments) in
             chrom_cn_segments.into_iter().zip(cn_segments.iter_mut())
         {
@@ -1094,6 +1115,7 @@ pub fn get_sample_copy_number_segments(
             &gc_bias_data.genome_gc_levels,
             breakpoint_transition_factor,
             &[sample_seg_input],
+            1,
         )
         .pop();
 

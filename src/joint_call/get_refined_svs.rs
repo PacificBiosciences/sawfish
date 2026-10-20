@@ -637,7 +637,7 @@ fn process_rsv_cluster_to_sv_group(
     let debug = false;
     if debug {
         eprintln!("max_haplotype_count {max_haplotype_count}");
-        eprintln!("contig_map {:?}", &first_arsv.contig_map);
+        eprintln!("contig_map {:?}", first_arsv.contig_map);
     }
 
     let sample_expected_cn_info = vec![expected_cn_info];

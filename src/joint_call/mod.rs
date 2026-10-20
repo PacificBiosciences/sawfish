@@ -1,4 +1,5 @@
 mod annotate_inversions;
+mod bam_prefetch;
 mod get_refined_svs;
 mod joint_call_all_samples;
 mod merge_cnv;
@@ -34,6 +35,9 @@ pub fn run_joint_call(
     //
     delete_run_stats(&settings.output_dir);
 
+    // Joint-call steps are short, so return freed memory to the OS sooner than the default
+    crate::os_utils::set_allocator_dirty_decay_ms(1000);
+
     let (shared_data, all_sample_data) =
         read_all_sample_data(shared_settings, settings, derived_settings);
 
@@ -42,6 +46,7 @@ pub fn run_joint_call(
         &shared_data.chrom_list,
         &shared_data,
         &all_sample_data,
+        shared_settings.thread_count,
     );
 
     let (merged_sv_groups, merge_stats) =
@@ -66,8 +71,13 @@ pub fn run_joint_call(
 
     annotate_inversions(&mut sv_groups);
 
-    let refined_cnvs =
-        merge_sv_with_depth_info(settings, &shared_data, &all_sample_data, &mut sv_groups);
+    let refined_cnvs = merge_sv_with_depth_info(
+        shared_settings.thread_count,
+        settings,
+        &shared_data,
+        &all_sample_data,
+        &mut sv_groups,
+    );
 
     let vcf_settings = VcfSettings::new(
         &shared_data.ref_filename,
@@ -85,7 +95,7 @@ pub fn run_joint_call(
     let vcf_stats = write_indexed_sv_vcf_file(
         shared_settings,
         &vcf_settings,
-        &shared_data.genome_ref,
+        &shared_data.reference,
         &shared_data.chrom_list,
         &sample_names,
         &sv_groups,

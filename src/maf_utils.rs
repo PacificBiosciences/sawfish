@@ -262,7 +262,7 @@ pub fn write_maf_track_files(
                 None => {
                     warn!(
                         "Unexpected MAF data format: multiple samples found in discover step MAF input, but without a sample name match. Reporting MAF track for the first sample: '{}'",
-                        &maf_data.samples[0].sample_name
+                        maf_data.samples[0].sample_name
                     );
                     &maf_data.samples[0]
                 }

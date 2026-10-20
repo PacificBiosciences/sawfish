@@ -1,0 +1,13 @@
+[package]
+name = "wfa2-sys"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Haibao Tang", "Santiago Marco-Sola"]
+build = "build.rs"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+bindgen = "0.69"
+cmake = "0.1.50"

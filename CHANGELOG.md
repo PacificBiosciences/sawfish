@@ -1,5 +1,28 @@
 # Change Log
 
+## v2.3.0 - 2026-10-21
+
+### Added
+- Add check that input BAM/CRAM files have expected EOF marker
+
+### Changed
+- Reduce `discover` and `joint-call` run time and memory with (usually) identical output
+  - Mean per sample, 16 threads: `discover` 16.5 min and 3.96 GiB peak RSS (48.9 min and 72.0 GiB before); single-sample
+    `joint-call` 2.2 min and 1.36 GiB (5.6 min and 4.35 GiB before)
+  - Contig alignment uses an exact, lower-memory WFA2 implementation, with a soft 6 GiB memory limit shared by all
+    alignments (peak memory can exceed it)
+  - Assembly uses exact pruned spoa alignment with vectorized kernels and reduced score storage
+  - Breakpoint clusters are refined during the alignment scan when the run has at least 3 threads and no target regions
+  - Reference fasta is read on demand from a `samtools faidx` index, bgzip fasta allowed
+  - `joint-call` scores alleles with exact DP for poorly aligning flanks, caches scores and reads, and prefetches BAM ranges from disk
+  - Haplotype merging uses a score-only banded alignment
+  - BAM/BCF compression uses libdeflate; jemalloc is the Linux allocator
+  - Note that while output is effectively identical in all tests run so far, it may differ slightly in as-yet unseen cases
+- Raise the open file limit on macOS to system per-process cap
+
+### Fixed
+- Report a clear error when an input path is a remote URL (such as `https://` or `s3://`), which sawfish does not read
+
 ## v2.2.1 - 2025-11-03
 
 ### Changed

@@ -126,15 +126,6 @@
     "description": "Automatically generates Rust FFI bindings to C and C++ libraries."
   },
   {
-    "name": "bindgen",
-    "version": "0.72.1",
-    "authors": "Jyun-Yan You <jyyou.tw@gmail.com>|Emilio Cobos Álvarez <emilio@crisal.io>|Nick Fitzgerald <fitzgen@gmail.com>|The Servo project developers",
-    "repository": "https://github.com/rust-lang/rust-bindgen",
-    "license": "BSD-3-Clause",
-    "license_file": null,
-    "description": "Automatically generates Rust FFI bindings to C and C++ libraries."
-  },
-  {
     "name": "bio",
     "version": "2.3.0",
     "authors": "Johannes Köster <johannes.koester@tu-dortmund.de>",
@@ -837,6 +828,15 @@
     "description": "Format time and duration in chrono, std::time and time as HH:MM:SS and HH:MM:SS.xxx"
   },
   {
+    "name": "home",
+    "version": "0.5.12",
+    "authors": "Brian Anderson <andersrb@gmail.com>",
+    "repository": "https://github.com/rust-lang/cargo",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Shared definitions of home directories."
+  },
+  {
     "name": "hts-sys",
     "version": "2.2.0",
     "authors": "Christopher Schröder <christopher.schroeder@tu-dortmund.de>|Johannes Köster <johannes.koester@tu-dortmund.de>",
@@ -1000,15 +1000,6 @@
   },
   {
     "name": "itertools",
-    "version": "0.13.0",
-    "authors": "bluss",
-    "repository": "https://github.com/rust-itertools/itertools",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "Extra iterator adaptors, iterator methods, free functions, and macros."
-  },
-  {
-    "name": "itertools",
     "version": "0.14.0",
     "authors": "bluss",
     "repository": "https://github.com/rust-itertools/itertools",
@@ -1080,6 +1071,15 @@
     "description": "Raw FFI bindings to platform libraries like libc."
   },
   {
+    "name": "libdeflate-sys",
+    "version": "1.26.1",
+    "authors": "Adam Kewley <contact@adamkewley.com>",
+    "repository": "https://github.com/libdeflater/libdeflater",
+    "license": "Apache-2.0",
+    "license_file": null,
+    "description": "Bindings to libdeflate for DEFLATE (de)compression exposed as non-streaming buffer operations. Contains bindings for raw deflate, zlib, and gzip data."
+  },
+  {
     "name": "libloading",
     "version": "0.8.8",
     "authors": "Simonas Kazlauskas <libloading@kazlauskas.me>",
@@ -1123,6 +1123,15 @@
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "Link libstdc++ or libc++ automatically or manually"
+  },
+  {
+    "name": "linux-raw-sys",
+    "version": "0.4.15",
+    "authors": "Dan Gohman <dev@sunfishcode.online>",
+    "repository": "https://github.com/sunfishcode/linux-raw-sys",
+    "license": "Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT",
+    "license_file": null,
+    "description": "Generated bindings for Linux's userspace API"
   },
   {
     "name": "linux-raw-sys",
@@ -1640,9 +1649,9 @@
   {
     "name": "rust-wfa2",
     "version": "0.1.0",
-    "authors": null,
+    "authors": "Haibao Tang",
     "repository": null,
-    "license": null,
+    "license": "MIT",
     "license_file": null,
     "description": null
   },
@@ -1654,15 +1663,6 @@
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "speed, non-cryptographic hash used in rustc"
-  },
-  {
-    "name": "rustc-hash",
-    "version": "2.1.1",
-    "authors": "The Rust Project Developers",
-    "repository": "https://github.com/rust-lang/rustc-hash",
-    "license": "Apache-2.0 OR MIT",
-    "license_file": null,
-    "description": "A speedy, non-cryptographic hashing algorithm used by rustc"
   },
   {
     "name": "rustc_version",
@@ -1681,6 +1681,15 @@
     "license": "Apache-2.0 OR MIT",
     "license_file": null,
     "description": "A library for querying the version of a installed rustc compiler"
+  },
+  {
+    "name": "rustix",
+    "version": "0.38.44",
+    "authors": "Dan Gohman <dev@sunfishcode.online>|Jakub Konka <kubkon@jakubkonka.com>",
+    "repository": "https://github.com/bytecodealliance/rustix",
+    "license": "Apache-2.0 OR Apache-2.0 WITH LLVM-exception OR MIT",
+    "license_file": null,
+    "description": "Safe Rust bindings to POSIX/Unix/Linux/Winsock-like syscalls"
   },
   {
     "name": "rustix",
@@ -1729,7 +1738,7 @@
   },
   {
     "name": "sawfish",
-    "version": "2.2.1",
+    "version": "2.3.0",
     "authors": "Chris Saunders <csaunders@pacificbiosciences.com>",
     "repository": null,
     "license": null,
@@ -2088,6 +2097,24 @@
     "description": "Adds digit separators to numbers, configurably."
   },
   {
+    "name": "tikv-jemalloc-sys",
+    "version": "0.6.1+5.3.0-1-ge13ca993e8ccb9ba9847cc330696e02839f328f7",
+    "authors": "Alex Crichton <alex@alexcrichton.com>|Gonzalo Brito Gadeschi <gonzalobg88@gmail.com>|The TiKV Project Developers",
+    "repository": "https://github.com/tikv/jemallocator",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Rust FFI bindings to jemalloc"
+  },
+  {
+    "name": "tikv-jemallocator",
+    "version": "0.6.1",
+    "authors": "Alex Crichton <alex@alexcrichton.com>|Gonzalo Brito Gadeschi <gonzalobg88@gmail.com>|Simon Sapin <simon.sapin@exyr.org>|Steven Fackler <sfackler@gmail.com>|The TiKV Project Developers",
+    "repository": "https://github.com/tikv/jemallocator",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "A Rust allocator backed by jemalloc"
+  },
+  {
     "name": "time",
     "version": "0.2.27",
     "authors": "Jacob Pratt <the.z.cuber@gmail.com>",
@@ -2387,11 +2414,20 @@
   {
     "name": "wfa2-sys",
     "version": "0.1.0",
-    "authors": null,
+    "authors": "Haibao Tang|Santiago Marco-Sola",
     "repository": null,
-    "license": null,
+    "license": "MIT",
     "license_file": null,
     "description": null
+  },
+  {
+    "name": "which",
+    "version": "4.4.2",
+    "authors": "Harry Fei <tiziyuanfang@gmail.com>",
+    "repository": "https://github.com/harryfei/which-rs.git",
+    "license": "MIT",
+    "license_file": null,
+    "description": "A Rust equivalent of Unix command \"which\". Locate installed executable in cross platforms."
   },
   {
     "name": "wide",
@@ -2503,6 +2539,15 @@
   },
   {
     "name": "windows-sys",
+    "version": "0.59.0",
+    "authors": "Microsoft",
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Rust for Windows"
+  },
+  {
+    "name": "windows-sys",
     "version": "0.60.2",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
@@ -2521,6 +2566,15 @@
   },
   {
     "name": "windows-targets",
+    "version": "0.52.6",
+    "authors": "Microsoft",
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Import libs for Windows"
+  },
+  {
+    "name": "windows-targets",
     "version": "0.53.3",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
@@ -2530,7 +2584,25 @@
   },
   {
     "name": "windows_aarch64_gnullvm",
+    "version": "0.52.6",
+    "authors": "Microsoft",
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Import lib for Windows"
+  },
+  {
+    "name": "windows_aarch64_gnullvm",
     "version": "0.53.0",
+    "authors": "Microsoft",
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Import lib for Windows"
+  },
+  {
+    "name": "windows_aarch64_msvc",
+    "version": "0.52.6",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2548,7 +2620,25 @@
   },
   {
     "name": "windows_i686_gnu",
+    "version": "0.52.6",
+    "authors": "Microsoft",
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Import lib for Windows"
+  },
+  {
+    "name": "windows_i686_gnu",
     "version": "0.53.0",
+    "authors": "Microsoft",
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Import lib for Windows"
+  },
+  {
+    "name": "windows_i686_gnullvm",
+    "version": "0.52.6",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2566,7 +2656,25 @@
   },
   {
     "name": "windows_i686_msvc",
+    "version": "0.52.6",
+    "authors": "Microsoft",
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Import lib for Windows"
+  },
+  {
+    "name": "windows_i686_msvc",
     "version": "0.53.0",
+    "authors": "Microsoft",
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Import lib for Windows"
+  },
+  {
+    "name": "windows_x86_64_gnu",
+    "version": "0.52.6",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",
@@ -2584,7 +2692,25 @@
   },
   {
     "name": "windows_x86_64_gnullvm",
+    "version": "0.52.6",
+    "authors": "Microsoft",
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Import lib for Windows"
+  },
+  {
+    "name": "windows_x86_64_gnullvm",
     "version": "0.53.0",
+    "authors": "Microsoft",
+    "repository": "https://github.com/microsoft/windows-rs",
+    "license": "Apache-2.0 OR MIT",
+    "license_file": null,
+    "description": "Import lib for Windows"
+  },
+  {
+    "name": "windows_x86_64_msvc",
+    "version": "0.52.6",
     "authors": "Microsoft",
     "repository": "https://github.com/microsoft/windows-rs",
     "license": "Apache-2.0 OR MIT",

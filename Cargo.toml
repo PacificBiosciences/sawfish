@@ -1,6 +1,6 @@
 [package]
 name = "sawfish"
-version = "2.2.1"
+version = "2.3.0"
 authors = ["Chris Saunders <csaunders@pacificbiosciences.com>"]
 description = "Structural variant and copy number analysis for mapped PacBio HiFi reads"
 edition = "2024"
@@ -9,6 +9,8 @@ rust-version = "1.89"
 
 [profile.release]
 panic = "abort"
+lto = "fat"
+codegen-units = 1
 
 [profile.release-with-debug]
 inherits = "release"
@@ -19,7 +21,7 @@ vergen-gitcl = "1"
 
 [dependencies]
 approx = "0.5"
-bio = "2"
+bio = "=2.3.0"
 camino = { version = "1", features = ["serde1"] }
 chrono = "0.4"
 clap = { version = "4", features = ["derive", "suggestions"] }
@@ -37,17 +39,22 @@ num = "0.4"
 num_cpus = "1"
 rayon = "1"
 regex = "1"
-rlimit = "0"
-rust-htslib = { version = "0.50", default-features = false, features = ["bzip2", "lzma"] }
+rlimit = "0.10"
+rust-htslib = { version = "0.50", default-features = false, features = ["bzip2", "libdeflate", "lzma"] }
 rust-vc-utils = { path="lib/rust-vc-utils" }
-rust-wfa2 = { git = "https://github.com/ctsa/rust-wfa2.git" }
+rust-wfa2 = { path = "lib/rust-wfa2" }
 rmp-serde = "1"
 scanf = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 simple-error = "0.3"
-spoa = { tag = "sawfish_v1", git = "https://github.com/ctsa/spoa-rs.git" }
+spoa = { path = "lib/spoa-rs" }
 statrs = "0.18"
 strum = { version = "0.27", features = ["derive"] }
-thousands = "0.2"
 unwrap = "1"
+
+# On Linux, jemalloc replaces malloc for all code including the C/C++ libraries. It returns freed
+# memory to the OS more readily than glibc malloc, reducing peak memory without slowing the run.
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+tikv-jemallocator = { version = "0.6", features = ["unprefixed_malloc_on_supported_platforms"] }
+tikv-jemalloc-sys = "0.6"

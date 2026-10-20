@@ -1,17 +1,17 @@
 use std::sync::mpsc::channel;
 
-use log::{error, info};
+use log::info;
 use rust_htslib::bam::{self, Read};
 use rust_vc_utils::{
-    ChromList, GenomeRef, MeanTracker, ProgressReporter, RegionMap, filter_out_alignment_record,
+    ChromList, MeanTracker, ProgressReporter, RegionMap, filter_out_alignment_record,
     get_region_segments,
 };
 use unwrap::unwrap;
 
-use crate::bam_utils;
 use crate::cli;
 use crate::cluster_breakpoints::{BreakBuilder, BreakObservations};
 use crate::depth_bins::{AllChromDepthBinInfo, ChromDepthBins, DepthBinsBuilder, GenomeDepthBins};
+use crate::genome_ref_utils::{self, GenomeRef};
 use crate::genome_regions::GenomeRegions;
 use crate::worker_thread_data::BamReaderWorkerThreadDataSet;
 
@@ -23,7 +23,7 @@ fn scan_chromosome_segment(
     chrom_index: usize,
     begin: i64,
     end: i64,
-    chrom_sequence: &[u8],
+    reference: &GenomeRef,
     is_targeted_scan: bool,
     progress_reporter: &ProgressReporter,
 ) -> (BreakObservations, DepthBinsBuilder) {
@@ -50,11 +50,17 @@ fn scan_chromosome_segment(
             continue;
         }
 
-        if bam_utils::get_gap_compressed_identity(&record, chrom_sequence)
+        // The chromosome sequence is only loaded once it's needed, so that chromosomes without any
+        // alignments are never loaded
+        if genome_ref_utils::get_gap_compressed_identity(&record, reference, chrom_index)
             < scan_settings.min_gap_compressed_identity
         {
             continue;
         }
+
+        // Decode the CIGAR once for all of the record's consumers below. The cache survives into
+        // the next record read, so it has to be set again for every record that is used.
+        record.cache_cigar();
 
         break_builder.process_bam_record(&record);
 
@@ -111,71 +117,113 @@ fn get_chrom_worker_segments(
     }
 }
 
-/// Scan the given chromosome for SV evidence
+/// Scan several chromosomes at once, so that small chromosomes are scanned in parallel
 ///
-/// Delegate out segments of the chromosome to worker threads which scan each segment, then join
-/// all results into chromosome scale data structures.
-///
-/// Returns a 3-tuple of:
-/// 1. Breakpoint observations
-/// 2. Binned depth data
-/// 3. Regions exceeding max SV depth
+/// Returns the results of each chromosome, in the order of `chroms`
 ///
 #[allow(clippy::too_many_arguments)]
-fn scan_chromosome_segments(
+fn scan_chromosome_batch(
     worker_thread_dataset: BamReaderWorkerThreadDataSet,
     scan_settings: &ScanSettings,
     chrom_list: &ChromList,
-    chrom_index: usize,
-    chrom_size: u64,
-    chrom_sequence: &[u8],
-    chrom_target_regions: Option<&RegionMap>,
+    chroms: &[(usize, Option<&RegionMap>)],
+    reference: &GenomeRef,
     progress_reporter: &ProgressReporter,
-) -> (BreakObservations, AllChromDepthBinInfo, DepthBinsBuilder) {
+) -> Vec<(BreakObservations, AllChromDepthBinInfo, DepthBinsBuilder)> {
     let (tx, rx) = channel();
-
-    let is_targeted_scan = chrom_target_regions.is_some();
-    let chrom_segments =
-        get_chrom_worker_segments(chrom_size, chrom_target_regions, scan_settings.segment_size);
-
-    rayon::scope(move |scope| {
-        for (begin, end) in chrom_segments {
-            let worker_thread_dataset = worker_thread_dataset.clone();
-            let tx = tx.clone();
-
-            scope.spawn(move |_| {
-                let worker_id = rayon::current_thread_index().unwrap();
-
-                // Hardcode for single sample in discover mode:
-                let sample_index = 0;
-                let bam_reader =
-                    &mut worker_thread_dataset[worker_id].lock().unwrap().bam_readers[sample_index];
-
-                let result = scan_chromosome_segment(
-                    bam_reader,
-                    scan_settings,
-                    chrom_list,
-                    chrom_index,
-                    begin as i64,
-                    end as i64,
-                    chrom_sequence,
-                    is_targeted_scan,
-                    progress_reporter,
-                );
-                tx.send(result).unwrap();
-            });
+    rayon::scope(|scope| {
+        for (slot, &(chrom_index, chrom_target_regions)) in chroms.iter().enumerate() {
+            let chrom_size = chrom_list.data[chrom_index].length;
+            let is_targeted_scan = chrom_target_regions.is_some();
+            let segments = get_chrom_worker_segments(
+                chrom_size,
+                chrom_target_regions,
+                scan_settings.segment_size,
+            );
+            for (begin, end) in segments {
+                let worker_thread_dataset = worker_thread_dataset.clone();
+                let tx = tx.clone();
+                scope.spawn(move |_| {
+                    let worker_id = rayon::current_thread_index().unwrap();
+                    let sample_index = 0;
+                    let bam_reader =
+                        &mut worker_thread_dataset[worker_id].lock().unwrap().bam_readers
+                            [sample_index];
+                    let result = scan_chromosome_segment(
+                        bam_reader,
+                        scan_settings,
+                        chrom_list,
+                        chrom_index,
+                        begin as i64,
+                        end as i64,
+                        reference,
+                        is_targeted_scan,
+                        progress_reporter,
+                    );
+                    tx.send((slot, result)).unwrap();
+                });
+            }
         }
     });
+    drop(tx);
 
-    let (mut chrom_break_observations, mut depth_builder) = rx.iter().next().unwrap();
-    for (mut other_break_observations, other_depth_builder) in rx {
-        chrom_break_observations.merge(&mut other_break_observations);
-        depth_builder.merge(&other_depth_builder);
+    let mut per_chrom: Vec<Option<(BreakObservations, DepthBinsBuilder)>> =
+        chroms.iter().map(|_| None).collect();
+    for (slot, (mut obs, depth)) in rx {
+        match per_chrom[slot].as_mut() {
+            None => per_chrom[slot] = Some((obs, depth)),
+            Some((chrom_obs, chrom_depth)) => {
+                chrom_obs.merge(&mut obs);
+                chrom_depth.merge(&depth);
+            }
+        }
     }
+    chroms
+        .iter()
+        .zip(per_chrom)
+        .map(|(&(chrom_index, _), x)| {
+            let (obs, depth_builder) =
+                x.unwrap_or_else(|| (BreakObservations::new(), DepthBinsBuilder::default()));
+            let chrom_size = chrom_list.data[chrom_index].length;
+            let depth_bins = depth_builder.get_depth_bins(scan_settings.depth_bin_size, chrom_size);
+            (obs, depth_bins, depth_builder)
+        })
+        .collect()
+}
 
-    let chrom_depth_bins = depth_builder.get_depth_bins(scan_settings.depth_bin_size, chrom_size);
+/// Index of the first of the small contigs (decoys, unplaced) which follow the primary chromosomes
+const FIRST_SMALL_CONTIG_INDEX: usize = 24;
 
-    (chrom_break_observations, chrom_depth_bins, depth_builder)
+type ScanBatch<'a> = Vec<(usize, Option<&'a RegionMap>)>;
+
+/// Group the chromosomes to scan into batches, which are scanned one after another
+///
+/// The small contigs after the primary chromosomes are scanned first, all at once, so that
+/// refinement of the clusters which involve them can start early, and the scan of single segment
+/// contigs doesn't leave threads idle. Primary chromosomes follow one at a time, in order.
+///
+/// `target_of` returns None for a chromosome that isn't scanned, or its target regions, which are
+/// None for a whole-chromosome scan.
+///
+fn get_scan_batches<'a>(
+    chrom_count: usize,
+    target_of: impl Fn(usize) -> Option<Option<&'a RegionMap>>,
+) -> Vec<ScanBatch<'a>> {
+    let mut batches: Vec<ScanBatch> = Vec::new();
+    if chrom_count > FIRST_SMALL_CONTIG_INDEX {
+        let small = (FIRST_SMALL_CONTIG_INDEX..chrom_count)
+            .filter_map(|i| target_of(i).map(|t| (i, t)))
+            .collect::<Vec<_>>();
+        if !small.is_empty() {
+            batches.push(small);
+        }
+    }
+    for chrom_index in 0..chrom_count.min(FIRST_SMALL_CONTIG_INDEX) {
+        if let Some(t) = target_of(chrom_index) {
+            batches.push(vec![(chrom_index, t)]);
+        }
+    }
+    batches
 }
 
 pub struct SampleAlignmentScanResult {
@@ -217,6 +265,8 @@ pub fn scan_sample_bam_for_sv_evidence(
     chrom_list: &ChromList,
     reference: &GenomeRef,
     target_regions: Option<&GenomeRegions>,
+    scan_threads: usize,
+    on_chrom_complete: &dyn Fn(usize, &BreakObservations),
 ) -> SampleAlignmentScanResult {
     let scan_settings = &ScanSettings {
         depth_bin_size: settings.depth_bin_size,
@@ -227,12 +277,12 @@ pub fn scan_sample_bam_for_sv_evidence(
         segment_size: 20_000_000,
     };
 
-    assert!(shared_settings.thread_count > 0);
+    assert!(scan_threads > 0 && scan_threads <= shared_settings.thread_count);
 
     info!("Processing alignment file '{}'", settings.bam_filename);
 
     let worker_pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(shared_settings.thread_count)
+        .num_threads(scan_threads)
         .build()
         .unwrap();
 
@@ -242,61 +292,57 @@ pub fn scan_sample_bam_for_sv_evidence(
     let progress_reporter =
         ProgressReporter::new(genome_kb, "Processed alignments on", "ref genome kb", false);
 
-    let (tx, rx) = channel();
-
-    let progress_reporter = &progress_reporter;
-    let chrom_list_ref = &chrom_list;
-    worker_pool.scope(move |scope| {
-        for chrom_index in 0..chrom_count {
-            let chrom_info = &chrom_list_ref.data[chrom_index];
-            let chrom_size = chrom_info.length;
-            let chrom_label = &chrom_info.label;
-            let chrom_target_regions = match target_regions {
-                Some(x) => x.chroms.get(chrom_label),
-                None => None,
-            };
-
-            if target_regions.is_some() && chrom_target_regions.is_none() {
-                continue;
-            }
-
-            let worker_thread_dataset = worker_thread_dataset.clone();
-            let chrom_sequence: &[u8] = match reference.chroms.get(chrom_label) {
-                Some(x) => x,
-                None => {
-                    error!(
-                        "Chromosome \"{chrom_label}\" detected in BAM file, but not in reference file"
-                    );
-                    std::process::exit(exitcode::DATAERR);
-                }
-            };
-
-            let tx = tx.clone();
-            scope.spawn(move |_| {
-                let results = scan_chromosome_segments(
-                    worker_thread_dataset,
-                    scan_settings,
-                    chrom_list_ref,
-                    chrom_index,
-                    chrom_size,
-                    chrom_sequence,
-                    chrom_target_regions,
-                    progress_reporter,
-                );
-                tx.send((chrom_index, results)).unwrap();
-            });
-        }
-    });
-
+    // Chromosomes are scanned one at a time, in order, with the segments of each chromosome
+    // scanned in parallel, so that the evidence from each chromosome is complete as early as
+    // possible
+    //
     let mut genome_break_observations = BreakObservations::new();
     let mut depth_bins = vec![ChromDepthBins::new(); chrom_count];
-    let mut read_length = MeanTracker::default();
+    let mut chrom_read_lengths = vec![MeanTracker::default(); chrom_count];
     let mut genome_depth_bins_builder = vec![DepthBinsBuilder::default(); chrom_count];
-    for (chrom_index, (mut break_observations, chrom_depth_bins, chrom_depth_bins_builder)) in rx {
-        genome_break_observations.merge(&mut break_observations);
-        depth_bins[chrom_index] = chrom_depth_bins.depth_bins;
-        read_length.merge(&chrom_depth_bins.read_length);
-        genome_depth_bins_builder[chrom_index] = chrom_depth_bins_builder;
+
+    let target_of = |chrom_index: usize| -> Option<Option<&RegionMap>> {
+        let chrom_label = &chrom_list.data[chrom_index].label;
+        let chrom_target_regions = match target_regions {
+            Some(x) => x.chroms.get(chrom_label),
+            None => None,
+        };
+        if target_regions.is_some() && chrom_target_regions.is_none() {
+            None
+        } else {
+            Some(chrom_target_regions)
+        }
+    };
+    let batches = get_scan_batches(chrom_count, target_of);
+
+    for batch in batches {
+        let results = worker_pool.install(|| {
+            scan_chromosome_batch(
+                worker_thread_dataset.clone(),
+                scan_settings,
+                chrom_list,
+                &batch,
+                reference,
+                &progress_reporter,
+            )
+        });
+        for (
+            &(chrom_index, _),
+            (mut break_observations, chrom_depth_bins, chrom_depth_bins_builder),
+        ) in batch.iter().zip(results)
+        {
+            on_chrom_complete(chrom_index, &break_observations);
+            genome_break_observations.merge(&mut break_observations);
+            depth_bins[chrom_index] = chrom_depth_bins.depth_bins;
+            chrom_read_lengths[chrom_index] = chrom_depth_bins.read_length;
+            genome_depth_bins_builder[chrom_index] = chrom_depth_bins_builder;
+        }
+    }
+
+    // Merged in chromosome order, so that the result doesn't depend on the scan order
+    let mut read_length = MeanTracker::default();
+    for x in chrom_read_lengths.iter() {
+        read_length.merge(x);
     }
 
     let genome_depth_bins = GenomeDepthBins {
@@ -313,5 +359,62 @@ pub fn scan_sample_bam_for_sv_evidence(
         genome_break_observations,
         genome_depth_bins,
         genome_depth_bins_builder,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn chroms(batches: &[ScanBatch]) -> Vec<Vec<usize>> {
+        batches
+            .iter()
+            .map(|b| b.iter().map(|x| x.0).collect())
+            .collect()
+    }
+
+    #[test]
+    fn test_get_scan_batches() {
+        let all = |_: usize| Some(None);
+
+        // Small contigs form the first batch, then primary chromosomes one at a time in order
+        let batches = get_scan_batches(28, all);
+        let mut expected = vec![vec![24, 25, 26, 27]];
+        expected.extend((0..24).map(|i| vec![i]));
+        assert_eq!(chroms(&batches), expected);
+
+        // No small contigs
+        assert_eq!(
+            chroms(&get_scan_batches(FIRST_SMALL_CONTIG_INDEX, all)),
+            (0..24).map(|i| vec![i]).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            chroms(&get_scan_batches(3, all)),
+            vec![vec![0], vec![1], vec![2]]
+        );
+        assert!(get_scan_batches(0, all).is_empty());
+
+        // One small contig
+        assert_eq!(chroms(&get_scan_batches(25, all))[0], vec![24]);
+
+        // Chromosomes without target regions are skipped, and a batch left empty is dropped
+        let only_some = |i: usize| (i == 2 || i == 26).then_some(None);
+        assert_eq!(
+            chroms(&get_scan_batches(28, only_some)),
+            vec![vec![26], vec![2]]
+        );
+        let only_primary = |i: usize| [0, 10, 20].contains(&i).then_some(None);
+        assert_eq!(
+            chroms(&get_scan_batches(28, only_primary)),
+            vec![vec![0], vec![10], vec![20]]
+        );
+
+        // Every chromosome is in exactly one batch
+        let mut all_chroms = chroms(&get_scan_batches(40, all))
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        all_chroms.sort();
+        assert_eq!(all_chroms, (0..40).collect::<Vec<_>>());
     }
 }

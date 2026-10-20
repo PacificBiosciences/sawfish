@@ -9,7 +9,9 @@ use rust_vc_utils::cigar::{
 use rust_vc_utils::{ChromList, GenomeSegment, IntRange};
 use rust_vc_utils::{SeqOrderSplitReadSegment, get_seq_order_read_split_segments};
 
-use crate::bam_utils::{LargeInsertionSoftClipState, test_read_for_large_insertion_soft_clip};
+use crate::bam_utils::{
+    LargeInsertionSoftClipState, get_record_cigar, test_read_for_large_insertion_soft_clip,
+};
 use crate::breakpoint::*;
 use crate::genome_segment_utils::get_segment_distance;
 
@@ -41,6 +43,7 @@ impl CandidateIndel {
     }
 }
 
+#[derive(Clone)]
 pub struct BreakpointObservationMap {
     pub data: BTreeMap<GenomeSegment, Vec<BreakpointObservation>>,
 }
@@ -94,6 +97,7 @@ impl BreakpointObservationMap {
 ///
 /// Raw breakend evidence prior to clustering and refinement. Exported by BreakBuider.
 ///
+#[derive(Clone)]
 pub struct BreakObservations {
     /// The minimum observations to create a breakpoint cluster
     pub min_cluster_evidence_count: usize,
@@ -287,7 +291,7 @@ impl<'a> BreakBuilder<'a> {
 
         let mut cand_indel = CandidateIndel::new();
 
-        for c in record.cigar().iter() {
+        for c in get_record_cigar(record).iter() {
             match c {
                 Ins(len) => {
                     if cand_indel.is_empty() {
@@ -496,13 +500,13 @@ impl<'a> BreakBuilder<'a> {
             + if large_insertion_soft_clip_state == Left {
                 0
             } else {
-                get_cigar_ref_offset(&record.cigar())
+                get_cigar_ref_offset(&get_record_cigar(record))
             };
 
         // Get the sequenced strand read position of the soft-clip breakpoint:
         let breakend1_seq_order_read_pos = {
             let (left_sclip_len, right_sclip_start, _read_size) =
-                get_read_clip_positions(&record.cigar(), true);
+                get_read_clip_positions(&get_record_cigar(record), true);
             let read_pos = if large_insertion_soft_clip_state == Left {
                 left_sclip_len
             } else {

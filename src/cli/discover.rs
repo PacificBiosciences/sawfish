@@ -1,7 +1,7 @@
 use camino::{Utf8Path, Utf8PathBuf};
 use clap::Args;
 use const_format::concatcp;
-use rust_vc_utils::ChromList;
+use rust_vc_utils::{ChromList, assert_bam_eof};
 use serde::{Deserialize, Serialize};
 use simple_error::{SimpleResult, bail};
 use unwrap::unwrap;
@@ -260,6 +260,7 @@ enum SettingValidationError {
     NotFound,
     UnMapped,
     NoChromMatch,
+    InvalidRegex,
 }
 
 fn validate_discover_settings_data_impl(
@@ -281,6 +282,10 @@ fn validate_discover_settings_data_impl(
                 return Err(SettingValidationError::NotFound);
             }
         };
+
+        // Check that input bam includes a valid EOF.
+        assert_bam_eof(&bam_reader);
+
         ChromList::from_bam_header(bam_reader.header())
     };
 
@@ -288,13 +293,22 @@ fn validate_discover_settings_data_impl(
     if chrom_list.data.is_empty() {
         error!(
             "Input alignment file is not mapped: '{}'",
-            &settings.bam_filename
+            settings.bam_filename
         );
         return Err(SettingValidationError::UnMapped);
     }
 
     // Check chromosome regex against alignment file chromosomes to make sure at least one matches:
-    let chrom_include_regex = Regex::new(&settings.coverage_est_regex).unwrap();
+    let chrom_include_regex = match Regex::new(&settings.coverage_est_regex) {
+        Ok(x) => x,
+        Err(e) => {
+            error!(
+                "Invalid regex for --cov-regex '{}': {e}",
+                settings.coverage_est_regex
+            );
+            return Err(SettingValidationError::InvalidRegex);
+        }
+    };
     let is_any_match = chrom_list
         .data
         .iter()
@@ -329,7 +343,9 @@ fn validate_discover_settings_data_impl(
 pub fn validate_discover_settings_data(settings: &DiscoverSettings) {
     if let Err(err) = validate_discover_settings_data_impl(settings) {
         match err {
-            SettingValidationError::NotFound => std::process::exit(exitcode::USAGE),
+            SettingValidationError::NotFound | SettingValidationError::InvalidRegex => {
+                std::process::exit(exitcode::USAGE)
+            }
             _ => std::process::exit(exitcode::DATAERR),
         }
     }
@@ -375,6 +391,32 @@ mod tests {
         DiscoverSettings::default()
     }
 
+    /// Joint-call has to read the settings of discover directories written by sawfish 2.2.1
+    #[test]
+    fn test_read_discover_settings_from_2_2_1() {
+        let json = include_str!("../../test_data/discover.settings.2.2.1.json");
+
+        let dir = std::env::temp_dir().join(format!("sawfish_settings_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(SETTINGS_FILENAME), json).unwrap();
+        let settings = read_discover_settings(Utf8Path::from_path(&dir).unwrap());
+        std::fs::remove_dir_all(&dir).unwrap();
+
+        assert_eq!(settings.min_indel_size, 35);
+        assert_eq!(settings.bam_filename, "sample.bam");
+        assert!(!settings.disable_cnv);
+    }
+
+    /// Settings written by this version are read back unchanged
+    #[test]
+    fn test_discover_settings_round_trip() {
+        let mut settings = get_default_settings();
+        settings.min_indel_size = 40;
+        let json = serde_json::to_string(&settings).unwrap();
+        let read = serde_json::from_str::<DiscoverSettings>(&json).unwrap();
+        assert_eq!(read.min_indel_size, 40);
+    }
+
     #[test]
     fn test_not_there() {
         let mut test_settings = get_default_settings();
@@ -397,6 +439,15 @@ mod tests {
         test_settings.bam_filename = "./test_data/minimal.bam".to_string();
         let rc = validate_discover_settings_data_impl(&test_settings);
         assert_eq!(rc, Err(SettingValidationError::UnMapped))
+    }
+
+    #[test]
+    fn test_invalid_cov_regex() {
+        let mut test_settings = get_default_settings();
+        test_settings.bam_filename = "./test_data/header_only.bam".to_string();
+        test_settings.coverage_est_regex = "(unclosed".to_string();
+        let rc = validate_discover_settings_data_impl(&test_settings);
+        assert_eq!(rc, Err(SettingValidationError::InvalidRegex))
     }
 
     #[test]

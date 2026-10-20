@@ -4,11 +4,14 @@ use simple_error::{SimpleResult, bail};
 #[derive(Args)]
 pub struct SharedSettings {
     /// Number of threads to use. Defaults to all logical cpus detected.
+    ///
+    /// In discover, with 3 or more threads (and no target regions) about 30% of the threads scan the alignment file
+    /// while the rest refine breakpoint clusters during the scan. Fewer threads scan first and refine afterwards.
     #[arg(long = "threads", global = true, value_name = "THREAD_COUNT")]
     thread_count_option: Option<usize>,
 
     /// This value will be filled in by thread_count_option
-    #[arg(hide = true, default_value_t = 0)]
+    #[arg(skip)]
     pub thread_count: usize,
 
     /// Overwrite an existing output directory
