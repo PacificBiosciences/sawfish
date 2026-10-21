@@ -324,6 +324,11 @@ Such regions can be marked as excluded for the purpose of CNV calling by providi
 the discover step argument `--cnv-excluded-regions`. The way that excluded regions impact CNV calling is summarized in
 the section further below, but note that these regions do not change the behavior of breakpoint-based SV calling.
 
+The optional discover step filters `--omit-targeted-calling-regions` and `--filter-mixed-mapq-regions` exclude regions
+from both SV and CNV calling, in addition to any `--cnv-excluded-regions` file. For `--omit-targeted-calling-regions`,
+TRGT tandem repeat regions are only excluded from CNV calling for depth bins they cover at least half of.
+`--exclude-bad-reference-regions` and `--enable-max-depth-filter` apply to SV calling only.
+
 Pre-computed CNV excluded regions are provided in the sawfish [cnv_excluded_regions](../data/cnv_excluded_regions/)
 directory for some common human reference genomes. The recommended exclusion track for GRCh38 is
 `annotation_and_common_cnv.hg38.bed.gz`. This is the only reference genome for which a combined annotation and common CNV based
@@ -733,22 +738,30 @@ about the call and may be reformatted in future releases.
 
 In general, runtime response to thread count is expected to be nearly linear for both sawfish discover and joint-call steps.
 
-For a typical ~30x HiFi sample analyzed on 16 threads, the `discover` step should complete in about 15-30 minutes and
-the `joint-call` step should complete in about 2-3 minutes (measured on 40-core Xeon nodes reading from network storage).
-These times include the overlap of alignment scanning with SV refinement, which is only used when at least 3 threads
-are available. Runtime also depends on the sample: the slowest cases among 265 HPRC samples took about 30 minutes in
-`discover` at 16 threads.
+For a typical ~30x HiFi sample analyzed on 16 threads, the `discover` step should complete in about 10-15 minutes and
+the `joint-call` step for a single sample should complete in about 1-2 minutes (measured on 40-core Xeon nodes reading
+from network storage). These times include the overlap of alignment scanning with SV refinement, which is only used when
+at least 3 threads are available. Runtime also depends on the sample: across 259 HPRC samples `discover` at 16 threads
+had a median wall time of 12.7 minutes (95% finished within 21.6 minutes, slowest 27.6 minutes), and single-sample
+`joint-call` had a median of 1.0 minutes (95% within 3.1 minutes, slowest 6.9 minutes).
+
+Typical `discover` resource use:
+
+|          | samples | sample type | threads | wall-time (median / max) | peak RSS (median / max) |
+|----------|:-------:|:-----------:|:-------:|:------------------------:|:-----------------------:|
+| HPRC     |   259   |  ~30x human |    16   |     ~13min / ~28min      |    ~4.0 / ~7.0 GiB      |
+| Platinum |    22   | 30-60x human|    32   |      ~6min / ~14min      |    ~5.5 / ~9.5 GiB      |
 
 The current joint calling scheme has been designed with pedigree-scale analysis in mind, so runtimes for typical small
 pedigrees should be practical. However the runtime is super-linear with sample count, so the method is not practical for
 larger cohorts at this time. The following examples should give an idea of what runtimes to expect for different
 joint-calling scenarios:
 
-|                | samples | sample type | threads | wall-time | core-hours |
-|----------------|:-------:|:-----------:|:-------:|:---------:|:----------:|
-| HG002          |    1    |  ~30x human |    16   |   ~5min   |   ~1.3     |
-| Plat Ped g2+g3 |   10    | >=30x human |    64   |   ~29min  |   ~31      |
-| HPRC Year1     |   47    |  ~30x human |    64   |   ~3hr    |   ~192     |
+|                                    | samples | sample type  | threads | wall-time | peak RSS  |
+|------------------------------------|:-------:|:------------:|:-------:|:---------:|:---------:|
+| HPRC single sample (median of 256) |    1    |  ~30x human  |    16   |  ~1min    | ~1.5 GiB  |
+| HPRC NA19240-trio                  |    3    |  ~30x human  |    16   |  ~4min    | ~3.0 GiB  |
+| Platinum CEPH-1463                 |   22    | 30-60x human |    32   |  ~32min   | ~34.5 GiB |
 
 ##### Factors that could lead to longer runtimes
 
@@ -772,14 +785,21 @@ alignment files onto the local compute node storage (such as a /scratch drive) d
 
 #### Memory
 
-The `discover` step should typically require about 4-8 GiB in total for a ~30x sample at 16-32 threads, and memory
-grows only slowly with thread count. Resource requests of 1 GiB/thread are a safe upper bound. A fixed 6 GiB budget
-limits the memory used for aligning long contigs. A 30x sample peaked at 4.6 GiB with 16 threads and 6.2 GiB with 24
-threads.
+The `discover` step needs about 1-2 GiB at 1-2 threads and 3-5 GiB at 16 threads for a ~30x sample, and peak memory
+grows only slowly with thread count. Resource requests of 2 GiB/thread (minimum 6 GiB) should be a safe upper bound. Measured peak RSS (GiB) and wall time (minutes) for
+`discover` on three ~30x HiFi samples, one run per cell, with a cold page cache:
 
-The `joint-call` step typically needs 1-3 GiB for a single sample. Each worker thread keeps recently read alignment
-windows (up to about 8 MiB per sample), so memory also grows with thread count and sample count: for large cohorts
-budget at least 1 GiB/thread, and note that this has not been tested at scale with the new read cache beyond 3 samples.
+| Threads |   HG002 | HG02583 | HG03470 |
+|--------:|--------:|--------:|--------:|
+|      1  | 1.5 GiB | 1.0 GiB | 1.0 GiB |
+|      2  | 1.5 GiB | 1.0 GiB | 1.0 GiB |
+|      4  | 3.5 GiB | 2.5 GiB | 2.5 GiB |
+|      8  | 4.0 GiB | 3.0 GiB | 3.0 GiB |
+|      16 | 5.0 GiB | 3.5 GiB | 4.0 GiB |
+
+
+The `joint-call` step needs 1-2 GiB for a single sample at 1-16 threads. Each worker thread keeps recently read alignment windows (up to about 8 MiB per sample), so memory also
+grows with thread count and sample count: for large cohorts budget at least 1 GiB/thread, and note that this has not been tested at scale.
 
 ### Discover step input file path storage
 
