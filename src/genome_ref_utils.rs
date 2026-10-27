@@ -703,6 +703,59 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A record's cached CIGAR must not be reused for a later record at a different alignment
+    /// position just because the CIGAR operations happen to be identical
+    #[test]
+    fn test_get_gap_compressed_identity_ignores_stale_cached_cigar_position() {
+        use rust_htslib::bam::record::{Cigar, CigarString};
+        use rust_htslib::bam::{self, Read, Writer};
+
+        let cigar = vec![Cigar::Match(20)];
+        let positions = [0i64, 30i64];
+        let tmp_path = std::env::temp_dir().join(format!(
+            "sawfish_test_stale_cigar_gci_{}.bam",
+            std::process::id()
+        ));
+        {
+            let mut header = bam::Header::new();
+            header.push_record(
+                bam::header::HeaderRecord::new(b"SQ")
+                    .push_tag(b"SN", "chr1")
+                    .push_tag(b"LN", 60),
+            );
+            let mut writer = Writer::from_path(&tmp_path, &header, bam::Format::Bam).unwrap();
+            for (i, &pos) in positions.iter().enumerate() {
+                let mut record = bam::Record::new();
+                let seq = vec![b'A'; 20];
+                record.set(
+                    format!("r{i}").as_bytes(),
+                    Some(&CigarString(cigar.clone())),
+                    &seq,
+                    &vec![30u8; seq.len()],
+                );
+                record.set_tid(0);
+                record.set_pos(pos);
+                writer.write(&record).unwrap();
+            }
+        }
+
+        let reference = GenomeRef::from_chrom_seqs(vec![vec![b'A'; 60]]);
+        let mut reader = bam::Reader::from_path(&tmp_path).unwrap();
+        let mut record = bam::Record::new();
+
+        // First record: read and cache its CIGAR, as the real scan does
+        reader.read(&mut record).unwrap().unwrap();
+        record.cache_cigar();
+
+        // Second record: identical CIGAR ops, but a different alignment position. The cache must
+        // not cause the stale position to leak into the ref span used here.
+        reader.read(&mut record).unwrap().unwrap();
+        let gci = get_gap_compressed_identity(&record, &reference, 0);
+        assert_eq!(gci, 1.0);
+
+        std::fs::remove_file(&tmp_path).unwrap();
+    }
+
     /// Check that on-demand sequence reads match the full fasta load
     fn check_indexed_ref_matches_full_load(ref_filename: &str) {
         check_indexed_ref_matches_plain_fasta(ref_filename, ref_filename);

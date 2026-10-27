@@ -1,5 +1,10 @@
 # Change Log
 
+## v2.3.1 - 2026-10-26
+
+### Fixed
+- Fix a panic (`range end index ... out of range for slice`) from a stale cached CIGAR position reused for an identical CIGAR string at a different alignment position
+
 ## v2.3.0 - 2026-10-21
 
 ### Added

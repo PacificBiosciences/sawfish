@@ -96,14 +96,16 @@ fn get_cigar_from_raw_word(raw: u32) -> Cigar {
 ///
 /// The cache is not cleared when a new alignment is read into the record, so a cached CIGAR is
 /// only used if it is identical to the record's current CIGAR (compared with the raw CIGAR, which
-/// is cheap next to decoding it). Otherwise the CIGAR is decoded from the record. This makes the
-/// function correct for any cache state, but `Record::cigar` is not: code that can run on a record
-/// with a stale cache has to call this function instead.
+/// is cheap next to decoding it) and the record's position hasn't moved. Otherwise the CIGAR is
+/// decoded from the record. This makes the function correct for any cache state, but
+/// `Record::cigar` is not: code that can run on a record with a stale cache has to call this
+/// function instead.
 ///
 pub fn get_record_cigar(record: &bam::Record) -> Cow<'_, CigarStringView> {
     match record.cigar_cached() {
         Some(cigar)
-            if cigar.len() == record.cigar_len()
+            if cigar.pos() == record.pos()
+                && cigar.len() == record.cigar_len()
                 && cigar
                     .iter()
                     .zip(record.raw_cigar())
@@ -490,6 +492,8 @@ mod tests {
             vec![Cigar::Match(10), Cigar::Del(2), Cigar::Match(8)],
             // Same number of operations as the first, to defeat a length-only check
             vec![Cigar::Match(7), Cigar::Ins(3), Cigar::Match(10)],
+            vec![Cigar::Equal(20)],
+            // Same CIGAR ops as the previous record, but at a different position
             vec![Cigar::Equal(20)],
         ];
         let tmp_path = std::env::temp_dir().join(format!(
